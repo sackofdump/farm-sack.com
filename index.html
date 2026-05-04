@@ -1899,11 +1899,11 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 </div>
 
 <!-- One-shot popup that fires the first time the player places a greenhouse. -->
-<!-- One-shot popup that fires the first time the player banks 1.7k¢ —
+<!-- One-shot popup that fires the first time the player banks 6.7k¢ —
      nudge toward the Expand Play Area upgrade. -->
 <div id="expandHintModal" class="modal hidden">
   <div class="modal-body" style="width:auto;max-width:min(440px,92vw);padding:20px 24px;text-align:center;">
-    <h2>&#127820; Got <b>1.7k¢</b>!</h2>
+    <h2>&#127820; Got <b>6.7k¢</b>!</h2>
     <p style="color:#4A2E15;font-size:14px;line-height:1.5;text-align:left;">
       Time to grow the farm! Open the <b>Shop</b> &rarr; <b>Upgrades</b> tab and try <b>Expand Play Area</b> — each press adds a one-tile ring around your fence so you can plow more, plant more, and earn faster.
     </p>
@@ -9675,8 +9675,9 @@ function refreshHud() {
   document.getElementById('coinTxt').textContent = formatCoins(state.coins);
   document.getElementById('lvlTxt').textContent  = state.level;
   // One-shot nudge once the player can afford a meaningful expansion
-  // (1700¢ comfortably covers the first Expand Play Area press).
-  if (!state.expandHintShown && state.coins >= 1700) {
+  // (6700¢ comfortably covers the first Expand Play Area press at the
+  // post-balance ring multiplier).
+  if (!state.expandHintShown && state.coins >= 6700) {
     state.expandHintShown = true;
     audio.play('levelup');
     queueTutorial('expandHintModal');
