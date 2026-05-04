@@ -3236,7 +3236,7 @@ const WITHER_SECONDS = 12 * 60 * 60;   // 12 hours
 const CROPS = {
   // Times ×2 and sells ×0.7 vs the previous tuning so progression is
   // slower and coin gains lighter per harvest.
-  wheat:      { name: 'Wheat',      cost: 5,   sell: 8,    time: 135,   wither: WITHER_SECONDS, unlock: 1  },
+  wheat:      { name: 'Wheat',      cost: 5,   sell: 8,    time: 120,   wither: WITHER_SECONDS, unlock: 1  },
   strawberry: { name: 'Strawberry', cost: 14,  sell: 18,   time: 450,   wither: WITHER_SECONDS, unlock: 2  },
   carrot:     { name: 'Carrot',     cost: 24,  sell: 32,   time: 1080,  wither: WITHER_SECONDS, unlock: 5  },
   corn:       { name: 'Corn',       cost: 42,  sell: 60,   time: 2160,  wither: WITHER_SECONDS, unlock: 7  },
@@ -3264,7 +3264,7 @@ function rebuildCropIds() { CROP_IDS = Object.keys(CROPS); }
 // Shop catalog. cat = seed | tree | decor | animal | building.
 const SHOP_ITEMS = [
   // ---- Seeds ----
-  { cat: 'seed', id: 'wheat',      name: 'Wheat',      cost: 5,   sub: '2m 15s · sells 8¢',  unlock: 1  },
+  { cat: 'seed', id: 'wheat',      name: 'Wheat',      cost: 5,   sub: '2m · sells 8¢',     unlock: 1  },
   { cat: 'seed', id: 'strawberry', name: 'Strawberry', cost: 14,  sub: '7.5m · sells 18¢',   unlock: 2  },
   { cat: 'seed', id: 'carrot',     name: 'Carrot',     cost: 24,  sub: '18m · sells 32¢',    unlock: 5  },
   { cat: 'seed', id: 'corn',       name: 'Corn',       cost: 42,  sub: '36m · sells 60¢',    unlock: 7  },
