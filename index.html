@@ -12585,7 +12585,20 @@ async function startGame() {
     if (!state.player || typeof state.player !== 'object') {
       state.player = { ix: CROP_FARM.x0 - 1, iy: CROP_FARM.y0 + CROP_FARM.h, queue: [], facing: 1, busy: 0, pending: null };
     } else {
-      state.player.queue = [];     // never resume a stale queue across sessions
+      // Preserve the action queue across reloads — drag-painted rows of
+      // plowing / planting / collecting were getting wiped on refresh.
+      // Drop the in-flight slot + pending walk target though, since those
+      // are transient runtime state (the queue heads will requeue them).
+      if (!Array.isArray(state.player.queue)) state.player.queue = [];
+      // Filter out queue entries whose tile is now obviously invalid so
+      // a stale save doesn't hand the farmer a list of impossible work.
+      state.player.queue = state.player.queue.filter(q => {
+        if (!q || typeof q.ix !== 'number' || typeof q.iy !== 'number') return false;
+        if (q.ix < 0 || q.iy < 0 || q.ix >= WORLD_W || q.iy >= WORLD_H) return false;
+        // Slaughter pickup needs the animal to still exist at its key.
+        if (q.tool === 'pickupAnimal' && q.animalKey && !state.placed[q.animalKey]) return false;
+        return true;
+      });
       state.player.busy = 0;
       state.player.pending = null;
       if (typeof state.player.ix !== 'number') state.player.ix = CROP_FARM.x0 - 1;
