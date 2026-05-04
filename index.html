@@ -1670,23 +1670,27 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-04</div>
       <ul>
-        <li>Toolbar gets a Big Red Barn shortcut to the left of Shop — opens the barn menu in one click.</li>
-        <li>Each barn can have its own pen — first barn auto-fences, later ones ask via an in-game prompt.</li>
-        <li>Each silo stores its own feed — overflow cascades into the next silo instead of being lost.</li>
-        <li>Hover tooltips + pointer cursor work on every building (silo, barn, cottage, etc.) without a click.</li>
-        <li>Drag-paint multiple trees in one motion, just like crops.</li>
-        <li>Slaughter is a toolbar button — grayed out until the slaughterhouse unlocks at Lv 11.</li>
-        <li>Click a barn to see every animal in its pen (age, lifetime yield, slaughter price).</li>
-        <li>Animal hitboxes follow the wandering sprite, not the original drop tile.</li>
+        <li>Big Red Barn shortcut on the toolbar — opens the barn roster in one click.</li>
+        <li>Each barn can have its own pen — first barn auto-fences; later ones ask via an in-game prompt.</li>
+        <li>Each silo stores its own feed; overflow cascades into the next silo instead of being lost.</li>
+        <li>Silo with feed now also speeds animal yield timers by +25% (on top of the existing age-up + slaughter bonuses).</li>
+        <li>Hover tooltips + pointer cursor work on every building without a click first; works for buildings placed in the meadow too.</li>
+        <li>Drag-paint multiple trees in one motion (queued tiles get a yellow trail like crops); the farmer stops once you can't afford the next sapling.</li>
+        <li>Slaughter is a toolbar button + a barn-menu shortcut. One click on an animal auto-routes the farmer to the nearest slaughterhouse. Slaughter awards XP visibly.</li>
+        <li>Barn click menu lists every animal in its pen with age, next-yield timer, lifetime yield, and current slaughter price. Per-row Collect / Select buttons; menu stays open while you chain harvests.</li>
+        <li>Animal hitboxes + Move tool follow the wandering sprite. Move tool also picks up animals (without dragging the pen).</li>
+        <li>Moving the barn brings the pen, animals, and slaughterhouse with it. Stray-animal sweep pulls anyone outside a fence back into the nearest pen.</li>
+        <li>Expanding a pen shifts the barn one tile further out so it stays on the outskirts.</li>
         <li>Workers can be renamed and have their gender swapped from the worker menu.</li>
-        <li>Leaderboard now ranks by animals owned and animals slaughtered.</li>
-        <li>Buildings lock by default — open the menu and tap "Unlock To Move" to relocate.</li>
-        <li>Plowing is blocked under tall buildings (no more crops inside the cottage).</li>
+        <li>Leaderboard ranks by animals owned and animals slaughtered.</li>
+        <li>Buildings lock by default — open the menu and tap "Unlock To Move" to relocate. Quick right-click in placeMode empties hands; hold + drag pans the camera.</li>
+        <li>Plowing blocked under tall buildings (no more crops inside the cottage).</li>
         <li>"Crop isn't ready" floats over the tile with the remaining time when you try to harvest early.</li>
-        <li>Moving a tree shows a preview at its actual growth stage, not a sapling.</li>
+        <li>Tree move ghost shows actual growth stage. Water Efficiency tooltip + +growth float reflect upgrades (no more stuck "+50%").</li>
+        <li>Action queue persists across page refresh.</li>
         <li>Multi-tab guard: refuses to overwrite a newer save from another tab.</li>
-        <li>Tree fully-grown chime + arcadey beeps removed; coin/click/place/levelup retuned to softer cues.</li>
-        <li>Music auto-advances reliably from track to track now.</li>
+        <li>Tree fully-grown chime + arcadey beeps removed; coin/click/place/levelup retuned to softer cues. Music auto-advances reliably.</li>
+        <li>Coffee Beans tooltip explains the worker speed buff. Silo + per-silo feed shown in hover.</li>
         <li>Roadmap added to the splash so you can see what's coming next.</li>
       </ul>
     </div>
@@ -3061,7 +3065,10 @@ function performCropFarmerAction(m, task) {
       const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul()));
       grantXp(xpGain);
       fxBurst(ix, iy, '#F5C84B', 10);
-      if (added > 0) fxFloat(ix, iy, '+' + added + ' feed', 0, '#F5C84B');
+      // Round the float — the silo drains in fractional amounts, so a
+      // partial fill that tops it off can land at e.g. 0.3999999 feed.
+      // Floor + min(1) keeps the toast a clean integer.
+      if (added > 0) fxFloat(ix, iy, '+' + Math.max(1, Math.round(added)) + ' feed', 0, '#F5C84B');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
     } else {
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
@@ -8548,7 +8555,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul()));
       fxBurst(ix, iy, '#F5C84B', 14);
       if (cap === 0) fxFloat(ix, iy, 'No silo!', 0, '#FF9966');
-      else if (added > 0) fxFloat(ix, iy, '+' + added + ' feed', 0, '#F5C84B');
+      else if (added > 0) fxFloat(ix, iy, '+' + Math.max(1, Math.round(added)) + ' feed', 0, '#F5C84B');
       else fxFloat(ix, iy, 'Silos full!', 0, '#FF9966');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
       audio.play('harvest');
