@@ -10099,7 +10099,10 @@ function buildUpgradesGrid(grid) {
     });
   }
 }
-// Grow the animal pen rectangle by one tile in every direction.
+// Grow the animal pen rectangle by one tile in every direction. The
+// barn rides the expansion — it shifts one tile further out on whichever
+// side it was already anchored, so it stays on the outskirts of the pen
+// instead of getting swallowed by the new ring.
 function applyExpandPen() {
   if (!state.barnPen) return;
   const PEN_MAX = 14;
@@ -10107,15 +10110,73 @@ function applyExpandPen() {
   if (pen.w >= PEN_MAX || pen.h >= PEN_MAX) {
     toast('Pen at max size.', true); audio.play('error'); return;
   }
-  const tiles = (pen.w + 2) * (pen.h + 2) - pen.w * pen.h;
+  // Figure out which side of the pen the barn currently sits on so we
+  // know which direction to scoot it as the pen grows. Mirrors the
+  // logic in barnPenGate().
+  const oldBarnIx = pen.barnIx, oldBarnIy = pen.barnIy;
+  let barnDX = 0, barnDY = 0;
+  if (typeof oldBarnIx === 'number' && typeof oldBarnIy === 'number') {
+    if      (oldBarnIy <  pen.y0)             barnDY = -1;   // north of pen
+    else if (oldBarnIy >= pen.y0 + pen.h)     barnDY =  1;   // south
+    else if (oldBarnIx <  pen.x0)             barnDX = -1;   // west
+    else if (oldBarnIx >= pen.x0 + pen.w)     barnDX =  1;   // east
+  }
+  // Validate the expanded pen (one ring out on every side) AND the
+  // barn's new tile both still fit inside the world before charging.
+  const newX0 = pen.x0 - 1, newY0 = pen.y0 - 1;
+  const newW  = pen.w + 2,  newH  = pen.h + 2;
+  if (newX0 < 0 || newY0 < 0 ||
+      newX0 + newW > WORLD_W || newY0 + newH > WORLD_H) {
+    toast('No room — pen would push past the world edge.', true);
+    audio.play('error');
+    return;
+  }
+  const newBarnIx = oldBarnIx + barnDX;
+  const newBarnIy = oldBarnIy + barnDY;
+  if (newBarnIx < 0 || newBarnIy < 0 ||
+      newBarnIx >= WORLD_W || newBarnIy >= WORLD_H) {
+    toast('No room — barn would push past the world edge.', true);
+    audio.play('error');
+    return;
+  }
+  const tiles = newW * newH - pen.w * pen.h;
   const cost  = Math.round(tiles * 90);
   if (state.coins < cost) { toast('Not enough coins.', true); audio.play('error'); return; }
   state.coins -= cost;
-  pen.x0 -= 1; pen.y0 -= 1; pen.w += 2; pen.h += 2;
-  // Clear any plot records inside the new ring so they render as grass.
+  // Apply the expansion — pen rect first, then scoot the barn record so
+  // it stays on the outskirts. If anything was placed on the barn's new
+  // tile (or in the new pen ring), refund + remove it the same way the
+  // initial pen creation does.
+  pen.x0 = newX0; pen.y0 = newY0; pen.w = newW; pen.h = newH;
+  const newBarnKey = tileKey(newBarnIx, newBarnIy);
+  const oldBarnKey = tileKey(oldBarnIx, oldBarnIy);
+  if (oldBarnKey !== newBarnKey) {
+    if (state.placed[newBarnKey] && state.placed[newBarnKey].id !== 'building_barn') {
+      const blocker = state.placed[newBarnKey];
+      const refund  = Math.max(1, Math.round((blocker.cost ?? 10) * 0.5));
+      state.coins += refund;
+      delete state.placed[newBarnKey];
+    }
+    if (state.placed[oldBarnKey] && state.placed[oldBarnKey].id === 'building_barn') {
+      state.placed[newBarnKey] = state.placed[oldBarnKey];
+      delete state.placed[oldBarnKey];
+    }
+    pen.barnIx = newBarnIx; pen.barnIy = newBarnIy;
+  }
+  // Clear any plot records inside the new ring so they render as grass,
+  // and refund any decor that ended up enclosed by the bigger pen.
   for (let dy = 0; dy < pen.h; dy++) {
     for (let dx = 0; dx < pen.w; dx++) {
-      delete state.plots[tileKey(pen.x0 + dx, pen.y0 + dy)];
+      const tx = pen.x0 + dx, ty = pen.y0 + dy;
+      const k = tileKey(tx, ty);
+      delete state.plots[k];
+      if (state.farmExpansion) delete state.farmExpansion[k];
+      const blocker = state.placed[k];
+      if (blocker && blocker.id !== 'building_barn' && !blocker.id.startsWith('animal_')) {
+        const refund = Math.max(1, Math.round((blocker.cost ?? 10) * 0.5));
+        state.coins += refund;
+        delete state.placed[k];
+      }
     }
   }
 }
@@ -10876,12 +10937,18 @@ function bindInput() {
         const hit = probeFor(it => true);
         if (hit) snapT = { ix: hit.ix, iy: hit.iy };
       }
-      // inBounds is computed against the SNAPPED tile so the body of a
-      // building near a world edge still gets a hover even when the
-      // literal cursor tile is just outside the playfield.
+      // inBounds is computed against the SNAPPED tile so a placed building
+      // sitting in the meadow (outside the active worldBounds) still
+      // surfaces its hover tooltip + pointer cursor. Only the absolute
+      // WORLD_W × WORLD_H box clips hover; the playfield-bounded inWorld
+      // check would silently swallow tooltips for silos / barns that the
+      // player intentionally placed past the fence.
+      const snapHasPlaced = !!state.placed[tileKey(snapT.ix, snapT.iy)];
+      const inAbsWorld = snapT.ix >= 0 && snapT.iy >= 0 &&
+                         snapT.ix < WORLD_W && snapT.iy < WORLD_H;
       const inBounds = isBuildingPlace
-        ? (snapT.ix >= 0 && snapT.iy >= 0 && snapT.ix < WORLD_W && snapT.iy < WORLD_H)
-        : inWorld(snapT.ix, snapT.iy);
+        ? inAbsWorld
+        : (snapHasPlaced ? inAbsWorld : inWorld(snapT.ix, snapT.iy));
       if (inBounds) {
         live.hover = snapT;
         showTooltip(snapT.ix, snapT.iy, e);
