@@ -5375,15 +5375,40 @@ const BUILDING_MENUS = {
       }
       return html;
     },
-    actions: () => {
+    actions: (ctx) => {
       const slaughterItem = SHOP_ITEMS.find(i => i.id === 'building_slaughterhouse');
       const slaughterUnlock = slaughterItem ? (slaughterItem.unlock || 11) : 11;
       const slaughterLocked = state.level < slaughterUnlock;
+      // Per-barn pen-expansion action lives here now (was a global
+      // upgrades-panel button — confusing on multi-pen farms). Reads
+      // the pen anchored to THIS barn so each barn grows its own.
+      const pen = (ctx && typeof ctx.ix === 'number')
+        ? findBarnPenForBarn(ctx.ix, ctx.iy)
+        : null;
+      let expandAction = null;
+      if (pen) {
+        const maxed = pen.w >= PEN_MAX_DIM || pen.h >= PEN_MAX_DIM;
+        const tiles = maxed ? 0 : (pen.w + 2) * (pen.h + 2) - pen.w * pen.h;
+        const cost  = maxed ? 0 : Math.round(tiles * 90);
+        expandAction = {
+          label: maxed
+            ? `📏 Pen MAX (${pen.w}×${pen.h})`
+            : `📏 Expand Pen → ${pen.w + 2}×${pen.h + 2} (${cost}¢)`,
+          disabled: maxed || state.coins < cost,
+          run: () => {
+            if (applyExpandPen(pen)) {
+              audio.play('coin');
+              toast('Animal pen expanded.', false, 'good');
+              storage.save(); refreshHud();
+            }
+          },
+        };
+      }
       // Lay the buttons out so Slaughter Mode lands in the slaughter
       // slot (kept red via danger:true), Buy Animals in the green
-      // collect slot, and the ride/top slot stays unused.
+      // collect slot, and the Expand Pen action takes the top slot.
       return [
-        null,
+        expandAction,
         { label: '🐮 Buy Animals', run: () => { activeShopTab = 'animal'; openShop(); } },
         {
           label: slaughterLocked
@@ -5686,7 +5711,7 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   if (petBtn) petBtn.style.display = 'none';
   // Actions can be a static array or a function returning one (so labels +
   // disabled state can read live state like state.level at popup time).
-  const actionList = typeof cfg.actions === 'function' ? cfg.actions() : (cfg.actions || []);
+  const actionList = typeof cfg.actions === 'function' ? cfg.actions({ ix, iy }) : (cfg.actions || []);
   const wireActionBtn = (btn, a) => {
     if (!btn) return;
     if (!a) { btn.style.display = 'none'; return; }
@@ -10258,36 +10283,23 @@ function buildUpgradesGrid(grid) {
       buy: () => { applyExpandArea(); afterUpgrade(grid, 'Play Area'); }
     });
   }
-  // ----- Expand Animal Pen -----
-  // Each purchase grows the pen by one tile on every side (so width and
-  // height each go up by 2). Only available once the player has placed
-  // a Big Red Barn (no pen exists otherwise).
-  if (state.barnPen) {
-    const pen = state.barnPen;
-    const PEN_MAX = 14;
-    const maxed = pen.w >= PEN_MAX || pen.h >= PEN_MAX;
-    const tiles = maxed ? 0 : (pen.w + 2) * (pen.h + 2) - pen.w * pen.h;
-    const cost = maxed ? null : Math.round(tiles * 90);
-    makeUpgradeCard(grid, {
-      iconKey: 'animal_chicken',
-      name: 'Expand Animal Pen',
-      sub: maxed ? 'Pen is fully expanded.' : `+1 tile ring (adds ${tiles} tiles)`,
-      price: cost, max: maxed,
-      levelText: maxed ? 'MAX' : `${pen.w}×${pen.h}`,
-      buy: () => { applyExpandPen(); afterUpgrade(grid, 'Animal Pen'); }
-    });
-  }
+  // Expand Animal Pen lives on each barn's click menu now (multi-pen
+  // farms had no way to pick *which* pen to grow from a single
+  // upgrades-panel button). See the barn's BUILDING_MENUS entry for
+  // the per-barn Expand Pen action.
 }
-// Grow the animal pen rectangle by one tile in every direction. The
-// barn rides the expansion — it shifts one tile further out on whichever
-// side it was already anchored, so it stays on the outskirts of the pen
-// instead of getting swallowed by the new ring.
-function applyExpandPen() {
-  if (!state.barnPen) return;
-  const PEN_MAX = 14;
-  const pen = state.barnPen;
-  if (pen.w >= PEN_MAX || pen.h >= PEN_MAX) {
-    toast('Pen at max size.', true); audio.play('error'); return;
+const PEN_MAX_DIM = 14;
+// Grow the given animal pen rectangle by one tile in every direction.
+// The barn rides the expansion — it shifts one tile further out on
+// whichever side it was already anchored, so it stays on the outskirts
+// of the pen instead of getting swallowed by the new ring. Returns
+// true on success, false on any rejection (out-of-bounds, can't
+// afford, max size).
+function applyExpandPen(pen) {
+  if (!pen) pen = state.barnPen;
+  if (!pen) return false;
+  if (pen.w >= PEN_MAX_DIM || pen.h >= PEN_MAX_DIM) {
+    toast('Pen at max size.', true); audio.play('error'); return false;
   }
   // Figure out which side of the pen the barn currently sits on so we
   // know which direction to scoot it as the pen grows. Mirrors the
@@ -10308,7 +10320,7 @@ function applyExpandPen() {
       newX0 + newW > WORLD_W || newY0 + newH > WORLD_H) {
     toast('No room — pen would push past the world edge.', true);
     audio.play('error');
-    return;
+    return false;
   }
   const newBarnIx = oldBarnIx + barnDX;
   const newBarnIy = oldBarnIy + barnDY;
@@ -10316,11 +10328,11 @@ function applyExpandPen() {
       newBarnIx >= WORLD_W || newBarnIy >= WORLD_H) {
     toast('No room — barn would push past the world edge.', true);
     audio.play('error');
-    return;
+    return false;
   }
   const tiles = newW * newH - pen.w * pen.h;
   const cost  = Math.round(tiles * 90);
-  if (state.coins < cost) { toast('Not enough coins.', true); audio.play('error'); return; }
+  if (state.coins < cost) { toast('Not enough coins.', true); audio.play('error'); return false; }
   state.coins -= cost;
   // Apply the expansion — pen rect first, then scoot the barn record so
   // it stays on the outskirts. If anything was placed on the barn's new
@@ -10358,6 +10370,7 @@ function applyExpandPen() {
       }
     }
   }
+  return true;
 }
 
 // Compute how many new tiles a one-ring expansion would add and what it
