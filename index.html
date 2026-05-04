@@ -1281,6 +1281,36 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   background: linear-gradient(to bottom, #87CEEB 0%, #4F8C2D 60%, #2A1F12 100%);
 }
 #splashScreen.hidden { display: none; }
+.splashPatchNotes {
+  position: absolute;
+  top: 50%; right: max(20px, calc(50% - 480px));
+  transform: translateY(-50%);
+  width: min(240px, 30vw);
+  max-height: 70vh; overflow-y: auto;
+  background: linear-gradient(to bottom, var(--parchment), var(--parchment-2));
+  border: 4px solid var(--wood-3);
+  border-radius: 14px;
+  padding: 14px 16px;
+  box-shadow: var(--shadow);
+  text-align: left;
+}
+.splashPatchNotes h4 {
+  margin: 0 0 4px; color: var(--wood-2);
+  font-size: 15px; letter-spacing: 0.5px;
+  text-shadow: 0 1px 0 #fff;
+}
+.splashPatchNotes .patchDate {
+  color: #6A4A22; font-size: 11px; font-weight: 700;
+  margin-bottom: 8px;
+}
+.splashPatchNotes ul {
+  margin: 0; padding-left: 18px;
+  color: #4A2E15; font-size: 12px; line-height: 1.5;
+}
+.splashPatchNotes li { margin-bottom: 4px; }
+@media (max-width: 880px) {
+  .splashPatchNotes { display: none; }
+}
 .splashPanel {
   background: linear-gradient(to bottom, var(--parchment), var(--parchment-2));
   border: 5px solid var(--wood-3);
@@ -1600,6 +1630,18 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 
     <p class="splashFootNote">Your farm syncs to the cloud — log in from any device with the same email to keep playing.</p>
   </div>
+
+  <aside class="splashPatchNotes" aria-label="Patch notes">
+    <h4>📜 Patch Notes</h4>
+    <div class="patchDate">Latest update</div>
+    <ul>
+      <li>Animal pen now always opens to the south of the barn (rotation-aware) — gate side follows the barn under any camera spin.</li>
+      <li>Move the barn and the entire pen + every animal inside follows along.</li>
+      <li>Trees are now movable with the Move tool — growth stage, watered status, and fruit timer are all preserved.</li>
+      <li>Hold right-click and drag to cancel a whole trail of queued actions in one sweep.</li>
+      <li>Tutorial &amp; "newly unlocked" popups now require the Close button — no more accidental backdrop dismissals.</li>
+    </ul>
+  </aside>
 </div>
 
 <!-- Splash-page leaderboard popup — uses the same leaderboard data as the
@@ -5582,12 +5624,95 @@ function drawPlayer(cx, cy, walking, facing, busy, time) {
 // FENCE (procedural, around the farm perimeter)
 // ============================================================
 // Where the pen sits relative to a barn at (ix, iy). The barn lives just
-// north of the pen; the pen starts 6×6 and grows via the Expand Pen
-// upgrade. Centered horizontally so the barn looks like it watches over
-// the field.
+// north of the pen *in the player's current view* — when the camera is
+// rotated we pick the canonical offset that still renders the pen one
+// tile south-of-screen of the barn so the door+pen relationship reads
+// the same regardless of rotation. While moving an existing barn we
+// translate the existing pen rather than spawning a fresh rect, so the
+// pen + everything inside it follows the barn.
 const BARN_PEN_W = 6, BARN_PEN_H = 6;
 function barnPenAt(ix, iy) {
-  return { x0: ix - 2, y0: iy + 1, w: BARN_PEN_W, h: BARN_PEN_H };
+  if (live.placeMode && live.placeMode.moving && state.barnPen &&
+      typeof state.barnPen.barnIx === 'number' && typeof state.barnPen.barnIy === 'number') {
+    const dx = ix - state.barnPen.barnIx;
+    const dy = iy - state.barnPen.barnIy;
+    return {
+      x0: state.barnPen.x0 + dx,
+      y0: state.barnPen.y0 + dy,
+      w: state.barnPen.w || BARN_PEN_W,
+      h: state.barnPen.h || BARN_PEN_H,
+    };
+  }
+  const r = ((state.rotation || 0) % 4 + 4) % 4;
+  let dx0, dy0;
+  switch (r) {
+    case 0: dx0 = -2; dy0 =  1; break;
+    case 1: dx0 =  1; dy0 = -3; break;
+    case 2: dx0 = -3; dy0 = -6; break;
+    case 3: dx0 = -6; dy0 = -2; break;
+  }
+  return { x0: ix + dx0, y0: iy + dy0, w: BARN_PEN_W, h: BARN_PEN_H };
+}
+// Move the existing animal pen + every placed item inside it so the
+// barn drag-and-drop carries the entire enclosure with it. Conflicting
+// items in tiles entering the new pen footprint (and not coming from
+// the old footprint) get refunded the same way an initial barn placement
+// clears them.
+function movePenWithBarn(newBarnIx, newBarnIy, newBarnKey) {
+  const oldPen = state.barnPen;
+  if (!oldPen) return;
+  const dx = newBarnIx - oldPen.barnIx;
+  const dy = newBarnIy - oldPen.barnIy;
+  if (dx === 0 && dy === 0) return;
+  const w = oldPen.w, h = oldPen.h;
+  // Pull every placed item out of the OLD pen footprint so we can drop
+  // them back at the translated tile in one pass — avoids tile-key
+  // collisions when old and new footprints overlap.
+  const toMove = [];
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const tx = oldPen.x0 + px, ty = oldPen.y0 + py;
+      const k = tileKey(tx, ty);
+      if (state.placed[k]) {
+        toMove.push({ rec: state.placed[k], nx: tx + dx, ny: ty + dy });
+        delete state.placed[k];
+      }
+      if (state.plots[k]) delete state.plots[k];
+    }
+  }
+  // Refund any non-pen items sitting in the NEW pen footprint (skip the
+  // freshly placed barn — that's intentionally adjacent, not inside).
+  for (let py = 0; py < h; py++) {
+    for (let px = 0; px < w; px++) {
+      const tx = oldPen.x0 + px + dx, ty = oldPen.y0 + py + dy;
+      const k = tileKey(tx, ty);
+      if (k === newBarnKey) continue;
+      const placed = state.placed[k];
+      if (placed) {
+        const refund = Math.max(1, Math.round((placed.cost ?? 10) * 0.5));
+        state.coins += refund;
+        delete state.placed[k];
+      }
+      if (state.farmExpansion) delete state.farmExpansion[k];
+    }
+  }
+  for (const m of toMove) state.placed[tileKey(m.nx, m.ny)] = m.rec;
+  oldPen.x0 += dx;
+  oldPen.y0 += dy;
+  oldPen.barnIx = newBarnIx;
+  oldPen.barnIy = newBarnIy;
+}
+// The pen has a one-tile gate facing the barn so the farmer can walk in.
+// Returns { ix, iy, dir } pointing at the pen tile aligned with the barn,
+// with `dir` set to the canonical edge that should be skipped.
+function barnPenGate(pen) {
+  if (!pen || typeof pen.barnIx !== 'number' || typeof pen.barnIy !== 'number') return null;
+  const ix = pen.barnIx, iy = pen.barnIy;
+  if (iy < pen.y0)              return { ix, iy: pen.y0,             dir: 'iso-N' };
+  if (iy >= pen.y0 + pen.h)     return { ix, iy: pen.y0 + pen.h - 1, dir: 'iso-S' };
+  if (ix < pen.x0)              return { ix: pen.x0,             iy, dir: 'iso-W' };
+  if (ix >= pen.x0 + pen.w)     return { ix: pen.x0 + pen.w - 1, iy, dir: 'iso-E' };
+  return null;
 }
 function inBarnPen(ix, iy) {
   const b = state.barnPen;
@@ -5635,14 +5760,11 @@ function buildFenceList(list) {
   fenceRect(list, b.x0, b.y0, b.w, b.h, isMainFarm, null, (nx, ny) => inBarnPen(nx, ny));
   // Animal pen — leave a one-tile opening directly in front of the barn
   // doors so the farmer can walk into the pen without the fence visually
-  // blocking the doorway. The pen tile right south of the barn anchor
-  // skips its NORTH fence segment.
+  // blocking the doorway. Gate side is derived from the barn's position
+  // relative to the pen so it stays correct under any camera rotation.
   if (state.barnPen) {
     const p = state.barnPen;
-    const gate = (typeof p.barnIx === 'number' && typeof p.barnIy === 'number')
-      ? { ix: p.barnIx, iy: p.barnIy + 1, dir: 'iso-N' }
-      : null;
-    fenceRect(list, p.x0, p.y0, p.w, p.h, (ix, iy) => inBarnPen(ix, iy), gate);
+    fenceRect(list, p.x0, p.y0, p.w, p.h, (ix, iy) => inBarnPen(ix, iy), barnPenGate(p));
   }
 }
 function fenceRect(list, x0, y0, w, h, isInside, gate, skipNeighbor) {
@@ -5769,15 +5891,22 @@ function isPlaceableTile(ix, iy) {
   }
   // Big Red Barn — placeable anywhere in the world (inside the main
   // farm OR on the open meadow), as long as the 6×6 pen will fit south
-  // of it and isn't overlapping an existing pen.
+  // of it and isn't overlapping an existing pen. When MOVING an existing
+  // barn, the pen translates with it; the same fit check still applies.
   if (id === 'building_barn') {
     if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) return false;
-    if (inBarnPen(ix, iy)) return false;
+    const isMoving = !!(live.placeMode && live.placeMode.moving && state.barnPen);
+    if (!isMoving && inBarnPen(ix, iy)) return false;
+    // While moving, the existing pen is treated as "self" — landing the
+    // barn anchor on a tile that was inside the OLD pen is fine as long
+    // as the resulting NEW barn tile is outside the NEW pen.
     if (state.placed[tileKey(ix, iy)]) return false;
-    // Pen rectangle has to fit in the world too.
     const pen = barnPenAt(ix, iy);
     if (pen.x0 < 0 || pen.y0 < 0 ||
         pen.x0 + pen.w > WORLD_W || pen.y0 + pen.h > WORLD_H) return false;
+    // Barn must end up OUTSIDE the (new) pen rect.
+    if (ix >= pen.x0 && ix < pen.x0 + pen.w &&
+        iy >= pen.y0 && iy < pen.y0 + pen.h) return false;
     return true;
   }
   // Animals must go inside the barn's pen.
@@ -7285,17 +7414,22 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     return 'ok';
   }
 
-  // --- Move: pick up a placed building and re-enter place mode for free,
-  // OR just walk the farmer to the clicked tile if it has no building. ---
+  // --- Move: pick up a placed building or tree and re-enter place mode
+  // for free, OR just walk the farmer to the clicked tile if there's
+  // nothing pickup-able here. Trees retain their growth stage / fruit
+  // timer / watered state via the origRecord snapshot. ---
   if (tool === 'move') {
     const placed = state.placed[k];
-    if (placed && !placed.permanent && placed.id && placed.id.startsWith('building_')) {
-      const item = shopItem(placed.id) || { id: placed.id, name: 'Building', cat: 'building' };
+    const isMovableBuilding = placed && !placed.permanent && placed.id && placed.id.startsWith('building_');
+    const isMovableTree     = placed && !placed.permanent && placed.id && placed.id.startsWith('tree_');
+    if (isMovableBuilding || isMovableTree) {
+      const cat = isMovableTree ? 'tree' : 'building';
+      const item = shopItem(placed.id) || { id: placed.id, name: isMovableTree ? 'Tree' : 'Building', cat };
       // Snapshot the original tile + record so a cancelled move puts the
-      // building back instead of leaving the world without it.
+      // item back instead of leaving the world without it.
       const origRecord = { ...placed };
       delete state.placed[k];
-      live.placeMode = { id: placed.id, name: item.name, cost: 0, cat: 'building', moving: true,
+      live.placeMode = { id: placed.id, name: item.name, cost: 0, cat, moving: true,
                          origKey: k, origRecord };
       document.getElementById('stage').classList.add('placeMode');
       const banner = document.getElementById('placeBanner');
@@ -7308,7 +7442,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       storage.save();
       return 'ok';
     }
-    // No building here — the farmer just walks to the destination, no
+    // No movable item here — the farmer just walks to the destination, no
     // tool action runs on arrival.
     return 'ok';
   }
@@ -7671,7 +7805,12 @@ function tryPlace(ix, iy, silent=false) {
     return null;
   }
   state.coins -= pm.cost;
-  const rec = { id: pm.id, cost: pm.cost };
+  // Moves carry the original record (growth stage, watered, fruit timer,
+  // siloFeed, seed-container contents, etc.) so picking up + dropping
+  // preserves all per-instance state. Fresh placements start clean.
+  const rec = (pm.moving && pm.origRecord)
+    ? { ...pm.origRecord, id: pm.id, cost: pm.origRecord.cost ?? pm.cost }
+    : { id: pm.id, cost: pm.cost };
   // Real trees track growth and bear fruit. Tree stumps are pure decor.
   if (pm.id.startsWith('tree_') && pm.id !== 'tree_stump' && !pm.moving) {
     rec.plantedAt = Date.now();
@@ -7682,6 +7821,12 @@ function tryPlace(ix, iy, silent=false) {
   // or dirt plot record so the renderer doesn't paint dirt under it.
   if (!pm.id.startsWith('animal_')) delete state.plots[k];
   state.placed[k] = rec;
+  // Barn move: translate the existing pen + everything inside it so the
+  // animal pen follows the barn instead of being orphaned at the old spot.
+  if (pm.moving && pm.id === 'building_barn' && state.barnPen &&
+      typeof state.barnPen.barnIx === 'number' && typeof state.barnPen.barnIy === 'number') {
+    movePenWithBarn(ix, iy, k);
+  }
   if (!pm.id.startsWith('tree_')) {
     audio.play('place');
     audio.play('coin');
@@ -9727,21 +9872,32 @@ function bindInput() {
 
     // Right-click on a queued tile removes that entry from the queue
     // so the player can prune individual mistakes without clearing the
-    // whole row.
+    // whole row. Holding the button + dragging keeps cancelling tiles
+    // along the path (handled in pointermove); record the start tile
+    // here so the drag handler doesn't re-process it.
+    let cancelledQueue = false;
     if (e.button === 2 && state.player && state.player.queue && state.player.queue.length > 0) {
       const before = state.player.queue.length;
       state.player.queue = state.player.queue.filter(q =>
         !(q.ix === startT.ix && q.iy === startT.iy));
+      live.draggedTiles.add(startT.ix + ',' + startT.iy);
       if (state.player.queue.length < before) {
+        cancelledQueue = true;
         audio.play('click');
         if (e.preventDefault) e.preventDefault();
+        // Pre-set dragMode = 'pan' so a held right-click drag enters the
+        // cancel-sweep branch in pointermove without panning the camera
+        // until the player actually moves more than the 3px threshold.
+        live.dragMode = 'pan';
+        stage.setPointerCapture(e.pointerId);
         return;
       }
     }
     // Right-click empties the player's hands — deselect the current
     // tool so the cursor goes back to "no action" and the next click
-    // pans / walks instead of acting.
-    if (e.button === 2 && state.selectedTool) {
+    // pans / walks instead of acting. Skipped when we just cancelled a
+    // queued action so the player can keep their tool while pruning.
+    if (!cancelledQueue && e.button === 2 && state.selectedTool) {
       state.selectedTool = null;
       refreshTools(); refreshSeedStrip();
       audio.play('click');
@@ -9752,10 +9908,11 @@ function bindInput() {
     // first so only the latest click matters.
     if (e.button === 0 && !e.shiftKey && state.selectedTool === 'move') {
       const placedHere = state.placed[tileKey(startT.ix, startT.iy)];
-      const isBuilding = placedHere && placedHere.id && placedHere.id.startsWith('building_') && !placedHere.permanent;
-      if (isBuilding) {
-        // Pick up the building straight away — no walking required for
-        // drag-and-drop relocation.
+      const isMovablePlaced = placedHere && !placedHere.permanent && placedHere.id &&
+        (placedHere.id.startsWith('building_') || placedHere.id.startsWith('tree_'));
+      if (isMovablePlaced) {
+        // Pick up the building / tree straight away — no walking required
+        // for drag-and-drop relocation.
         actOnTile('move', startT.ix, startT.iy, false);
       } else if (inWorld(startT.ix, startT.iy)) {
         clearActionQueue();
@@ -9814,6 +9971,20 @@ function bindInput() {
           stage.classList.add('dragging');
           hideTooltip();
           live.hover = null;
+        }
+        // Hold-right-click sweeps queued actions: as the cursor crosses
+        // each new tile, prune any queue entries on it. Single right-click
+        // already handles a one-tile cancel; this lets the player erase
+        // long trails of plows/plants without clicking each one.
+        if (live.pointerButton === 2 && state.player && state.player.queue && state.player.queue.length > 0) {
+          const t = screenToTile(e.clientX, e.clientY);
+          const tk = t.ix + ',' + t.iy;
+          if (!live.draggedTiles.has(tk)) {
+            live.draggedTiles.add(tk);
+            const before = state.player.queue.length;
+            state.player.queue = state.player.queue.filter(q => !(q.ix === t.ix && q.iy === t.iy));
+            if (state.player.queue.length < before) audio.play('click');
+          }
         }
         return;
       } else if (live.dragMode === 'paint') {
@@ -11425,8 +11596,19 @@ async function startGame() {
   const dmBtn = document.getElementById('dismountBtn');
   if (dmBtn) dmBtn.onclick = () => dismountHorse();
   refreshDismountBanner();
+  // Tutorial + first-unlock popups require the player to actually press
+  // the Close button — clicking the backdrop is too easy to do by accident
+  // and the player misses the explanation. Other modals (shop, inventory,
+  // achievements, etc.) keep the click-to-dismiss behaviour.
+  const STICKY_MODAL_IDS = new Set([
+    'barnTutorialModal', 'greenhouseTutorialModal', 'slaughterhouseTutorialModal',
+    'greenhouseUnlockTutorialModal', 'staffComboTutorialModal', 'dogTutorialModal',
+    'siloTutorialModal', 'expandHintModal', 'seedContainerReminderModal',
+    'levelUpModal', 'mutationDiscoveryModal',
+  ]);
   document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => {
     if (e.target !== m) return;
+    if (STICKY_MODAL_IDS.has(m.id)) return;
     // While the tutorial is auto-driving the shop, ignore background
     // clicks so the player can read the explanation without accidentally
     // dismissing the modal.
