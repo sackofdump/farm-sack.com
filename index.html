@@ -5372,13 +5372,18 @@ const BUILDING_MENUS = {
       const slaughterItem = SHOP_ITEMS.find(i => i.id === 'building_slaughterhouse');
       const slaughterUnlock = slaughterItem ? (slaughterItem.unlock || 11) : 11;
       const slaughterLocked = state.level < slaughterUnlock;
+      // Lay the buttons out so Slaughter Mode lands in the slaughter
+      // slot (kept red via danger:true), Buy Animals in the green
+      // collect slot, and the ride/top slot stays unused.
       return [
+        null,
         { label: '🐮 Buy Animals', run: () => { activeShopTab = 'animal'; openShop(); } },
         {
           label: slaughterLocked
             ? `🔪 Slaughter — Lv ${slaughterUnlock}`
             : '🔪 Slaughter Mode',
           disabled: slaughterLocked,
+          danger: true,
           run: () => {
             if (live.placeMode) cancelPlaceMode();
             state.selectedTool = 'slaughter';
@@ -5613,22 +5618,48 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           // top-left corner).
           const animal = state.placed[animalKey];
           if (!animal) return;
-          // Park the per-animal popup just above the seed strip — that's
-          // the live action area the player is already looking at, and
-          // it keeps the popup from blowing past the top of the viewport.
-          // Capture the seed strip's rect BEFORE closing the host menu.
+          // Anchor the per-animal popup right above the toolbar / seed
+          // strip — the live action area the player is already looking
+          // at. openAnimalMenu clamps to the viewport, so passing a y
+          // near the bottom is enough: the clamp will lift the popup up
+          // by exactly its own height. Reads geometry BEFORE closing the
+          // host menu, since the toolbar/seed-strip elements aren't
+          // hidden but the host's reflow can otherwise jiggle the rects.
+          const tbRect = (() => {
+            const el = document.getElementById('toolbar');
+            return el ? el.getBoundingClientRect() : null;
+          })();
           const stripRect = (() => {
             const el = document.getElementById('seedStrip');
             return el ? el.getBoundingClientRect() : null;
           })();
           const cx = window.innerWidth / 2 - 130;
-          // openAnimalMenu adds +12 to the y, then clamps to the viewport
-          // — pass a y that lands the menu's bottom right above the seed
-          // strip (with a small breathing gap).
-          const targetBottom = stripRect ? stripRect.top - 12 : window.innerHeight - 12;
-          const cy = Math.max(40, targetBottom - 260);   // ~260 = popup height
+          // Aim for a screenY that the menu's clamp resolves to "just
+          // above the seed strip / toolbar with a small gap." Passing
+          // anchor = window.innerHeight forces the clamp to the lower
+          // edge minus the popup's own height, which is exactly what we
+          // want regardless of how tall the popup ends up being.
+          const anchorTop = (stripRect && stripRect.top) ||
+                            (tbRect && tbRect.top) ||
+                            window.innerHeight;
+          // Subtract a 16px breathing gap, and back off the +12 that
+          // openAnimalMenu adds when clamping with screenY + 12.
+          const cy = anchorTop - 16 - 12;
           closeAnimalMenu();
           openAnimalMenu(animalKey, animal, cx, cy);
+          // openAnimalMenu's first clamp uses offsetHeight read straight
+          // after .hidden is removed; on some browsers that height is 0
+          // until the next layout pass, so re-clamp on the next tick to
+          // make sure the bottom edge actually hugs the strip.
+          requestAnimationFrame(() => {
+            const m = document.getElementById('animalMenu');
+            if (!m || m.classList.contains('hidden')) return;
+            const h = m.offsetHeight;
+            if (!h) return;
+            const targetTop = anchorTop - 16 - h;
+            const yy = Math.max(8, Math.min(window.innerHeight - h - 8, targetTop));
+            m.style.top = yy + 'px';
+          });
           audio.play('click');
         }
       });
@@ -5666,16 +5697,19 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   wireActionBtn(rideBtn, actionList[0]);
   wireActionBtn(collectBtn, actionList[1]);
   if (slaughterBtn) {
-    if (actionList[2]) {
-      // Override the slaughter-red palette with the same neutral green that
-      // the ride button uses for hire actions.
+    const a = actionList[2];
+    // Default: override the slaughter-red palette with green for hire-
+    // style actions (Staff Hall etc.). Actions that should keep the
+    // angry-red look (like a Slaughter Mode shortcut) opt in by setting
+    // a.danger = true.
+    if (a && !a.danger) {
       slaughterBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
       slaughterBtn.style.borderColor = '#2A4A1A';
     } else {
       slaughterBtn.style.background = '';
       slaughterBtn.style.borderColor = '';
     }
-    wireActionBtn(slaughterBtn, actionList[2]);
+    wireActionBtn(slaughterBtn, a);
   }
   // Move button — every non-permanent building can be relocated from its
   // own menu, so the player has to explicitly opt in to picking it up
@@ -6206,17 +6240,21 @@ function queueOneClickSlaughter(animalKey, animal) {
   audio.play('click');
   return true;
 }
-// Sweep every placed animal whose home tile sits outside ALL pens into
-// the closest free interior tile of the nearest pen. Idempotent — running
-// it twice on already-corralled animals is a no-op. Returns the count
-// moved so callers can surface a toast when they round strays up.
+// Sweep every placed animal AND slaughterhouse whose home tile sits
+// outside ALL pens into the closest free interior tile of the nearest
+// pen. Slaughterhouses live inside the pen by design, so a botched move
+// or stale save where the structure ended up outside the fence gets
+// pulled back in. Idempotent. Returns the count moved.
 function sweepStrayAnimalsIntoPens() {
   const pens = getAllBarnPens();
   if (pens.length === 0) return 0;
   let moved = 0;
   for (const k in state.placed) {
     const it = state.placed[k];
-    if (!it || !it.id || !it.id.startsWith('animal_')) continue;
+    if (!it || !it.id) continue;
+    const isAnimal = it.id.startsWith('animal_');
+    const isSlaughterhouse = it.id === 'building_slaughterhouse';
+    if (!isAnimal && !isSlaughterhouse) continue;
     // Dogs roam freely — they're not pen-bound.
     if (it.id === 'animal_dog') continue;
     const [hx, hy] = k.split(',').map(Number);
@@ -6236,8 +6274,9 @@ function sweepStrayAnimalsIntoPens() {
     if (best) {
       delete state.placed[k];
       state.placed[best.tk] = it;
-      // Reset wander offsets so the sprite snaps cleanly to its new home.
-      it.dx = it.dy = it.tx = it.ty = 0;
+      // Reset wander offsets so the sprite snaps cleanly to its new home
+      // (no-op for the slaughterhouse — it doesn't wander).
+      if (isAnimal) { it.dx = it.dy = it.tx = it.ty = 0; }
       moved++;
     }
   }
