@@ -1657,16 +1657,20 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-04</div>
       <ul>
-        <li>Each silo now stores its own feed — overflow cascades into the next silo instead of being lost.</li>
+        <li>Each silo stores its own feed — overflow cascades into the next silo instead of being lost.</li>
         <li>Hover tooltips + pointer cursor work on every building (silo, barn, cottage, etc.) without a click.</li>
         <li>Drag-paint multiple trees in one motion, just like crops.</li>
-        <li>Slaughter is now a toolbar button — grayed out until the slaughterhouse unlocks at Lv 11.</li>
-        <li>Click a barn to see every animal in its pen with age, lifetime yield, and current slaughter price.</li>
+        <li>Slaughter is a toolbar button — grayed out until the slaughterhouse unlocks at Lv 11.</li>
+        <li>Click a barn to see every animal in its pen (age, lifetime yield, slaughter price).</li>
         <li>Animal hitboxes follow the wandering sprite, not the original drop tile.</li>
+        <li>Each barn can have its own pen — first barn auto-fences, subsequent barns ask first.</li>
+        <li>Workers can be renamed and have their gender swapped from the worker menu.</li>
         <li>Leaderboard now ranks by animals owned and animals slaughtered.</li>
-        <li>Buildings lock by default — open the building menu and tap "Unlock To Move" to relocate.</li>
-        <li>Plowing is blocked under tall buildings (no more crops growing inside the cottage).</li>
+        <li>Buildings lock by default — open the menu and tap "Unlock To Move" to relocate.</li>
+        <li>Plowing is blocked under tall buildings (no more crops inside the cottage).</li>
         <li>"Crop isn't ready" floats over the tile with the remaining time when you try to harvest early.</li>
+        <li>Moving a tree shows a preview at its actual growth stage, not a sapling.</li>
+        <li>Multi-tab guard: refuses to overwrite a newer save from another tab.</li>
         <li>Tree fully-grown chime + arcadey beeps removed; coin/click/place/levelup retuned to softer cues.</li>
         <li>Music auto-advances reliably from track to track now.</li>
         <li>Roadmap added to the splash so you can see what's coming next.</li>
@@ -2245,6 +2249,25 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 
 <!-- Pop-up action menu for clicking on an animal — shows Collect / Slaughter
      buttons whichever apply. -->
+<!-- Lightweight modal for editing a worker's name + gender. Wired by
+     openWorkerEditModal() — replaces the per-staff inline UI so the form
+     can sit on top of the field without crowding the menu. -->
+<div id="workerEditModal" class="modal hidden">
+  <div class="modal-body" style="width:auto;max-width:min(360px,92vw);padding:18px 22px;">
+    <h2 style="text-align:center;margin-bottom:10px;">Edit Worker</h2>
+    <label style="display:block;font-size:12px;font-weight:800;color:#6A4A22;margin-bottom:4px;">Name</label>
+    <input type="text" id="workerEditName" maxlength="20" style="width:100%;box-sizing:border-box;padding:8px 11px;border:2px solid var(--wood-3);border-radius:8px;background:#FFF8E1;font-weight:700;color:#3a2410;">
+    <label style="display:block;font-size:12px;font-weight:800;color:#6A4A22;margin:10px 0 4px;">Gender</label>
+    <div class="splashGender" id="workerEditGender" style="display:flex;gap:8px;">
+      <button type="button" class="splashGenderBtn" data-gender="boy">&#128104;&#8205;&#127806; Boy</button>
+      <button type="button" class="splashGenderBtn" data-gender="girl">&#128105;&#8205;&#127806; Girl</button>
+    </div>
+    <div class="modal-foot" style="justify-content:flex-end;gap:8px;margin-top:14px;">
+      <button class="splashBtn" id="workerEditCancel" style="width:auto;padding:7px 14px;font-size:13px;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border-color:var(--wood-3);box-shadow:0 3px 0 var(--wood-3);">Cancel</button>
+      <button class="splashBtn primary" id="workerEditSave" style="width:auto;padding:7px 14px;font-size:13px;">Save</button>
+    </div>
+  </div>
+</div>
 <div id="animalMenu" class="hidden">
   <div class="am-title" id="amTitle"></div>
   <div class="am-desc" id="amDesc" style="display:none;font-size:12px;font-weight:600;color:#4A2E15;line-height:1.35;text-align:center;padding:6px 8px 4px;"></div>
@@ -2545,15 +2568,19 @@ const ANIMAL_WANDER_REST_MAX  = 5500;
 // independent of the placed dog's idle wander, so they don't conflict.
 const PEN_WANDER_EXCLUDE = new Set();
 function tickPlacedAnimals(dtMs) {
-  if (!state.placed || !state.barnPen) return;
+  if (!state.placed) return;
+  if (getAllBarnPens().length === 0) return;
   const dt = dtMs / 1000;
   const now = Date.now();
-  const pen = state.barnPen;
   for (const k in state.placed) {
     const it = state.placed[k];
     if (!it || !it.id || !it.id.startsWith('animal_')) continue;
     if (PEN_WANDER_EXCLUDE.has(it.id)) continue;
     const [hx, hy] = k.split(',').map(Number);
+    // Each animal stays inside whichever pen contains its home tile —
+    // multi-pen farms don't have animals strolling between barns.
+    const pen = findBarnPenAt(hx, hy);
+    if (!pen) continue;
     if (typeof it.dx !== 'number') it.dx = 0;
     if (typeof it.dy !== 'number') it.dy = 0;
     if (typeof it.tx !== 'number') it.tx = 0;
@@ -3674,7 +3701,7 @@ const storage = {
                 'camX','camY','zoom','plots','placed','farmExpansion','worldBounds','player','rotation',
                 'cropFarmW','cropFarmH','stats','achievements','quests','questsCompleted',
                 'dailies','dailyResetAt','dailiesCompleted','dailyStreak','lastDailyDay',
-                'tutorialStep','prefs','barnPen','clearedWild','barnTutorialShown','greenhouseTutorialShown',
+                'tutorialStep','prefs','barnPen','barnPens','clearedWild','barnTutorialShown','greenhouseTutorialShown',
                 'siloTutorialShown','dogTutorialShown','greenhouse','priorityQuests','silo','staff','staffTutorialShown','coffeeStand','expandHintShown',
                 'slaughterhouseTutorialShown','staffComboTutorialShown'],
   // Load from a parsed save object (used by both local + cloud paths).
@@ -3702,6 +3729,29 @@ const storage = {
     // After wipe(), refuse further saves so a tail-end loop tick can't
     // re-create the save file in the milliseconds before location.reload().
     if (storage._wiped) return;
+    // Multi-tab guard: if another tab has already written a newer save to
+    // the same key, refuse to stomp it. This catches the "open game in two
+    // tabs, play in tab B, close tab A" scenario where the closing tab
+    // would otherwise nuke the active tab's progress.
+    try {
+      const raw = localStorage.getItem(SAVE_KEY);
+      if (raw) {
+        const remote = JSON.parse(raw);
+        const ourLast = state.lastSaved || 0;
+        const theirLast = (remote && remote.lastSaved) || 0;
+        // Allow tiny clock jitter (5s) — only treat the disk version as
+        // authoritatively newer if it's more than 5 seconds ahead of ours.
+        if (theirLast - ourLast > 5000) {
+          // Don't overwrite. Toast once per session so the player knows
+          // why their progress here might look stale on next load.
+          if (!storage._staleNoticeShown) {
+            storage._staleNoticeShown = true;
+            try { toast('Another tab is saving — refresh to sync.', true, '', 6000); } catch (e) {}
+          }
+          return;
+        }
+      }
+    } catch (e) { /* ignore parse errors and proceed with the save */ }
     state.lastSaved = Date.now();
     const payload = this.buildPayload();
     try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {}
@@ -5171,13 +5221,17 @@ const BUILDING_MENUS = {
   },
   building_barn: {
     title: 'Big Red Barn',
-    desc: () => {
-      // Roster: every animal currently inside the pen, sorted by species
-      // then age. Shows current age stage, lifetime yield count, and the
-      // current slaughter price (factoring age × silo bonus) so the player
-      // can decide who's ready for the chopping block at a glance.
-      if (!state.barnPen) return 'Buy farm animals and stable them in the pen.';
-      const pen = state.barnPen;
+    desc: (ctx) => {
+      // Roster: every animal currently inside this barn's pen, sorted by
+      // species then age. Multi-pen farms only show animals that belong
+      // to the clicked barn — different barns have different rosters.
+      const pen = (ctx && typeof ctx.ix === 'number')
+        ? findBarnPenForBarn(ctx.ix, ctx.iy)
+        : (getAllBarnPens()[0] || null);
+      if (!pen) {
+        return 'Standalone barn — no fenced pen attached. Buy a Big Red Barn ' +
+               'and choose "with fence" to add an animal pen.';
+      }
       const rows = [];
       for (const k in state.placed) {
         const it = state.placed[k];
@@ -5436,7 +5490,7 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   const rideBtn = document.getElementById('amRide');
   const closeBtn = document.getElementById('amClose');
   if (desc) {
-    const descContent = typeof cfg.desc === 'function' ? cfg.desc() : (cfg.desc || '');
+    const descContent = typeof cfg.desc === 'function' ? cfg.desc({ ix, iy }) : (cfg.desc || '');
     desc.innerHTML = descContent;
     desc.style.display = descContent ? '' : 'none';
   }
@@ -5906,17 +5960,56 @@ function drawPlayer(cx, cy, walking, facing, busy, time) {
 // translate the existing pen rather than spawning a fresh rect, so the
 // pen + everything inside it follows the barn.
 const BARN_PEN_W = 6, BARN_PEN_H = 6;
+// Multi-pen helpers — every barn that comes with a fence has its own pen
+// rect in state.barnPens. Legacy saves stored a single pen on
+// state.barnPen; the loader migrates that into state.barnPens[0].
+function getAllBarnPens() {
+  if (Array.isArray(state.barnPens)) return state.barnPens;
+  return state.barnPen ? [state.barnPen] : [];
+}
+function findBarnPenAt(ix, iy) {
+  for (const p of getAllBarnPens()) {
+    if (ix >= p.x0 && iy >= p.y0 && ix < p.x0 + p.w && iy < p.y0 + p.h) return p;
+  }
+  return null;
+}
+function findBarnPenForBarn(ix, iy) {
+  for (const p of getAllBarnPens()) {
+    if (p.barnIx === ix && p.barnIy === iy) return p;
+  }
+  return null;
+}
+function removeBarnPen(pen) {
+  if (!pen) return;
+  if (Array.isArray(state.barnPens)) {
+    const i = state.barnPens.indexOf(pen);
+    if (i >= 0) state.barnPens.splice(i, 1);
+  }
+  if (state.barnPen === pen) state.barnPen = null;
+}
+function addBarnPen(pen) {
+  if (!Array.isArray(state.barnPens)) state.barnPens = [];
+  state.barnPens.push(pen);
+  // Mirror to legacy pointer so any unmigrated code still finds A pen.
+  if (!state.barnPen) state.barnPen = pen;
+}
 function barnPenAt(ix, iy) {
-  if (live.placeMode && live.placeMode.moving && state.barnPen &&
-      typeof state.barnPen.barnIx === 'number' && typeof state.barnPen.barnIy === 'number') {
-    const dx = ix - state.barnPen.barnIx;
-    const dy = iy - state.barnPen.barnIy;
-    return {
-      x0: state.barnPen.x0 + dx,
-      y0: state.barnPen.y0 + dy,
-      w: state.barnPen.w || BARN_PEN_W,
-      h: state.barnPen.h || BARN_PEN_H,
-    };
+  // Moving an existing barn: translate that barn's existing pen so the
+  // pen + animals follow. Use the per-barn pen lookup so multi-barn farms
+  // don't accidentally translate the wrong enclosure.
+  if (live.placeMode && live.placeMode.moving && live.placeMode.origKey) {
+    const [obx, oby] = live.placeMode.origKey.split(',').map(Number);
+    const existing = findBarnPenForBarn(obx, oby);
+    if (existing) {
+      const dx = ix - existing.barnIx;
+      const dy = iy - existing.barnIy;
+      return {
+        x0: existing.x0 + dx,
+        y0: existing.y0 + dy,
+        w: existing.w || BARN_PEN_W,
+        h: existing.h || BARN_PEN_H,
+      };
+    }
   }
   const r = ((state.rotation || 0) % 4 + 4) % 4;
   let dx0, dy0;
@@ -5933,8 +6026,12 @@ function barnPenAt(ix, iy) {
 // items in tiles entering the new pen footprint (and not coming from
 // the old footprint) get refunded the same way an initial barn placement
 // clears them.
-function movePenWithBarn(newBarnIx, newBarnIy, newBarnKey) {
-  const oldPen = state.barnPen;
+function movePenWithBarn(newBarnIx, newBarnIy, newBarnKey, oldBarnIx, oldBarnIy) {
+  // Locate the pen anchored to the OLD barn position so multi-pen farms
+  // translate the correct enclosure (not just the first one).
+  const oldPen = (typeof oldBarnIx === 'number' && typeof oldBarnIy === 'number')
+    ? findBarnPenForBarn(oldBarnIx, oldBarnIy)
+    : (state.barnPen);
   if (!oldPen) return;
   const dx = newBarnIx - oldPen.barnIx;
   const dy = newBarnIy - oldPen.barnIy;
@@ -5990,9 +6087,7 @@ function barnPenGate(pen) {
   return null;
 }
 function inBarnPen(ix, iy) {
-  const b = state.barnPen;
-  if (!b) return false;
-  return ix >= b.x0 && iy >= b.y0 && ix < b.x0 + b.w && iy < b.y0 + b.h;
+  return !!findBarnPenAt(ix, iy);
 }
 // Outlined 8×8 preview of the pending animal pen — shown while the
 // player is hovering with the barn in their hand. Translucent green
@@ -6033,13 +6128,27 @@ function buildFenceList(list) {
   // would draw between farm-and-pen tiles — the pen has its own ring, so
   // doubling up creates a U-shape that wraps around the pen.
   fenceRect(list, b.x0, b.y0, b.w, b.h, isMainFarm, null, (nx, ny) => inBarnPen(nx, ny));
-  // Animal pen — leave a one-tile opening directly in front of the barn
-  // doors so the farmer can walk into the pen without the fence visually
-  // blocking the doorway. Gate side is derived from the barn's position
-  // relative to the pen so it stays correct under any camera rotation.
-  if (state.barnPen) {
-    const p = state.barnPen;
-    fenceRect(list, p.x0, p.y0, p.w, p.h, (ix, iy) => inBarnPen(ix, iy), barnPenGate(p));
+  // Animal pen(s) — leave a one-tile opening directly in front of each
+  // barn's doors so the farmer can walk into the pen without the fence
+  // visually blocking the doorway. Gate side is derived from the barn's
+  // position relative to the pen so it stays correct under any camera
+  // rotation. Each pen gets its own ring; multi-barn farms render every
+  // enclosure independently.
+  const allPens = getAllBarnPens();
+  // When two pens butt up against each other, suppress fence segments on
+  // the shared border so the pens read as connected stalls instead of a
+  // double-walled corridor.
+  const otherPenContains = (skipPen, nx, ny) => {
+    for (const p of allPens) {
+      if (p === skipPen) continue;
+      if (nx >= p.x0 && ny >= p.y0 && nx < p.x0 + p.w && ny < p.y0 + p.h) return true;
+    }
+    return false;
+  };
+  for (const p of allPens) {
+    const inside = (ix, iy) => ix >= p.x0 && iy >= p.y0 && ix < p.x0 + p.w && iy < p.y0 + p.h;
+    fenceRect(list, p.x0, p.y0, p.w, p.h, inside, barnPenGate(p),
+              (nx, ny) => otherPenContains(p, nx, ny));
   }
 }
 function fenceRect(list, x0, y0, w, h, isInside, gate, skipNeighbor) {
@@ -6170,18 +6279,34 @@ function isPlaceableTile(ix, iy) {
   // barn, the pen translates with it; the same fit check still applies.
   if (id === 'building_barn') {
     if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) return false;
-    const isMoving = !!(live.placeMode && live.placeMode.moving && state.barnPen);
-    if (!isMoving && inBarnPen(ix, iy)) return false;
-    // While moving, the existing pen is treated as "self" — landing the
-    // barn anchor on a tile that was inside the OLD pen is fine as long
-    // as the resulting NEW barn tile is outside the NEW pen.
+    // While moving an existing barn, the OWN pen is "self" — landing on a
+    // tile inside it is fine as long as the new barn ends up outside the
+    // translated pen rect. Other pens (different barns) still block.
+    let movingPen = null;
+    if (live.placeMode && live.placeMode.moving && live.placeMode.origKey) {
+      const [obx, oby] = live.placeMode.origKey.split(',').map(Number);
+      movingPen = findBarnPenForBarn(obx, oby);
+    }
+    const inOtherPen = getAllBarnPens().some(p =>
+      p !== movingPen && ix >= p.x0 && iy >= p.y0 && ix < p.x0 + p.w && iy < p.y0 + p.h);
+    if (inOtherPen) return false;
     if (state.placed[tileKey(ix, iy)]) return false;
-    const pen = barnPenAt(ix, iy);
-    if (pen.x0 < 0 || pen.y0 < 0 ||
-        pen.x0 + pen.w > WORLD_W || pen.y0 + pen.h > WORLD_H) return false;
-    // Barn must end up OUTSIDE the (new) pen rect.
-    if (ix >= pen.x0 && ix < pen.x0 + pen.w &&
-        iy >= pen.y0 && iy < pen.y0 + pen.h) return false;
+    // Only validate pen-fit when this barn HAS a pen (movingPen) or this
+    // is a fresh placement (will probably get one). Standalone barns being
+    // moved don't need pen-fit — but we still defend against world bounds.
+    if (movingPen) {
+      const pen = barnPenAt(ix, iy);
+      if (pen.x0 < 0 || pen.y0 < 0 ||
+          pen.x0 + pen.w > WORLD_W || pen.y0 + pen.h > WORLD_H) return false;
+      if (ix >= pen.x0 && ix < pen.x0 + pen.w &&
+          iy >= pen.y0 && iy < pen.y0 + pen.h) return false;
+    } else if (!live.placeMode || !live.placeMode.moving) {
+      // Fresh placement: a pen MIGHT spawn (player will be asked). Make
+      // sure the candidate pen rect would also fit in world space.
+      const pen = barnPenAt(ix, iy);
+      if (pen.x0 < 0 || pen.y0 < 0 ||
+          pen.x0 + pen.w > WORLD_W || pen.y0 + pen.h > WORLD_H) return false;
+    }
     return true;
   }
   // Animals must go inside the barn's pen.
@@ -6568,10 +6693,18 @@ function drawAll() {
     const c = isoCenter(ix, iy);
     ctx.save();
     ctx.globalAlpha = 0.7;
-    // Show the sapling silhouette while placing a tree.
-    const ghost = live.placeMode.id.startsWith('tree_')
-      ? { id: live.placeMode.id, plantedAt: Date.now(), treeStage: 1 }
-      : null;
+    // Tree ghost: when MOVING an existing tree we want the preview to
+    // match the tree's actual growth stage so the player can tell which
+    // sapling / mature tree they're dropping. Falls back to a stage-1
+    // sapling silhouette for fresh placements.
+    let ghost = null;
+    if (live.placeMode.id.startsWith('tree_')) {
+      const orig = live.placeMode.moving ? live.placeMode.origRecord : null;
+      ghost = orig
+        ? { id: live.placeMode.id, plantedAt: orig.plantedAt || Date.now(),
+            treeStage: orig.treeStage || 1, watered: orig.watered, fruitAt: orig.fruitAt }
+        : { id: live.placeMode.id, plantedAt: Date.now(), treeStage: 1 };
+    }
     drawPlacedItem(live.placeMode.id, c.x, c.y, ghost);
     ctx.restore();
     // Big Red Barn ghost also previews the 8×8 animal pen that'll spawn
@@ -6789,8 +6922,9 @@ function hireStaff(role, opts) {
   if (!spawn) spawn = { ix: state.player.ix, iy: state.player.iy };
   const id = state.staff.nextStaffId++;
   const name = STAFF_NAMES[Math.floor(Math.random() * STAFF_NAMES.length)];
+  const gender = Math.random() < 0.5 ? 'boy' : 'girl';
   state.staff.members.push({
-    id, role, name,
+    id, role, name, gender,
     ix: spawn.ix, iy: spawn.iy,
     facing: 1, queue: [],
     nextMoveAt: Date.now() + 1000 + Math.random() * 2000,
@@ -7015,6 +7149,40 @@ function staffAtTile(ix, iy) {
   }
   return null;
 }
+// Pop a small modal that lets the player rename a worker and switch
+// their gender. Saves into state.staff.members[*] so the next render
+// + the leaderboard / save sync see the new identity.
+function openWorkerEditModal(member) {
+  const modal = document.getElementById('workerEditModal');
+  if (!modal) return;
+  const nameInput = document.getElementById('workerEditName');
+  const genderRow = document.getElementById('workerEditGender');
+  if (!nameInput || !genderRow) return;
+  nameInput.value = member.name || '';
+  let chosenGender = member.gender || 'boy';
+  const chips = genderRow.querySelectorAll('.splashGenderBtn');
+  chips.forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-gender') === chosenGender);
+    b.onclick = () => {
+      chosenGender = b.getAttribute('data-gender');
+      chips.forEach(c => c.classList.toggle('active', c === b));
+    };
+  });
+  document.getElementById('workerEditCancel').onclick = () => modal.classList.add('hidden');
+  document.getElementById('workerEditSave').onclick = () => {
+    const trimmed = (nameInput.value || '').trim().slice(0, 20);
+    member.name = trimmed || member.name || 'Worker';
+    member.gender = chosenGender;
+    modal.classList.add('hidden');
+    storage.save();
+    refreshHud();
+    toast(`Updated ${member.name}.`, false, 'good');
+  };
+  modal.classList.remove('hidden');
+  // Focus the input so the player can immediately retype.
+  setTimeout(() => { try { nameInput.focus(); nameInput.select(); } catch (e) {} }, 0);
+}
+
 function fireStaff(member) {
   if (!state.staff || !state.staff.members) return;
   const idx = state.staff.members.indexOf(member);
@@ -7059,6 +7227,17 @@ function openStaffMenu(member, screenX, screenY) {
     rideBtn.onclick = () => {
       closeAnimalMenu();
       enterCropFarmerZoneEdit(member);
+    };
+  }
+  // Edit name + gender — pop up a small modal. Reuse the petBtn slot
+  // so every worker (not just crop farmers) gets the edit affordance.
+  if (petBtn) {
+    petBtn.style.display = '';
+    petBtn.disabled = false;
+    petBtn.textContent = '✏️ Edit Worker';
+    petBtn.onclick = () => {
+      closeAnimalMenu();
+      openWorkerEditModal(member);
     };
   }
   // Fire — repurpose slaughter button (red gradient is fitting here).
@@ -7429,8 +7608,16 @@ function drawStaff(member, cx, cy, walking, time) {
   // Apron strap stripe to read as "uniform".
   ctx.fillStyle = '#FBE38A'; ctx.strokeStyle = '#A87A20';
   rrect(-2, -10, 4, 14, 1, '#FBE38A', '#A87A20', 1);
-  // Head + hair.
+  // Head + hair. Girls get a slightly longer hair shape under the hat
+  // so the gender chip on the worker menu shows visually in the field.
   rrect(-5, -22, 10, 12, 2, '#FFD9B0', '#7A4A23', 1.6);
+  if (member.gender === 'girl') {
+    ctx.fillStyle = '#5A3A1F';
+    ctx.beginPath();
+    ctx.ellipse(-5, -16, 2.4, 5, 0, 0, Math.PI * 2);
+    ctx.ellipse( 5, -16, 2.4, 5, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
   // Straw hat — wide brim ellipse + low crown.
   ctx.fillStyle = hat; ctx.strokeStyle = hatBrim;
   ctx.beginPath();
@@ -7637,37 +7824,46 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     }
     if (!data.id.startsWith('animal_')) delete state.plots[k];
     state.placed[k] = rec;
-    // First Big Red Barn placement spawns the 8×8 animal pen as its own
-    // fenced region just outside the main farm. We remember which barn
-    // anchored the pen so the fence + gate can rebuild from state.
-    if (data.id === 'building_barn' && !state.barnPen && !data.moving) {
-      state.barnPen = barnPenAt(ix, iy);
-      state.barnPen.barnIx = ix;
-      state.barnPen.barnIy = iy;
-      // Clear anything already on the soon-to-be-pen tiles: growing crops,
-      // bought farm-expansion ownership, AND placed items (other than the
-      // barn itself). Without this last sweep, decor/animals/buildings
-      // dropped on those tiles before the barn went down get visually
-      // overlapped by the new pen fence.
-      const barnKey = tileKey(ix, iy);
-      for (let dy = 0; dy < state.barnPen.h; dy++) {
-        for (let dx = 0; dx < state.barnPen.w; dx++) {
-          const tx = state.barnPen.x0 + dx, ty = state.barnPen.y0 + dy;
-          const k = tileKey(tx, ty);
-          delete state.plots[k];
-          if (state.farmExpansion) delete state.farmExpansion[k];
-          if (k !== barnKey && state.placed[k]) {
-            // Refund the placed item so the player isn't punished for the move.
-            const placed = state.placed[k];
-            const refund = Math.max(1, Math.round((placed.cost ?? 10) * 0.5));
-            state.coins += refund;
-            delete state.placed[k];
+    // Big Red Barn placement: every barn can have its own fenced pen.
+    // The first barn always comes with a pen; subsequent barns ask the
+    // player up front. The pen anchors back to its barn so the fence +
+    // gate redraw correctly from state.
+    if (data.id === 'building_barn' && !data.moving) {
+      const existingPens = getAllBarnPens();
+      const isFirstBarn = existingPens.length === 0;
+      const wantPen = isFirstBarn || (typeof data.includePen === 'boolean'
+        ? data.includePen
+        : confirm('Build a fenced pen attached to this barn? (Cancel = barn only.)'));
+      if (wantPen) {
+        const pen = barnPenAt(ix, iy);
+        pen.barnIx = ix;
+        pen.barnIy = iy;
+        addBarnPen(pen);
+        // Clear anything already on the soon-to-be-pen tiles: growing crops,
+        // bought farm-expansion ownership, AND placed items (other than the
+        // barn itself). Without this last sweep, decor/animals/buildings
+        // dropped on those tiles before the barn went down get visually
+        // overlapped by the new pen fence.
+        const barnKey = tileKey(ix, iy);
+        for (let dy = 0; dy < pen.h; dy++) {
+          for (let dx = 0; dx < pen.w; dx++) {
+            const tx = pen.x0 + dx, ty = pen.y0 + dy;
+            const k = tileKey(tx, ty);
+            delete state.plots[k];
+            if (state.farmExpansion) delete state.farmExpansion[k];
+            if (k !== barnKey && state.placed[k]) {
+              // Refund the placed item so the player isn't punished for the move.
+              const placed = state.placed[k];
+              const refund = Math.max(1, Math.round((placed.cost ?? 10) * 0.5));
+              state.coins += refund;
+              delete state.placed[k];
+            }
           }
         }
       }
       // First-time barn tutorial — pop a popup explaining the new pen +
       // shop animals workflow. Pulses the shop button to draw the eye.
-      if (!state.barnTutorialShown) {
+      if (isFirstBarn && wantPen && !state.barnTutorialShown) {
         state.barnTutorialShown = true;
         setTimeout(() => {
           openModal('barnTutorialModal');
@@ -7744,11 +7940,13 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     const placed = state.placed[k];
     if (placed) {
       if (placed.permanent) return fail("That can't be sold.");
-      // The barn anchors the pen — refuse to sell while a pen exists,
-      // otherwise the pen would float orphaned with no barn.
-      if (placed.id === 'building_barn' &&
-          state.barnPen && state.barnPen.barnIx === ix && state.barnPen.barnIy === iy) {
-        return fail('Sell the animal pen first (Move handles it).');
+      // The barn anchors its pen — refuse to sell while that specific
+      // pen exists, otherwise the pen would float orphaned with no barn.
+      // Multi-pen farms only block selling the barn whose pen is attached;
+      // standalone (no-pen) barns sell freely.
+      if (placed.id === 'building_barn') {
+        const myPen = findBarnPenForBarn(ix, iy);
+        if (myPen) return fail('Sell the animal pen first (Move handles it).');
       }
       const item = shopItem(placed.id);
       const refund = Math.max(1, Math.round((placed.cost ?? (item ? item.cost : 10)) * 0.5));
@@ -8127,9 +8325,13 @@ function tryPlace(ix, iy, silent=false) {
   state.placed[k] = rec;
   // Barn move: translate the existing pen + everything inside it so the
   // animal pen follows the barn instead of being orphaned at the old spot.
-  if (pm.moving && pm.id === 'building_barn' && state.barnPen &&
-      typeof state.barnPen.barnIx === 'number' && typeof state.barnPen.barnIy === 'number') {
-    movePenWithBarn(ix, iy, k);
+  // The lookup uses the OLD barn key so multi-pen farms translate the
+  // correct enclosure (the one anchored to the barn we just picked up).
+  if (pm.moving && pm.id === 'building_barn' && pm.origKey) {
+    const [obx, oby] = pm.origKey.split(',').map(Number);
+    if (findBarnPenForBarn(obx, oby)) {
+      movePenWithBarn(ix, iy, k, obx, oby);
+    }
   }
   if (!pm.id.startsWith('tree_')) {
     audio.play('place');
@@ -11806,6 +12008,15 @@ async function startGame() {
         delete state.placed[k];
       }
     }
+    // Migration: legacy saves stored a single state.barnPen. New code
+    // reads state.barnPens (array), so promote the legacy pen into the
+    // array. Keep state.barnPen pointing at the same record so unmigrated
+    // call sites still find a pen.
+    if (!Array.isArray(state.barnPens)) state.barnPens = [];
+    if (state.barnPen && !state.barnPens.includes(state.barnPen)) {
+      state.barnPens.unshift(state.barnPen);
+    }
+    if (!state.barnPen && state.barnPens.length > 0) state.barnPen = state.barnPens[0];
     // Silo state: older saves don't have it; either way, reset lastTickAt
     // so the first siloTick after load doesn't drain a giant offline gap.
     if (!state.silo || typeof state.silo !== 'object') {
@@ -11856,10 +12067,12 @@ async function startGame() {
       state.staff.lastLoyaltyAt = Date.now();
       if (typeof state.staff.nextStaffId !== 'number') state.staff.nextStaffId = 1;
       // Migration: pre-existing animal keepers were spawned south of the
-      // staff hall. Snap them back into the pen so they don't wander out.
-      if (state.barnPen) {
-        const p = state.barnPen;
-        const inside = (x, y) => x >= p.x0 && y >= p.y0 && x < p.x0 + p.w && y < p.y0 + p.h;
+      // staff hall. Snap them back into ANY pen so they don't wander out.
+      const allPensForKeeper = getAllBarnPens();
+      if (allPensForKeeper.length > 0) {
+        const p = allPensForKeeper[0];
+        const inside = (x, y) => allPensForKeeper.some(pp =>
+          x >= pp.x0 && y >= pp.y0 && x < pp.x0 + pp.w && y < pp.y0 + pp.h);
         for (const m of state.staff.members) {
           if (m.role !== 'animal_keeper') continue;
           if (!inside(m.homeIx, m.homeIy)) {
