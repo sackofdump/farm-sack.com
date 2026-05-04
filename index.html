@@ -5613,12 +5613,20 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           // top-left corner).
           const animal = state.placed[animalKey];
           if (!animal) return;
-          const r = btn.getBoundingClientRect();
-          // Center the popup on screen instead of pinning it to the row
-          // — the row sits at the table's right edge so anchoring there
-          // shoves the new menu off the visible area.
+          // Park the per-animal popup just above the seed strip — that's
+          // the live action area the player is already looking at, and
+          // it keeps the popup from blowing past the top of the viewport.
+          // Capture the seed strip's rect BEFORE closing the host menu.
+          const stripRect = (() => {
+            const el = document.getElementById('seedStrip');
+            return el ? el.getBoundingClientRect() : null;
+          })();
           const cx = window.innerWidth / 2 - 130;
-          const cy = window.innerHeight / 2 - 140;
+          // openAnimalMenu adds +12 to the y, then clamps to the viewport
+          // — pass a y that lands the menu's bottom right above the seed
+          // strip (with a small breathing gap).
+          const targetBottom = stripRect ? stripRect.top - 12 : window.innerHeight - 12;
+          const cy = Math.max(40, targetBottom - 260);   // ~260 = popup height
           closeAnimalMenu();
           openAnimalMenu(animalKey, animal, cx, cy);
           audio.play('click');
