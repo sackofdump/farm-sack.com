@@ -6075,6 +6075,15 @@ function barnPenAt(ix, iy) {
 // that would otherwise vanish under the new fence).
 function attachBarnPen(barnIx, barnIy) {
   const pen = barnPenAt(barnIx, barnIy);
+  // Guardrail: refuse to attach a pen that would render past the world
+  // edge. Earlier builds let some slip through and the ghost fences had
+  // to be migrated out — keep the door shut here too.
+  if (pen.x0 < 0 || pen.y0 < 0 ||
+      pen.x0 + pen.w > WORLD_W || pen.y0 + pen.h > WORLD_H) {
+    toast('Pen wouldn\'t fit — barn placed without a fence.', true);
+    audio.play('error');
+    return null;
+  }
   pen.barnIx = barnIx;
   pen.barnIy = barnIy;
   addBarnPen(pen);
@@ -12135,23 +12144,34 @@ async function startGame() {
     }
     // Migration: legacy saves stored a single state.barnPen. New code
     // reads state.barnPens (array), so promote the legacy pen into the
-    // array. Dedupe by anchor coords — JSON serialization breaks object
-    // identity across reloads, so a naive `includes(state.barnPen)` would
-    // re-add the legacy pen on every refresh and the duplicates would
-    // diverge after a barn move (one stale, one fresh).
+    // array and then aggressively dedupe — earlier builds duplicated the
+    // legacy pen on every reload, so existing saves can carry stale
+    // entries with mismatched coords. We treat state.barnPens as the
+    // source of truth: keep the LAST entry for each barn anchor (latest
+    // write wins) and any state.placed["x,y"] === 'building_barn' tile.
+    // Anchors with no actual barn become orphaned pens and get dropped.
     if (!Array.isArray(state.barnPens)) state.barnPens = [];
-    const samePen = (a, b) => a && b && a.barnIx === b.barnIx && a.barnIy === b.barnIy;
-    if (state.barnPen && !state.barnPens.some(p => samePen(p, state.barnPen))) {
-      state.barnPens.unshift(state.barnPen);
+    if (state.barnPen) state.barnPens.push(state.barnPen);
+    const seenAnchor = new Map();
+    for (const p of state.barnPens) {
+      if (!p || typeof p.barnIx !== 'number' || typeof p.barnIy !== 'number') continue;
+      seenAnchor.set(p.barnIx + ',' + p.barnIy, p);
     }
-    // Always re-bind state.barnPen to the array entry so legacy aliases
-    // and the array share identity again — mutations now stay in sync.
-    if (state.barnPens.length > 0) {
-      const matching = state.barnPen
-        ? state.barnPens.find(p => samePen(p, state.barnPen))
-        : state.barnPens[0];
-      state.barnPen = matching || state.barnPens[0];
+    state.barnPens = [];
+    for (const [k, p] of seenAnchor) {
+      // Drop orphan pens whose barn no longer exists (avoids ghost fences
+      // where an old anchor lingers from a botched move).
+      const placed = state.placed && state.placed[k];
+      if (!placed || placed.id !== 'building_barn') continue;
+      // Drop pens whose rect would render outside the world. Older
+      // builds let these slip through validation; we'd rather lose the
+      // ghost pen than keep drawing a fence beyond the map edge.
+      if (p.x0 < 0 || p.y0 < 0 ||
+          p.x0 + (p.w || BARN_PEN_W) > WORLD_W ||
+          p.y0 + (p.h || BARN_PEN_H) > WORLD_H) continue;
+      state.barnPens.push(p);
     }
+    state.barnPen = state.barnPens[0] || null;
     // Silo state: older saves don't have it; either way, reset lastTickAt
     // so the first siloTick after load doesn't drain a giant offline gap.
     if (!state.silo || typeof state.silo !== 'object') {
