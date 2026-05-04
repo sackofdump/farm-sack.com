@@ -10435,7 +10435,14 @@ function expandAreaInfo() {
       tiles++;
     }
   }
-  const cost = Math.round(tiles * LAND_PRICE * 0.6);
+  // Ring is now a premium over buying tile-by-tile (was a 0.6× bulk
+  // discount), and scales up with each ring already taken so later
+  // expansions cost noticeably more than the first.
+  const base = state.worldBounds || defaultWorldBounds();
+  const baseW = (defaultWorldBounds().w) || 1;
+  const ringsTaken = Math.max(0, Math.round((base.w - baseW) / 2));
+  const ringMul = 1 + ringsTaken * 0.5;            // +50% per ring already owned
+  const cost = Math.round(tiles * LAND_PRICE * 2.4 * ringMul);
   const maxed = (newX0 < 0 || newY0 < 0 ||
                  newX0 + newW > WORLD_W || newY0 + newH > WORLD_H);
   return { tiles, cost, maxed };
