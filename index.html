@@ -10780,13 +10780,13 @@ function bindInput() {
       }
     }
 
-    // -------- SE-probe + menu opens --------
+    // -------- Menu opens (uses an SE probe to reach tall sprites) --------
     // Tall building/animal sprites visually extend NW of their anchor
     // tile, so a click on the upper body lands on an empty tile above
-    // the real building. Probe SE neighbours when the clicked tile is
-    // empty so the hitbox effectively reaches further up. The probe
-    // runs for every tool so Sell / Move can also find tall sprites;
-    // the menu-opens below stay gated to non-sell, non-move tools.
+    // the real building. The probe lets the menu-open path reach the
+    // sprite anyway. Action dispatch (canAct below) deliberately uses
+    // startT only — matching the Move tool's clean "literal tile under
+    // the cursor" behaviour so adjacent tiles don't get hijacked.
     let hereIx = startT.ix, hereIy = startT.iy;
     let placedHere = (e.button === 0 && !live.placeMode)
       ? state.placed[tileKey(hereIx, hereIy)]
@@ -10805,11 +10805,6 @@ function bindInput() {
         // Buildings get a wider probe (their bodies are big), trees and
         // animals only get the immediate SE neighbour so their hitboxes
         // don't stretch across multiple tiles.
-        // Tall buildings (silo, barn, greenhouse) extend several tiles
-        // above their anchor in screen space, so the probe ring reaches
-        // ~3 tiles SE of the cursor for buildings. Small sprites stay on
-        // the immediate ring so trees / animals don't bleed into adjacent
-        // tiles' hitboxes.
         const buildingProbes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[3,2],[2,3],[3,3]];
         const smallProbes    = [[1,0],[0,1],[1,1]];
         for (const [dx, dy] of buildingProbes) {
@@ -10819,12 +10814,10 @@ function bindInput() {
           const isBuilding = it.id.startsWith('building_');
           const isSmall    = it.id.startsWith('tree_') || it.id.startsWith('animal_');
           if (!isBuilding && !isSmall) continue;
-          // Small sprites only register if the probe is in the close ring.
           if (isSmall && !smallProbes.some(p => p[0] === dx && p[1] === dy)) continue;
           hereIx = px; hereIy = py; placedHere = it;
           break;
         }
-        // Probe SE for wandering animals as a final fallback.
         if (!placedHere) {
           for (const [dx, dy] of smallProbes) {
             const wandered = findAnimalAt(startT.ix + dx, startT.iy + dy);
@@ -11072,24 +11065,16 @@ function bindInput() {
       return;
     }
 
-    // Decide drag mode immediately:
-    // - left-click on a tile where the current tool can act → paint (queue)
-    // - if the click misses but a SE-probed sprite (tree/animal/building)
-    //   IS actionable, treat that as the start tile so drag-paint works
-    //   when you click slightly off the trunk
-    // - everything else (right-click, shift, can't act) → pan camera
-    const canActDirect = e.button === 0 && !e.shiftKey &&
-                         canActOnTile(state.selectedTool, startT.ix, startT.iy);
-    const canActProbe  = !canActDirect && e.button === 0 && !e.shiftKey &&
-                         (hereIx !== startT.ix || hereIy !== startT.iy) &&
-                         canActOnTile(state.selectedTool, hereIx, hereIy);
-    const canAct = canActDirect || canActProbe;
+    // Decide drag mode immediately. Action dispatch always uses the
+    // literal tile under the cursor (matches the Move tool) so a click
+    // that resolves visually to one tile can never act on a different
+    // tile. Right-click / shift / can't-act → pan camera.
+    const canAct = e.button === 0 && !e.shiftKey &&
+                   canActOnTile(state.selectedTool, startT.ix, startT.iy);
     if (canAct) {
       live.dragMode = 'paint';
-      const px = canActProbe ? hereIx : startT.ix;
-      const py = canActProbe ? hereIy : startT.iy;
-      paintTile(px, py, false);
-      lastPaintTile = { ix: px, iy: py };
+      paintTile(startT.ix, startT.iy, false);
+      lastPaintTile = { ix: startT.ix, iy: startT.iy };
     } else {
       // If the user clicked a farm tile with an action tool but the action
       // is invalid (e.g., Plant on untilled dirt), surface the error toast
