@@ -4160,12 +4160,12 @@ function screenToTile(sx, sy) {
   // off-target whenever the cursor passes over a tall sprite's body.
   if (live.placeMode) return isoTile;
   // Otherwise prefer a placed item's anchor tile, BUT only when the iso
-  // tile under the cursor is the placed item's tile or behind it. Tiles
-  // that are visually IN FRONT of the placed item (south on the iso
-  // grid) keep their literal value — so hovering the tile below a tree
-  // doesn't snap onto the tree.
+  // tile under the cursor is the placed item's tile or BEHIND it (lower
+  // ix+iy on the iso grid). Tiles that are visually IN FRONT of (or
+  // beside) the placed item keep their literal value — so hovering a
+  // tile next to a tree doesn't snap onto the tree.
   const hit = pickPlacedItem(wx, wy);
-  if (hit && (hit.ix + hit.iy) <= (isoTile.ix + isoTile.iy)) return hit;
+  if (hit && (isoTile.ix + isoTile.iy) <= (hit.ix + hit.iy)) return hit;
   return isoTile;
 }
 function pickPlacedItem(wx, wy) {
