@@ -11718,14 +11718,57 @@ function init() {
   const fill   = document.getElementById('loadingFill');
   const txt    = document.getElementById('loadingText');
   const screen = document.getElementById('loadingScreen');
+  // Folksy loading-screen tips. Cycle one every ~1.6s so the player has
+  // something to chew on while assets stream in. Hand-curated, no LLM
+  // garbage — keep them short, country, and slightly cheeky.
+  const FARMER_SAYINGS = [
+    "Greasin' the gates…",
+    "Tellin' the rooster what time it is…",
+    "Wakin' up the cows…",
+    "Don't count yer chickens 'fore they hatch.",
+    "A red sky at night is a farmer's delight.",
+    "Sharpening the plow…",
+    "Spit on yer hands and grab the handles.",
+    "Make hay while the sun shines.",
+    "A fence is only as strong as its weakest post.",
+    "Loadin' up the wagon…",
+    "Borrowin' the neighbor's mule…",
+    "Dirt don't hurt.",
+    "Plant by the moon, harvest by the sun.",
+    "Talkin' the dog into helpin' out…",
+    "Fixin' to fix the fixin's…",
+    "Patchin' the silo…",
+    "Don't put all your eggs in one basket.",
+    "If it ain't broke, plow around it.",
+    "Brewin' the coffee strong…",
+    "Hidin' the snacks from the goats…",
+    "Tippin' the scarecrow's hat…",
+    "Tendin' to the tomatoes…",
+    "Cleanin' the boots…",
+    "Settin' the dinner bell…",
+    "Saddlin' up…",
+    "Whisperin' to the wheat…",
+    "Hand-pickin' the strawberries…",
+    "Coaxin' the chickens off the porch…",
+    "Salt of the earth, that's us.",
+    "Pourin' a tall glass of cold water.",
+  ];
+  const tipState = { idx: Math.floor(Math.random() * FARMER_SAYINGS.length) };
+  const showTip = () => {
+    if (txt) txt.textContent = FARMER_SAYINGS[tipState.idx % FARMER_SAYINGS.length];
+    tipState.idx++;
+  };
+  showTip();
+  const tipTimer = setInterval(showTip, 1600);
+  const stopTips = () => clearInterval(tipTimer);
   preloadAssets(
     (done, total) => {
       if (fill) fill.style.width = (done / total * 100).toFixed(1) + '%';
-      if (txt)  txt.textContent  = done + ' / ' + total + ' assets';
     },
     async () => {
       // Hide the loading screen, then either jump straight in (cloud
       // session restored) or show the splash for login.
+      stopTips();
       screen.classList.add('hidden');
       setTimeout(() => screen.remove(), 500);
       let user = null;
