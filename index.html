@@ -5203,8 +5203,7 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
   };
   slaughterBtn.onclick = () => {
     closeAnimalMenu();
-    live.slaughterTarget = tileK;
-    toast(`Selected ${item ? item.name : animal.id}. Click the slaughterhouse.`, false);
+    queueOneClickSlaughter(tileK, animal);
   };
   // Pet — restores +20 loyalty per in-game day per animal. Free, no walk.
   if (petBtn) {
@@ -6119,6 +6118,48 @@ function barnPenAt(ix, iy) {
 // Spawn a fresh 6×6 pen anchored to the barn at (barnIx, barnIy) and
 // clear the soon-to-be-pen tiles (refunding any decor / placed items
 // that would otherwise vanish under the new fence).
+// Find the closest placed Slaughterhouse to (ix, iy). Returns the tile
+// key + coords, or null if no slaughterhouse exists. Used by the
+// one-click slaughter flow so the player can click an animal and the
+// farmer auto-routes to the nearest abattoir.
+function nearestSlaughterhouse(ix, iy) {
+  let best = null, bestD = Infinity;
+  for (const k in state.placed || {}) {
+    const it = state.placed[k];
+    if (!it || it.id !== 'building_slaughterhouse') continue;
+    const [bx, by] = k.split(',').map(Number);
+    const d = Math.hypot(bx - ix, by - iy);
+    if (d < bestD) { best = { key: k, ix: bx, iy: by }; bestD = d; }
+  }
+  return best;
+}
+// Queue the full carry-and-deliver sequence in one shot: pickup at the
+// animal's tile, then deliver at the nearest slaughterhouse. Replaces
+// the old "click animal then click slaughterhouse" two-step. Returns
+// true on success, false if there's no slaughterhouse / no meat.
+function queueOneClickSlaughter(animalKey, animal) {
+  if (!animal || !ANIMAL_MEAT[animal.id]) return false;
+  if (!canSlaughter(animal.id, animal)) {
+    toast('Animal is too young to slaughter.', true);
+    audio.play('error');
+    return false;
+  }
+  const [ax, ay] = animalKey.split(',').map(Number);
+  const sh = nearestSlaughterhouse(ax, ay);
+  if (!sh) {
+    toast('Build a Slaughterhouse first.', true);
+    audio.play('error');
+    return false;
+  }
+  const ageMul = animalAgeMul(animal);
+  if (!state.player.queue) state.player.queue = [];
+  state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey, animalId: animal.id });
+  state.player.queue.push({ tool: 'slaughterDeliver', ix: sh.ix, iy: sh.iy, animalId: animal.id, ageMul });
+  // Clear any prior mark — the new flow doesn't need a "marked" state.
+  live.slaughterTarget = null;
+  audio.play('click');
+  return true;
+}
 // Sweep every placed animal whose home tile sits outside ALL pens into
 // the closest free interior tile of the nearest pen. Idempotent — running
 // it twice on already-corralled animals is a no-op. Returns the count
@@ -7984,7 +8025,8 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       grantXp(xp);
       fxBurst(ix, iy, '#FFE066', 14);
       fxFloat(ix, iy, '+' + coins + '¢');
-      toast(`Sold ${meat.name} for ${coins}¢.`, false, 'good', 4000);
+      fxFloat(ix, iy, '+' + xp + ' XP', 1, '#6CFFB4');
+      toast(`Sold ${meat.name} for ${coins}¢ (+${xp} XP).`, false, 'good', 4000);
       bumpStat('slaughtered');
       bumpStat('slaughteredByAnimal.' + aid);
     }
@@ -10805,9 +10847,11 @@ function bindInput() {
     // the visible sprite even when the cursor lands on the empty tile in
     // front of the body.
     if (e.button === 0 && !e.shiftKey && state.selectedTool === 'slaughter') {
+      // One-click slaughter: pick the animal under the cursor, then
+      // automatically queue a pickup + deliver to the nearest
+      // slaughterhouse. No more "mark-then-click-the-shed" two-step.
       let sx = startT.ix, sy = startT.iy;
       let target = state.placed[tileKey(sx, sy)];
-      // Wandering animals don't sit on their home tile, so try them first.
       if (!target) {
         const wandered = findAnimalAt(sx, sy);
         if (wandered) { sx = wandered.ix; sy = wandered.iy; target = wandered.placed; }
@@ -10817,38 +10861,17 @@ function bindInput() {
         for (const [dx, dy] of probes) {
           const px = startT.ix + dx, py = startT.iy + dy;
           const t = state.placed[tileKey(px, py)];
-          if (t && t.id && (t.id.startsWith('animal_') || t.id === 'building_slaughterhouse')) {
+          if (t && t.id && t.id.startsWith('animal_')) {
             sx = px; sy = py; target = t; break;
           }
           const wandered = findAnimalAt(px, py);
           if (wandered) { sx = wandered.ix; sy = wandered.iy; target = wandered.placed; break; }
         }
       }
-      if (target && target.id === 'building_slaughterhouse') {
-        if (live.slaughterTarget) {
-          const aKey = live.slaughterTarget;
-          const animal = state.placed[aKey];
-          live.slaughterTarget = null;
-          if (animal && ANIMAL_MEAT[animal.id]) {
-            const [ax, ay] = aKey.split(',').map(Number);
-            const ageMul = animalAgeMul(animal);
-            state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey: aKey, animalId: animal.id });
-            state.player.queue.push({ tool: 'slaughterDeliver', ix: sx, iy: sy, animalId: animal.id, ageMul });
-            audio.play('click');
-          } else {
-            toast('Marked animal vanished.', true); audio.play('error');
-          }
-        } else {
-          toast('Click an animal first to mark it.', true);
-          audio.play('error');
-        }
-      } else if (target && target.id && target.id.startsWith('animal_') && canSlaughter(target.id, target)) {
-        live.slaughterTarget = tileKey(sx, sy);
-        const item = shopItem(target.id);
-        toast(`Marked ${item ? item.name : target.id}. Click the slaughterhouse.`, false);
-        audio.play('click');
+      if (target && target.id && target.id.startsWith('animal_')) {
+        queueOneClickSlaughter(tileKey(sx, sy), target);
       } else {
-        toast('Pick an animal that can be slaughtered.', true);
+        toast('Click an animal that can be slaughtered.', true);
         audio.play('error');
       }
       live.dragMode = 'idle';
