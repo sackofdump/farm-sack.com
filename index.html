@@ -533,6 +533,9 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 .tool.toolStaff {
   background: linear-gradient(to bottom, #C9A368 0%, #8a6f3f 100%);
 }
+.tool.toolBarn {
+  background: linear-gradient(to bottom, #C25C3F 0%, #7E3320 100%);
+}
 .tool.toolLocked {
   filter: grayscale(1) brightness(0.65);
   cursor: not-allowed;
@@ -9473,6 +9476,42 @@ function buildToolbar() {
   // ---- Separator + Shop button (set off on the right) ----
   const sep = document.createElement('div'); sep.className = 'sep';
   tb.appendChild(sep);
+  // Barn shortcut — sits to the LEFT of the Shop button. Greyed out until
+  // the Big Red Barn unlocks (or until the player has built at least one
+  // barn). Clicking it pops the first placed barn's menu directly so the
+  // player can see the pen roster without hunting for the building.
+  const barnItem = SHOP_ITEMS.find(i => i.id === 'building_barn');
+  const barnUnlockLv = barnItem ? (barnItem.unlock || 1) : 8;
+  const firstBarnKey = Object.keys(state.placed || {}).find(k =>
+    state.placed[k] && state.placed[k].id === 'building_barn'
+  );
+  const barnLocked = state.level < barnUnlockLv;
+  const barnBtn = document.createElement('button');
+  barnBtn.className = 'tool toolBarn' + (barnLocked ? ' toolLocked' : '');
+  barnBtn.id = 'toolBarnBtn';
+  barnBtn.title = barnLocked
+    ? `Big Red Barn — unlocks at Lv ${barnUnlockLv}`
+    : (firstBarnKey ? 'Open the barn menu' : 'Big Red Barn — buy one in the shop');
+  barnBtn.disabled = barnLocked;
+  const bIcon = document.createElement('img');
+  bIcon.src = imgPath('building_barn'); bIcon.alt = 'Barn';
+  bIcon.style.cssText = 'object-fit:contain;width:60px;height:60px;';
+  barnBtn.appendChild(bIcon);
+  barnBtn.addEventListener('click', () => {
+    if (barnLocked) return;
+    // No barn yet → drop the player into the shop's Buildings tab so they
+    // can grab one. Mirrors the Staff Hall button's first-time flow.
+    if (!firstBarnKey) {
+      activeShopTab = 'building';
+      openShop();
+      audio.play('click');
+      return;
+    }
+    const [bx, by] = firstBarnKey.split(',').map(Number);
+    openBuildingMenu('building_barn', window.innerWidth/2 - 200, window.innerHeight/2 - 200, bx, by);
+    audio.play('click');
+  });
+  tb.appendChild(barnBtn);
   const shopBtn = document.createElement('button');
   shopBtn.className = 'tool toolShop';
   shopBtn.id = 'toolShopBtn';
