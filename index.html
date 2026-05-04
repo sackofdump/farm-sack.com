@@ -2274,7 +2274,7 @@ function autoHarvestCost(level) { return Math.round(1200 * Math.pow(2.6, level))
 
 // ----- Water efficiency (cost + bonus) -----
 const WATER_COSTS    = [2, 1, 1, 0];     // coin cost per water
-const WATER_SPEED_M  = [1.5, 1.5, 1.7, 2.0]; // multiplier when watered
+const WATER_SPEED_M  = [1.5, 1.75, 2.0, 2.5]; // multiplier when watered (+50/75/100/150%)
 const WATER_MAX_LEVEL = WATER_COSTS.length - 1;
 function waterCost()       { return WATER_COSTS[state.player.waterLevel || 0] ?? 2; }
 function wateredSpeedMul() { return WATER_SPEED_M[state.player.waterLevel || 0] ?? 1.5; }
@@ -3914,26 +3914,21 @@ function pickPlacedItem(wx, wy) {
     // it doesn't bleed into the tile in front (south) of the building.
     const isTreeStaged = it.placed.id && it.placed.id.startsWith('tree_') && it.placed.treeStage;
     const isBuildingHere = it.placed.id && it.placed.id.startsWith('building_');
-    // Tree hit-bottom sits a few px ABOVE the iso center so clicks on
-    // the dirt right in front of the trunk don't grab the tree.
     const bottom = c.y + (
-      isTreeStaged   ? -4 :
+      isTreeStaged   ? -8 :
       isBuildingHere ?  0 :
       TILE_H / 2 + 4
     );
     const top = bottom - h;
-    // Trees keep a tight base-only hitbox so a tall canopy doesn't
-    // capture clicks on the tile behind it. Buildings use the FULL
-    // sprite height so clicking anywhere on the visible structure (roof,
-    // walls, etc.) registers on it instead of falling through to a tile
-    // behind. Alpha sampling still rejects clicks on the transparent
-    // padding around the sprite.
-    const isBuilding = it.placed.id && it.placed.id.startsWith('building_');
+    // Trees use a tight trunk-only hitbox: narrow to ~trunk width and a
+    // short strip just above the iso center, so the canopy and the dirt
+    // in front don't steal clicks. Buildings use the full sprite bbox.
     const hitTop = isTreeStaged
-      ? bottom - Math.min(h * 0.16, TILE_H * 0.36)
+      ? bottom - Math.min(h * 0.14, TILE_H * 0.30)
       : top;
-    void isBuilding;
-    if (wx < left || wx > right || wy < hitTop || wy > bottom) continue;
+    const hitLeft  = isTreeStaged ? c.x - w * 0.18 : left;
+    const hitRight = isTreeStaged ? c.x + w * 0.18 : right;
+    if (wx < hitLeft || wx > hitRight || wy < hitTop || wy > bottom) continue;
     // Inside the sprite's screen bbox — sample the alpha at the cursor pixel
     // so transparent corners of the sprite don't capture clicks.
     const px = Math.floor(((wx - left) / w) * img.naturalWidth);
@@ -6141,20 +6136,25 @@ function drawAll() {
       renderPlantPreview(live.hover.ix, live.hover.iy, state.selectedSeed, 0.65);
     }
   }
-  // Queued tree placements — keep a sapling ghost on each pending tile
-  // so a drag-painted row of trees stays visible until each placeHere
-  // action fires. Runs even when placeMode is active (trees stay in
-  // placeMode for bulk planting, so this needs to coexist with the
-  // place-mode hover ghost).
+  // Queued placeHere ghosts — trees, decor, buildings. Keeps a faded
+  // copy of the item on each pending tile until the placeHere action
+  // fires. Runs even when placeMode is active so bulk-planting trees
+  // (which stay in placeMode) coexists with the place-mode hover ghost.
   if (state.player && state.player.queue) {
     for (const q of state.player.queue) {
       if (q.tool !== 'placeHere') continue;
       const data = q.placeData;
-      if (!data || !data.id || !data.id.startsWith('tree_')) continue;
+      if (!data || !data.id) continue;
       const cc = isoCenter(q.ix, q.iy);
       ctx.save();
       ctx.globalAlpha = 0.45;
-      drawPlacedItem(data.id, cc.x, cc.y, { id: data.id, plantedAt: Date.now(), treeStage: 1 });
+      // Trees need a sapling stage so they don't render as a full
+      // mature tree in the preview. Decor + buildings render at their
+      // standard size with no extra prop.
+      const ghostProps = data.id.startsWith('tree_')
+        ? { id: data.id, plantedAt: Date.now(), treeStage: 1 }
+        : { id: data.id };
+      drawPlacedItem(data.id, cc.x, cc.y, ghostProps);
       ctx.restore();
     }
   }
@@ -7753,6 +7753,13 @@ function grantXp(amount) {
     }
     // Track level-ups so the "Level up N times" daily can score them.
     if (state.stats) bumpStat('levelUps');
+    // Seed a one-time tree quest the moment trees unlock so the player
+    // sees a clear "go plant a tree" prompt — random rolls keep tree
+    // quests relatively rare after this initial nudge.
+    if (state.level === 3 && !state.priorityQuests) state.priorityQuests = [];
+    if (state.level === 3 && !state.priorityQuests.includes('tree')) {
+      state.priorityQuests.push('tree');
+    }
     // Queue a "harvest the new crop" quest for any crop that just
     // unlocked at this exact level. The next quest roll prefers these
     // over a random pick so the player gets pointed at progression.
@@ -8075,7 +8082,14 @@ function rollNewQuest(skipIds) {
     );
   }
   if (pool.length === 0) return null;
-  const t = pool[Math.floor(Math.random() * pool.length)];
+  // Tree quests are slow and require a real coin investment, so they
+  // shouldn't dominate the slate. Sample roughly 1-in-4 — when the
+  // random pick lands on the tree template, re-roll most of the time.
+  let t = pool[Math.floor(Math.random() * pool.length)];
+  if (t.id === 'tree' && pool.length > 1 && Math.random() > 0.25) {
+    const others = pool.filter(p => p.id !== 'tree');
+    if (others.length > 0) t = others[Math.floor(Math.random() * others.length)];
+  }
   return buildQuest(t.id, skipIds);
 }
 // Starter quests for a brand-new save: walk the player through the core
@@ -9171,10 +9185,17 @@ function buildUpgradesGrid(grid) {
     const lvl = p.waterLevel || 0;
     const maxed = lvl >= WATER_MAX_LEVEL;
     const cost = maxed ? null : waterCostUpgrade(lvl);
+    const curBoost  = Math.round((WATER_SPEED_M[lvl] - 1) * 100);
+    const nextBoost = maxed ? curBoost : Math.round((WATER_SPEED_M[lvl + 1] - 1) * 100);
+    const curCost   = WATER_COSTS[lvl];
+    const nextCost  = maxed ? curCost : WATER_COSTS[lvl + 1];
+    const sub = maxed
+      ? `Boost +${curBoost}% · ${curCost}¢ per water`
+      : `Boost +${curBoost}% → +${nextBoost}% · ${curCost}¢ → ${nextCost}¢ per water`;
     makeUpgradeCard(grid, {
       iconKey: 'tool_water',
       name: 'Water Efficiency',
-      sub: 'Cheaper watering, higher growth boost',
+      sub,
       price: cost, max: maxed, level: lvl, maxLevel: WATER_MAX_LEVEL,
       buy: () => { p.waterLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Water Efficiency'); }
     });
@@ -9960,13 +9981,6 @@ function bindInput() {
       const dir = k === 'w' ? 1 : -1;
       state.selectedSeed = order[(cur + dir + order.length) % order.length];
       audio.play('click'); refreshSeedStrip();
-    }
-    // Admin: +10,000 coins per press of the C key.
-    else if (k === 'c') {
-      state.coins += 10000;
-      refreshHud();
-      audio.play('coin');
-      toast('+10,000¢ (admin)', false);
     }
   });
 
