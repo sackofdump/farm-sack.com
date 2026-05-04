@@ -5284,27 +5284,44 @@ const BUILDING_MENUS = {
         html += '<div style="font-size:12px;color:#7a5430;font-style:italic;margin-bottom:6px;">No animals yet — buy one in the shop.</div>';
       } else {
         html += '<div style="font-size:12px;color:#4a2e15;margin-bottom:4px;"><b>Pen roster (' + rows.length + ')</b></div>';
-        html += '<div style="max-height:220px;overflow-y:auto;font-size:11px;color:#3b2a1a;border:2px solid #b58d4f;border-radius:8px;background:rgba(255,255,255,0.30);">';
+        html += '<div style="max-height:240px;overflow-y:auto;font-size:11px;color:#3b2a1a;border:2px solid #b58d4f;border-radius:8px;background:rgba(255,255,255,0.30);">';
         html += '<table style="width:100%;border-collapse:collapse;">';
         html += '<thead><tr style="background:rgba(74,46,21,0.18);">' +
                 '<th style="text-align:left;padding:4px 6px;">Animal</th>' +
                 '<th style="text-align:left;padding:4px 6px;">Age</th>' +
-                '<th style="text-align:right;padding:4px 6px;">Yields</th>' +
+                '<th style="text-align:left;padding:4px 6px;">Next yield</th>' +
+                '<th style="text-align:right;padding:4px 6px;">Total</th>' +
                 (hasSlaughterhouse ? '<th style="text-align:right;padding:4px 6px;">Slaughter</th>' : '') +
+                '<th style="padding:4px 6px;"></th>' +
                 '</tr></thead><tbody>';
-        for (const { it } of rows) {
+        for (const { it, ix, iy } of rows) {
           const item = shopItem(it.id);
           const name = item ? item.name : it.id;
           const stage = animalAgeStage(it);
           const totalYields = it.totalYields || 0;
           const totalCoins  = it.totalYieldCoins || 0;
-          const yieldCell = totalYields > 0
+          const totalCell = totalYields > 0
             ? totalYields + ' <span style="color:#7a5430;">(' + totalCoins + '¢)</span>'
             : '<span style="color:#7a5430;">0</span>';
+          // Yield-timer column. ANIMAL_YIELDS lists species that produce
+          // a passive yield (eggs / milk / wool / etc.). Show "Ready!"
+          // when collectable, otherwise the countdown to the next drop.
+          const y = ANIMAL_YIELDS[it.id];
+          let yieldTimerCell, canCollect = false;
+          if (!y) {
+            yieldTimerCell = '<span style="color:#7a7060;">—</span>';
+          } else if (animalReadyToHarvest(it)) {
+            yieldTimerCell = `<span style="color:#2D6E33;font-weight:800;">Ready!</span>`;
+            canCollect = true;
+          } else {
+            const remain = Math.max(0, Math.ceil(((it.yieldAt || 0) - Date.now()) / 1000));
+            yieldTimerCell = `<span style="color:#7a5430;">${formatTimeMS(remain)}</span>`;
+          }
           let row = '<tr style="border-top:1px solid rgba(106,74,34,0.18);">' +
                     '<td style="padding:4px 6px;">' + name + '</td>' +
                     '<td style="padding:4px 6px;">' + stage + '</td>' +
-                    '<td style="padding:4px 6px;text-align:right;">' + yieldCell + '</td>';
+                    '<td style="padding:4px 6px;">' + yieldTimerCell + '</td>' +
+                    '<td style="padding:4px 6px;text-align:right;">' + totalCell + '</td>';
           if (hasSlaughterhouse) {
             const meat = ANIMAL_MEAT[it.id];
             let slaughterCell;
@@ -5319,6 +5336,21 @@ const BUILDING_MENUS = {
               slaughterCell = '<b>' + price + '¢</b>';
             }
             row += '<td style="padding:4px 6px;text-align:right;">' + slaughterCell + '</td>';
+          }
+          // Per-row Select button — queues a harvest walk-over so the
+          // farmer collects the yield. Disabled when there's nothing to
+          // collect right now (no yield species or timer not done).
+          const btnEnabled = !!y;
+          const btnLabel = canCollect ? 'Collect' : 'Select';
+          const btnStyle = canCollect
+            ? 'background:linear-gradient(to bottom,#7DC159,#4F8C2D);color:#FFF;border-color:#2A4A1A;'
+            : 'background:linear-gradient(to bottom,#E5C77A,#B0863A);color:#3a2410;border-color:#5C3F1A;';
+          if (btnEnabled) {
+            row += `<td style="padding:4px 6px;text-align:right;">` +
+                   `<button data-collect-animal="${ix},${iy}" style="border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid;${btnStyle}">${btnLabel}</button>` +
+                   `</td>`;
+          } else {
+            row += '<td style="padding:4px 6px;"></td>';
           }
           row += '</tr>';
           html += row;
@@ -5542,6 +5574,20 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     const descContent = typeof cfg.desc === 'function' ? cfg.desc({ ix, iy }) : (cfg.desc || '');
     desc.innerHTML = descContent;
     desc.style.display = descContent ? '' : 'none';
+    // Per-row Collect / Select buttons in the barn roster table —
+    // queue a harvest walk-over so the farmer collects that animal's
+    // yield. Wired here (not via inline onclick) so the closure has
+    // access to the menu's close path.
+    desc.querySelectorAll('[data-collect-animal]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const [aix, aiy] = btn.getAttribute('data-collect-animal').split(',').map(Number);
+        closeAnimalMenu();
+        if (!state.player.queue) state.player.queue = [];
+        state.player.queue.push({ tool: 'harvest', ix: aix, iy: aiy });
+        audio.play('click');
+      });
+    });
   }
   if (collectBtn) {
     // Reset any stale styling from a previous building popup (we used to
@@ -6775,17 +6821,16 @@ function drawAll() {
   }
 
   // -------- Queued action tile highlights --------
-  // Every queued plow / water / harvest / sell tile paints a faded
-  // yellow outline so the player sees what's about to happen. Plant +
-  // tree-place actions are skipped here — they get their own sapling /
-  // crop ghost preview instead, no need for a redundant outline.
+  // Every queued plow / water / harvest / sell / tree-place tile paints
+  // a faded yellow outline so the player sees what's about to happen.
+  // Plant actions are skipped here — they get their own sapling crop
+  // ghost preview instead, no need for a redundant outline.
   if (state.player && state.player.queue && state.player.queue.length > 0) {
     ctx.save();
     ctx.globalAlpha = 0.4;
     for (const q of state.player.queue) {
       if (q.ix == null || q.iy == null) continue;
       if (q.tool === 'plant') continue;
-      if (q.tool === 'placeHere' && q.placeData && q.placeData.id && q.placeData.id.startsWith('tree_')) continue;
       const c = isoCenter(q.ix, q.iy);
       drawTrailOutline(c.x, c.y, true);
     }
@@ -8045,9 +8090,10 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     const placed = state.placed[k];
     const isMovableBuilding = placed && !placed.permanent && placed.id && placed.id.startsWith('building_');
     const isMovableTree     = placed && !placed.permanent && placed.id && placed.id.startsWith('tree_');
-    if (isMovableBuilding || isMovableTree) {
-      const cat = isMovableTree ? 'tree' : 'building';
-      const item = shopItem(placed.id) || { id: placed.id, name: isMovableTree ? 'Tree' : 'Building', cat };
+    const isMovableAnimal   = placed && !placed.permanent && placed.id && placed.id.startsWith('animal_');
+    if (isMovableBuilding || isMovableTree || isMovableAnimal) {
+      const cat = isMovableTree ? 'tree' : (isMovableAnimal ? 'animal' : 'building');
+      const item = shopItem(placed.id) || { id: placed.id, name: isMovableTree ? 'Tree' : (isMovableAnimal ? 'Animal' : 'Building'), cat };
       // Snapshot the original tile + record so a cancelled move puts the
       // item back instead of leaving the world without it.
       const origRecord = { ...placed };
@@ -8060,7 +8106,8 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         banner.classList.remove('hidden');
         const im = document.getElementById('placeBannerImg'); if (im) im.src = imgPath(placed.id);
         const tx = document.getElementById('placeBannerText');
-        if (tx) tx.textContent = `Moving ${item.name} — click a free tile to place it`;
+        const where = isMovableAnimal ? 'in any pen' : 'on a free tile';
+        if (tx) tx.textContent = `Moving ${item.name} — click ${where} to place it`;
       }
       storage.save();
       return 'ok';
@@ -8155,7 +8202,6 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
         if (placed.treeStage >= 4) {
           toast('Tree fully grown!', false, 'good');
-          audio.play('levelup');
           if (TREE_FRUITS[placed.id]) placed.fruitAt = Date.now() + TREE_FRUIT_MS;
         }
         storage.save(); refreshHud();
@@ -8169,7 +8215,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
         bumpStat('watered');
         if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
-        fxFloat(ix, iy, '+50% growth', 1, '#6CFFB4');
+        fxFloat(ix, iy, '+' + Math.round((wateredSpeedMul()-1)*100) + '% growth', 1, '#6CFFB4');
         storage.save(); refreshHud();
         return 'ok';
       }
@@ -8189,7 +8235,6 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         fxFloat(ix, iy, '+1 stage', 0, '#FF55E0');
         if (placed.treeStage >= 4) {
           toast('Tree fully grown!', false, 'good');
-          audio.play('levelup');
           if (TREE_FRUITS[placed.id]) placed.fruitAt = Date.now();
         }
       } else if (TREE_FRUITS[placed.id]) {
@@ -10460,7 +10505,23 @@ function bindInput() {
     // orchards happen with a single drag instead of click-per-tile.
     if (live.placeMode && live.placeMode.id && live.placeMode.id.startsWith('tree_')) {
       if (!isPlaceableTile(ix, iy)) return;
-      if (state.coins < live.placeMode.cost) return;
+      // Affordability gate: count the cost of every tree the player has
+      // already queued this drag and stop adding once we'd exceed their
+      // current coin balance. Mirrors the crops behaviour where the
+      // farmer just stops planting when the wallet runs dry instead of
+      // walking to every tile and erroring out.
+      const cost = live.placeMode.cost || 0;
+      let queuedCost = 0;
+      for (const q of state.player.queue) {
+        if (q.tool === 'placeHere' && q.placeData &&
+            q.placeData.id && q.placeData.id.startsWith('tree_') && !q.placeData.moving) {
+          queuedCost += q.placeData.cost || 0;
+        }
+      }
+      if (state.coins < queuedCost + cost) {
+        if (!silent) { toast('Not enough coins for another tree.', true); audio.play('error'); }
+        return;
+      }
       // De-dupe in case the player loops the cursor back over a queued tile.
       for (const q of state.player.queue) {
         if (q.tool === 'placeHere' && q.ix === ix && q.iy === iy) return;
@@ -10469,7 +10530,7 @@ function bindInput() {
         tool: 'placeHere',
         ix, iy,
         placeData: { id: live.placeMode.id, name: live.placeMode.name,
-                     cost: live.placeMode.cost, moving: false },
+                     cost, moving: false },
       });
       return;
     }
@@ -10638,7 +10699,17 @@ function bindInput() {
       // the click point — no farmer walking required.
       const isMoving = !!live.placeMode.moving;
       if (e.button !== 0) {
-        cancelPlaceMode();
+        // Right-click in place mode: defer the cancel decision to
+        // pointerup. A quick click without movement empties the player's
+        // hands; a held drag pans the camera (placeMode stays active so
+        // the player can scroll the map without losing what they were
+        // about to plant). live._cancelPlaceOnUp is the pending flag
+        // that endPointer reads.
+        live._cancelPlaceOnUp = true;
+        live.dragMode = 'pan';
+        stage.setPointerCapture(e.pointerId);
+        if (e.preventDefault) e.preventDefault();
+        return;
       } else if (isBuildingPlace ? !inMeadow : !inWorld(startT.ix, startT.iy)) {
         cancelPlaceMode();
       } else if (isMoving) {
@@ -10790,13 +10861,21 @@ function bindInput() {
     // no drag-paint queueing of multiple stops. Clear any pending walk
     // first so only the latest click matters.
     if (e.button === 0 && !e.shiftKey && state.selectedTool === 'move') {
-      const placedHere = state.placed[tileKey(startT.ix, startT.iy)];
+      // Wandering animals don't sit on their home tile, so try the
+      // wandered-position lookup before the literal tile so the player
+      // can pick up the animal where they actually see it.
+      let pickIx = startT.ix, pickIy = startT.iy;
+      let placedHere = state.placed[tileKey(pickIx, pickIy)];
+      if (!placedHere) {
+        const wandered = findAnimalAt(pickIx, pickIy);
+        if (wandered) { pickIx = wandered.ix; pickIy = wandered.iy; placedHere = wandered.placed; }
+      }
       const isMovablePlaced = placedHere && !placedHere.permanent && placedHere.id &&
-        (placedHere.id.startsWith('building_') || placedHere.id.startsWith('tree_'));
+        (placedHere.id.startsWith('building_') || placedHere.id.startsWith('tree_') || placedHere.id.startsWith('animal_'));
       if (isMovablePlaced) {
-        // Pick up the building / tree straight away — no walking required
-        // for drag-and-drop relocation.
-        actOnTile('move', startT.ix, startT.iy, false);
+        // Pick up the building / tree / animal straight away — no walking
+        // required for drag-and-drop relocation.
+        actOnTile('move', pickIx, pickIy, false);
       } else if (inWorld(startT.ix, startT.iy)) {
         clearActionQueue();
         state.player.queue.push({ tool: 'move', ix: startT.ix, iy: startT.iy });
@@ -10987,6 +11066,16 @@ function bindInput() {
     live.pointerDown = false;
     stage.classList.remove('dragging');
     if (e && e.pointerId !== undefined) stage.releasePointerCapture?.(e.pointerId);
+    // Pending placeMode cancel: only fires for a *quick* right-click in
+    // placeMode (no real drag). A held + dragged right-click panned the
+    // camera and should leave the player's hands full.
+    if (live._cancelPlaceOnUp) {
+      live._cancelPlaceOnUp = false;
+      if (live.dragMoved <= 3 && live.placeMode) {
+        cancelPlaceMode();
+        audio.play('click');
+      }
+    }
     if (live.dragMode === 'buyland' && live.landRect) {
       finishBuyLandRect();
     }
@@ -11166,11 +11255,11 @@ function buildTooltipHTML(ix, iy) {
           } else if (treeNeedsEarlyWater(placed)) {
             const remain = Math.max(0, TREE_STAGE_MS - treeStageEffectiveMs(placed));
             html = `<b>${fullName}</b><br>Stage ${stage}/4 — growing… <b>${formatTimeMS(Math.ceil(remain/1000))}</b><br>` +
-                   `<span style="color:#6CFFB4">Water now (${waterCost()}¢) for +50% growth!</span>`;
+                   `<span style="color:#6CFFB4">Water now (${waterCost()}¢) for +${Math.round((wateredSpeedMul()-1)*100)}% growth!</span>`;
           } else {
             const remain = Math.max(0, TREE_STAGE_MS - treeStageEffectiveMs(placed));
             html = `<b>${fullName}</b><br>Stage ${stage}/4 — growing… <b>${formatTimeMS(Math.ceil(remain/1000))}</b>` +
-                   (placed.watered ? '<br><span style="color:#6CFFB4">Watered · +50% growth</span>' : '');
+                   (placed.watered ? `<br><span style="color:#6CFFB4">Watered · +${Math.round((wateredSpeedMul()-1)*100)}% growth</span>` : '');
           }
         } else if (fruit && treeReadyToHarvest(placed)) {
           html = `<b>${fullName}</b> &#127795;<br><span style="color:#FFE066">${fruit.name} ready</span> — Harvest for <b>${fruit.coins}¢</b>.`;
