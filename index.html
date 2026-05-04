@@ -5323,7 +5323,26 @@ const BUILDING_MENUS = {
       }
       return html;
     },
-    actions: [{ label: '🐮 Buy Animals', run: () => { activeShopTab = 'animal'; openShop(); } }],
+    actions: () => {
+      const slaughterItem = SHOP_ITEMS.find(i => i.id === 'building_slaughterhouse');
+      const slaughterUnlock = slaughterItem ? (slaughterItem.unlock || 11) : 11;
+      const slaughterLocked = state.level < slaughterUnlock;
+      return [
+        { label: '🐮 Buy Animals', run: () => { activeShopTab = 'animal'; openShop(); } },
+        {
+          label: slaughterLocked
+            ? `🔪 Slaughter — Lv ${slaughterUnlock}`
+            : '🔪 Slaughter Mode',
+          disabled: slaughterLocked,
+          run: () => {
+            if (live.placeMode) cancelPlaceMode();
+            state.selectedTool = 'slaughter';
+            refreshTools(); refreshSeedStrip();
+            toast('Click an animal to mark it, then click the slaughterhouse.', false);
+          },
+        },
+      ];
+    },
   },
   building_market_stall: {
     title: 'Market Stall',
@@ -12101,13 +12120,23 @@ async function startGame() {
     }
     // Migration: legacy saves stored a single state.barnPen. New code
     // reads state.barnPens (array), so promote the legacy pen into the
-    // array. Keep state.barnPen pointing at the same record so unmigrated
-    // call sites still find a pen.
+    // array. Dedupe by anchor coords — JSON serialization breaks object
+    // identity across reloads, so a naive `includes(state.barnPen)` would
+    // re-add the legacy pen on every refresh and the duplicates would
+    // diverge after a barn move (one stale, one fresh).
     if (!Array.isArray(state.barnPens)) state.barnPens = [];
-    if (state.barnPen && !state.barnPens.includes(state.barnPen)) {
+    const samePen = (a, b) => a && b && a.barnIx === b.barnIx && a.barnIy === b.barnIy;
+    if (state.barnPen && !state.barnPens.some(p => samePen(p, state.barnPen))) {
       state.barnPens.unshift(state.barnPen);
     }
-    if (!state.barnPen && state.barnPens.length > 0) state.barnPen = state.barnPens[0];
+    // Always re-bind state.barnPen to the array entry so legacy aliases
+    // and the array share identity again — mutations now stay in sync.
+    if (state.barnPens.length > 0) {
+      const matching = state.barnPen
+        ? state.barnPens.find(p => samePen(p, state.barnPen))
+        : state.barnPens[0];
+      state.barnPen = matching || state.barnPens[0];
+    }
     // Silo state: older saves don't have it; either way, reset lastTickAt
     // so the first siloTick after load doesn't drain a giant offline gap.
     if (!state.silo || typeof state.silo !== 'object') {
@@ -12548,9 +12577,38 @@ function dismissSplashAndStart() {
   setTimeout(() => splash.remove(), 250);
   startGame();
 }
-function bootSplash() {
+function bootSplash(restoredUser) {
   const splash = document.getElementById('splashScreen');
   splash.classList.remove('hidden');
+  // Prefill the login email from the last successful sign-in / signup.
+  // Email isn't sensitive enough to warrant special storage; the password
+  // field stays blank so the player has to retype it on a new session.
+  try {
+    const lastEmail = (restoredUser && restoredUser.email) ||
+                      localStorage.getItem('farmsack_last_email') || '';
+    const emailInput = document.getElementById('splashEmail');
+    if (emailInput && lastEmail) emailInput.value = lastEmail;
+    const signEmail = document.getElementById('splashSignEmail');
+    if (signEmail && lastEmail && !signEmail.value) signEmail.value = lastEmail;
+  } catch (e) {}
+  // If a cloud session is still active, swap the primary login button into
+  // a one-click "Continue" so refresh doesn't force the player to retype
+  // their password every time.
+  if (restoredUser) {
+    const loginPanel = document.getElementById('splashLogin');
+    const signupPanel = document.getElementById('splashSignup');
+    if (signupPanel) signupPanel.classList.add('hidden');
+    if (loginPanel)  loginPanel.classList.remove('hidden');
+    const meta = restoredUser.user_metadata || {};
+    const farmerName = meta.farmer_name || (restoredUser.email || '').split('@')[0] || 'Farmer';
+    const loginBtn = document.getElementById('splashLoginBtn');
+    if (loginBtn) {
+      loginBtn.textContent = `▶ Continue as ${farmerName}`;
+      loginBtn.dataset.continue = '1';
+    }
+    const passInput = document.getElementById('splashPass');
+    if (passInput) passInput.placeholder = '(already signed in)';
+  }
   // Boot the music while the player is at the splash. Most browsers block
   // autoplay until a user gesture, so we also retry after the first input
   // on the splash itself (the click on Log in / Create / a profile chip).
@@ -12603,14 +12661,21 @@ function bootSplash() {
   };
   document.getElementById('splashLoginBtn').onclick = async () => {
     showSplashError('splashError', '');
+    const btn = document.getElementById('splashLoginBtn');
+    // If a cloud session is still alive (button was relabeled "Continue"),
+    // skip the password round-trip and drop straight into the farm.
+    if (btn.dataset.continue === '1' && cloud && cloud.user) {
+      dismissSplashAndStart();
+      return;
+    }
     const email = document.getElementById('splashEmail').value.trim();
     const pw    = document.getElementById('splashPass').value;
     if (!email || !pw) return showSplashError('splashError', 'Email + password required.');
-    const btn = document.getElementById('splashLoginBtn');
     btn.disabled = true; btn.textContent = 'Logging in…';
     try {
       const user = await cloud.signIn(email, pw);
       localStorage.setItem('farmsack_seen', '1');
+      try { localStorage.setItem('farmsack_last_email', email); } catch (e) {}
       setActiveAccount(user);
       dismissSplashAndStart();
     } catch (err) {
@@ -12640,6 +12705,7 @@ function bootSplash() {
     try {
       const user = await cloud.signUp(email, pw, farmerName, signupGender);
       localStorage.setItem('farmsack_seen', '1');
+      try { localStorage.setItem('farmsack_last_email', email); } catch (e) {}
       // If the project requires email confirmation, signUp returns the
       // user but no session — fall back to immediate sign-in attempt.
       if (!cloud.user || !user) {
@@ -12749,14 +12815,14 @@ function init() {
       stopTips();
       screen.classList.add('hidden');
       setTimeout(() => screen.remove(), 500);
+      // Always land on the splash on a fresh page load — even when a
+      // cloud session is still valid. Set the active account if we have
+      // one so the splash can offer a "Continue" shortcut, and prefill
+      // the login email so the player isn't retyping it every refresh.
       let user = null;
       try { user = await cloud.restore(); } catch (e) { user = null; }
-      if (user) {
-        setActiveAccount(user);
-        startGame();
-      } else {
-        bootSplash();
-      }
+      if (user) setActiveAccount(user);
+      bootSplash(user);
     }
   );
 }
