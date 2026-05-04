@@ -1281,12 +1281,12 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   background: linear-gradient(to bottom, #87CEEB 0%, #4F8C2D 60%, #2A1F12 100%);
 }
 #splashScreen.hidden { display: none; }
-.splashPatchNotes {
+.splashSidePanel,
+.splashPatchNotes,
+.splashRoadmap {
   position: absolute;
-  top: 50%; right: max(20px, calc(50% - 480px));
-  transform: translateY(-50%);
-  width: min(240px, 30vw);
-  max-height: 70vh; overflow-y: auto;
+  width: min(260px, 30vw);
+  max-height: 78vh; overflow-y: auto;
   background: linear-gradient(to bottom, var(--parchment), var(--parchment-2));
   border: 4px solid var(--wood-3);
   border-radius: 14px;
@@ -1294,20 +1294,41 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   box-shadow: var(--shadow);
   text-align: left;
 }
-.splashPatchNotes h4 {
-  margin: 0 0 4px; color: var(--wood-2);
+.splashPatchNotes {
+  top: 50%; right: max(20px, calc(50% - 500px));
+  transform: translateY(-50%);
+}
+.splashRoadmap {
+  top: 50%; left: max(20px, calc(50% - 500px));
+  transform: translateY(-50%);
+  width: min(220px, 26vw);
+}
+.splashPatchNotes h4,
+.splashRoadmap h4 {
+  margin: 0 0 6px; color: var(--wood-2);
   font-size: 15px; letter-spacing: 0.5px;
   text-shadow: 0 1px 0 #fff;
 }
-.splashPatchNotes .patchDate {
-  color: #6A4A22; font-size: 11px; font-weight: 700;
-  margin-bottom: 8px;
+.splashPatchNotes .patchDate,
+.splashRoadmap .patchDate {
+  color: #7A5630; font-size: 11px; font-weight: 800;
+  margin-bottom: 4px; letter-spacing: 0.4px;
 }
-.splashPatchNotes ul {
+.splashPatchNotes .patchEntry { margin-bottom: 12px; }
+.splashPatchNotes .patchEntry + .patchEntry {
+  border-top: 2px dashed rgba(106, 74, 34, 0.30);
+  padding-top: 8px;
+}
+.splashPatchNotes ul,
+.splashRoadmap ul {
   margin: 0; padding-left: 18px;
   color: #4A2E15; font-size: 12px; line-height: 1.5;
 }
-.splashPatchNotes li { margin-bottom: 4px; }
+.splashPatchNotes li,
+.splashRoadmap li { margin-bottom: 4px; }
+@media (max-width: 1100px) {
+  .splashRoadmap { display: none; }
+}
 @media (max-width: 880px) {
   .splashPatchNotes { display: none; }
 }
@@ -1633,13 +1654,56 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 
   <aside class="splashPatchNotes" aria-label="Patch notes">
     <h4>📜 Patch Notes</h4>
-    <div class="patchDate">Latest update</div>
+    <div class="patchEntry">
+      <div class="patchDate">2026-05-04</div>
+      <ul>
+        <li>Each silo now stores its own feed — overflow cascades into the next silo instead of being lost.</li>
+        <li>Hover tooltips + pointer cursor work on every building (silo, barn, cottage, etc.) without a click.</li>
+        <li>Drag-paint multiple trees in one motion, just like crops.</li>
+        <li>Slaughter is now a toolbar button — grayed out until the slaughterhouse unlocks at Lv 11.</li>
+        <li>Click a barn to see every animal in its pen with age, lifetime yield, and current slaughter price.</li>
+        <li>Animal hitboxes follow the wandering sprite, not the original drop tile.</li>
+        <li>Leaderboard now ranks by animals owned and animals slaughtered.</li>
+        <li>Buildings lock by default — open the building menu and tap "Unlock To Move" to relocate.</li>
+        <li>Plowing is blocked under tall buildings (no more crops growing inside the cottage).</li>
+        <li>"Crop isn't ready" floats over the tile with the remaining time when you try to harvest early.</li>
+        <li>Tree fully-grown chime + arcadey beeps removed; coin/click/place/levelup retuned to softer cues.</li>
+        <li>Music auto-advances reliably from track to track now.</li>
+        <li>Roadmap added to the splash so you can see what's coming next.</li>
+      </ul>
+    </div>
+    <div class="patchEntry">
+      <div class="patchDate">2026-05-03</div>
+      <ul>
+        <li>Pen always opens south of the barn (rotation-aware), with a gate side that follows the barn under any spin.</li>
+        <li>Move the barn — the pen and every animal inside travels with it.</li>
+        <li>Trees are now movable with the Move tool; growth stage / watered / fruit timer all preserved.</li>
+        <li>Hold right-click + drag to wipe a whole trail of queued actions.</li>
+        <li>Tutorial &amp; first-unlock popups require the Close button — no more accidental backdrop dismissals.</li>
+      </ul>
+    </div>
+    <div class="patchEntry">
+      <div class="patchDate">2026-05-02</div>
+      <ul>
+        <li>Tightened apple / tree hitbox so clicks register on the trunk, not the air around it.</li>
+        <li>Water upgrade now previews the next tier's bonus + cost on hover.</li>
+        <li>Cow dung yield bumped +5%.</li>
+        <li>Loading screen swapped to rotating farmer sayings.</li>
+      </ul>
+    </div>
+  </aside>
+
+  <aside class="splashRoadmap" aria-label="Roadmap">
+    <h4>🗺️ Roadmap</h4>
+    <div class="patchDate">Coming soon</div>
     <ul>
-      <li>Animal pen now always opens to the south of the barn (rotation-aware) — gate side follows the barn under any camera spin.</li>
-      <li>Move the barn and the entire pen + every animal inside follows along.</li>
-      <li>Trees are now movable with the Move tool — growth stage, watered status, and fruit timer are all preserved.</li>
-      <li>Hold right-click and drag to cancel a whole trail of queued actions in one sweep.</li>
-      <li>Tutorial &amp; "newly unlocked" popups now require the Close button — no more accidental backdrop dismissals.</li>
+      <li>Weather patterns (bonuses + debuffs).</li>
+      <li>More trees.</li>
+      <li>More animals.</li>
+      <li>More crops.</li>
+      <li>Crafting system with crops.</li>
+      <li>Animal automation.</li>
+      <li>Mobile optimization.</li>
     </ul>
   </aside>
 </div>
@@ -2188,6 +2252,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   <button class="am-btn am-slaughter" id="amSlaughter"></button>
   <button class="am-btn am-ride" id="amRide" style="display:none;background:linear-gradient(to bottom,#7BC56A,#3F8338);border-color:#2A4A1A;">Ride</button>
   <button class="am-btn am-pet" id="amPet" style="display:none;background:linear-gradient(to bottom,#FFB1D8,#D6549A);border-color:#7E2A55;color:#3a1024;">Pet</button>
+  <button class="am-btn am-move" id="amMove" style="display:none;background:linear-gradient(to bottom,#E5C77A,#B0863A);border-color:#5C3F1A;color:#3a2410;">🔓 Unlock To Move</button>
   <button class="am-close" id="amClose">Cancel</button>
 </div>
 <!-- Floating Dismount banner — only visible while the farmer is mounted.
@@ -2355,8 +2420,64 @@ const SILO_AGE_BONUS                = 0.5;     // +50% age-up speed while feedin
 const SILO_SLAUGHTER_BONUS_COINS    = 20;
 const SILO_SLAUGHTER_BONUS_PER_FEED = 5;
 function siloCapacity()  { return SILO_CAPACITY_PER * buildingCount('building_silo'); }
-function siloFeed()      { return (state.silo && state.silo.feed) || 0; }
+// Per-silo feed lives on each placed silo record (`state.placed[k].feed`).
+// We iterate `state.placed` in key order so the cascade fill is stable.
+function eachSilo(fn) {
+  for (const k in state.placed) {
+    const p = state.placed[k];
+    if (p && p.id === 'building_silo') fn(p, k);
+  }
+}
+function siloFeed() {
+  let total = 0;
+  eachSilo(p => { total += (typeof p.feed === 'number' ? p.feed : 0); });
+  return total;
+}
 function siloHasFeed()   { return siloCapacity() > 0 && siloFeed() > 0; }
+// Add `amount` units of feed across placed silos. Cascades into the next
+// silo once one is full so a partial harvest is never lost while there's
+// any space left in the network. Returns the amount actually deposited.
+function addSiloFeed(amount) {
+  if (amount <= 0) return 0;
+  let remaining = amount, added = 0;
+  eachSilo(p => {
+    if (remaining <= 0) return;
+    if (typeof p.feed !== 'number') p.feed = 0;
+    const room = SILO_CAPACITY_PER - p.feed;
+    if (room <= 0) return;
+    const fill = Math.min(remaining, room);
+    p.feed += fill;
+    remaining -= fill;
+    added += fill;
+  });
+  return added;
+}
+// Drain `amount` from the network in cascading order. Returns the amount
+// actually drained (clamped to what was in the silos).
+function drainSiloFeed(amount) {
+  if (amount <= 0) return 0;
+  let remaining = amount, drained = 0;
+  eachSilo(p => {
+    if (remaining <= 0) return;
+    if (typeof p.feed !== 'number') p.feed = 0;
+    if (p.feed <= 0) return;
+    const take = Math.min(remaining, p.feed);
+    p.feed -= take;
+    remaining -= take;
+    drained += take;
+  });
+  return drained;
+}
+// Clamp every silo to its individual cap (used when a silo is sold so its
+// remaining feed goes nowhere — for now we just truncate the over-capacity
+// silos rather than cascading the leftover feed elsewhere).
+function clampSiloFeed() {
+  eachSilo(p => {
+    if (typeof p.feed !== 'number') p.feed = 0;
+    if (p.feed > SILO_CAPACITY_PER) p.feed = SILO_CAPACITY_PER;
+    if (p.feed < 0) p.feed = 0;
+  });
+}
 function siloSlaughterBonus() {
   if (!siloHasFeed()) return 0;
   return Math.floor(siloFeed() / SILO_SLAUGHTER_BONUS_PER_FEED) * SILO_SLAUGHTER_BONUS_COINS;
@@ -2798,7 +2919,6 @@ function performArboristAction(m, task) {
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
     if (placed.treeStage >= 4) {
       toast('Tree fully grown!', false, 'good');
-      audio.play('levelup');
       if (TREE_FRUITS[placed.id]) placed.fruitAt = Date.now() + TREE_FRUIT_MS;
     }
     storage.save(); refreshHud();
@@ -2872,10 +2992,7 @@ function performCropFarmerAction(m, task) {
     if (!c) return;
     if (c.feed) {
       if (!state.silo) state.silo = { feed: 0, lastTickAt: Date.now(), boostMs: 0 };
-      const cap = siloCapacity();
-      const before = state.silo.feed;
-      state.silo.feed = Math.min(cap, state.silo.feed + (c.feedYield || SILO_FEED_PER_HARVEST));
-      const added = Math.round(state.silo.feed - before);
+      const added = addSiloFeed(c.feedYield || SILO_FEED_PER_HARVEST);
       const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul()));
       grantXp(xpGain);
       fxBurst(ix, iy, '#F5C84B', 10);
@@ -2974,12 +3091,13 @@ function siloTick() {
   const dt = Math.max(0, Math.min(10000, now - last));
   state.silo.lastTickAt = now;
   const cap = siloCapacity();
-  // If the player sells silos, clamp feed to the new (smaller) capacity.
-  if (state.silo.feed > cap) state.silo.feed = cap;
+  // If the player sells a silo its leftover feed evaporates with it.
+  // Whatever per-silo records remain still get clamped here.
+  clampSiloFeed();
   if (cap === 0) return;
-  if (state.silo.feed > 0) {
+  if (siloFeed() > 0) {
     const drain = countAnimalsPlaced() * SILO_DRAIN_PER_ANIMAL_PER_MIN * dt / 60000;
-    state.silo.feed = Math.max(0, state.silo.feed - drain);
+    drainSiloFeed(drain);
     state.silo.boostMs = (state.silo.boostMs || 0) + dt * SILO_AGE_BONUS;
   }
 }
@@ -3761,8 +3879,21 @@ const bgm = {
   },
   play() {
     if (!this.el) return;
-    this.el.play().then(() => { this.playing = true; this.refreshUI(); this.save(); })
-                  .catch(() => { /* user-gesture required */ });
+    // Some browsers (Chrome especially) reject .play() when the element
+    // isn't ready yet (HAVE_CURRENT_DATA / readyState < 2) right after a
+    // src swap. Defer to the next 'canplay' tick in that case.
+    const start = () => this.el.play()
+      .then(() => { this.playing = true; this.refreshUI(); this.save(); })
+      .catch(() => { /* user-gesture required */ });
+    if (this.el.readyState >= 2) {
+      start();
+    } else {
+      const onReady = () => {
+        this.el.removeEventListener('canplay', onReady);
+        start();
+      };
+      this.el.addEventListener('canplay', onReady, { once: true });
+    }
   },
   pause() {
     if (!this.el) return;
@@ -3782,14 +3913,19 @@ const bgm = {
     } else {
       this.index++;
     }
-    this.el.src = bgmTrackUrl(this.playlist[this.index]);
-    if (this.playing) this.play();
-    this.refreshUI(); this.save();
+    this._switchTrack();
   },
   prev() {
     if (!this.el) return;
     this.index = (this.index - 1 + this.playlist.length) % this.playlist.length;
+    this._switchTrack();
+  },
+  // Common src-swap path used by next/prev. Forcing load() before play()
+  // is what gets auto-advance working reliably — without it Chrome will
+  // silently skip the play() request after an `ended`-triggered src swap.
+  _switchTrack() {
     this.el.src = bgmTrackUrl(this.playlist[this.index]);
+    try { this.el.load(); } catch (e) {}
     if (this.playing) this.play();
     this.refreshUI(); this.save();
   },
@@ -3851,10 +3987,25 @@ const audio = (() => {
         noise(0.18, 0.025, 4200);
         noise(0.12, 0.018, 6500);
         break;
-      case 'coin':    blip(1100, 0.06, 'square', 0.04); blip(1500, 0.08, 'square', 0.03, 0.04); break;
-      case 'place':   blip(440, 0.08); blip(660, 0.08, 'sine', 0.05, 0.06); blip(880, 0.16, 'sine', 0.05, 0.12); break;
-      case 'levelup': blip(523,0.1); blip(659,0.1,'sine',0.06,0.08); blip(784,0.1,'sine',0.06,0.16); blip(1046,0.22,'sine',0.07,0.24); break;
-      case 'click':   blip(820, 0.03, 'square', 0.02); break;
+      // Coin = soft "shink" — short bandpassed noise + a quick muted
+      // sine pad. Avoids the square-wave arcade chirp.
+      case 'coin':
+        noise(0.06, 0.025, 5500);
+        blip(880, 0.10, 'sine', 0.025, 0.01);
+        break;
+      // Place = wood thunk — bandpassed noise rather than a tone arpeggio.
+      case 'place':
+        noise(0.10, 0.038, 320);
+        noise(0.08, 0.020, 700);
+        break;
+      // Levelup = mellow rising chord, no square waves. Triad + sustain.
+      case 'levelup':
+        blip(392, 0.14, 'sine', 0.045);
+        blip(523, 0.18, 'sine', 0.045, 0.05);
+        blip(659, 0.30, 'triangle', 0.040, 0.10);
+        break;
+      // Click = soft tap, no tone — just a very short low-mid thump.
+      case 'click':   noise(0.04, 0.018, 1200); break;
       case 'error':   blip(220, 0.16, 'sawtooth', 0.05); break;
     }
   }
@@ -4002,6 +4153,42 @@ function alphaAt(img, x, y) {
   return data[(y * img.naturalWidth + x) * 4 + 3];
 }
 function tileKey(ix, iy) { return ix + ',' + iy; }
+// Find a placed animal whose CURRENT rendered tile (home + wander offset)
+// matches (ix, iy). Lets click + slaughter hit boxes follow animals as
+// they wander instead of staying glued to the original drop tile.
+// Returns { key, placed, ix, iy } so callers can use the home tile key
+// for state lookups while still treating the click as if it landed on the
+// rendered tile.
+function findAnimalAt(ix, iy) {
+  if (!state.placed) return null;
+  // Round each animal's rendered position to the nearest tile and
+  // compare. Tie-break by smallest distance so overlapping animals pick
+  // the closest one to the cursor.
+  let best = null, bestD = Infinity;
+  for (const k in state.placed) {
+    const it = state.placed[k];
+    if (!it || !it.id || !it.id.startsWith('animal_')) continue;
+    const [hx, hy] = k.split(',').map(Number);
+    const ax = hx + (typeof it.dx === 'number' ? it.dx : 0);
+    const ay = hy + (typeof it.dy === 'number' ? it.dy : 0);
+    if (Math.round(ax) !== ix || Math.round(ay) !== iy) continue;
+    const d = Math.hypot(ax - ix, ay - iy);
+    if (d < bestD) { best = { key: k, placed: it, ix: hx, iy: hy }; bestD = d; }
+  }
+  return best;
+}
+// Returns true when (ix, iy) is visually covered by a building's body
+// even though the building's anchor record sits on a different tile.
+// Used to block plow/plant/harvest under tall buildings (cottage, barn,
+// silo, etc.) since those tiles look paved-over but aren't in state.placed.
+function tileCoveredByBuilding(ix, iy) {
+  const probes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2]];
+  for (const [dx, dy] of probes) {
+    const p = state.placed[tileKey(ix + dx, iy + dy)];
+    if (p && p.id && p.id.startsWith('building_')) return true;
+  }
+  return false;
+}
 function farmAt(ix, iy) {
   for (const f of FARMS) {
     if (ix >= f.x0 && ix < f.x0 + f.w && iy >= f.y0 && iy < f.y0 + f.h) return f;
@@ -4984,7 +5171,81 @@ const BUILDING_MENUS = {
   },
   building_barn: {
     title: 'Big Red Barn',
-    desc: 'Buy farm animals and stable them in the pen.',
+    desc: () => {
+      // Roster: every animal currently inside the pen, sorted by species
+      // then age. Shows current age stage, lifetime yield count, and the
+      // current slaughter price (factoring age × silo bonus) so the player
+      // can decide who's ready for the chopping block at a glance.
+      if (!state.barnPen) return 'Buy farm animals and stable them in the pen.';
+      const pen = state.barnPen;
+      const rows = [];
+      for (const k in state.placed) {
+        const it = state.placed[k];
+        if (!it || !it.id || !it.id.startsWith('animal_')) continue;
+        const [ix, iy] = k.split(',').map(Number);
+        if (ix < pen.x0 || iy < pen.y0 ||
+            ix >= pen.x0 + pen.w || iy >= pen.y0 + pen.h) continue;
+        rows.push({ k, it, ix, iy });
+      }
+      rows.sort((a, b) => {
+        if (a.it.id !== b.it.id) return a.it.id < b.it.id ? -1 : 1;
+        return animalAgeIndex(b.it) - animalAgeIndex(a.it);
+      });
+      let html = '<div style="font-size:12px;color:#5b3f1f;margin-bottom:8px;">' +
+                 'Buy farm animals and stable them in the pen.</div>';
+      // Slaughter column only renders when the player actually owns a
+      // Slaughterhouse — without one those numbers would be misleading.
+      const hasSlaughterhouse = buildingCount('building_slaughterhouse') > 0;
+      if (rows.length === 0) {
+        html += '<div style="font-size:12px;color:#7a5430;font-style:italic;margin-bottom:6px;">No animals yet — buy one in the shop.</div>';
+      } else {
+        html += '<div style="font-size:12px;color:#4a2e15;margin-bottom:4px;"><b>Pen roster (' + rows.length + ')</b></div>';
+        html += '<div style="max-height:220px;overflow-y:auto;font-size:11px;color:#3b2a1a;border:2px solid #b58d4f;border-radius:8px;background:rgba(255,255,255,0.30);">';
+        html += '<table style="width:100%;border-collapse:collapse;">';
+        html += '<thead><tr style="background:rgba(74,46,21,0.18);">' +
+                '<th style="text-align:left;padding:4px 6px;">Animal</th>' +
+                '<th style="text-align:left;padding:4px 6px;">Age</th>' +
+                '<th style="text-align:right;padding:4px 6px;">Yields</th>' +
+                (hasSlaughterhouse ? '<th style="text-align:right;padding:4px 6px;">Slaughter</th>' : '') +
+                '</tr></thead><tbody>';
+        for (const { it } of rows) {
+          const item = shopItem(it.id);
+          const name = item ? item.name : it.id;
+          const stage = animalAgeStage(it);
+          const totalYields = it.totalYields || 0;
+          const totalCoins  = it.totalYieldCoins || 0;
+          const yieldCell = totalYields > 0
+            ? totalYields + ' <span style="color:#7a5430;">(' + totalCoins + '¢)</span>'
+            : '<span style="color:#7a5430;">0</span>';
+          let row = '<tr style="border-top:1px solid rgba(106,74,34,0.18);">' +
+                    '<td style="padding:4px 6px;">' + name + '</td>' +
+                    '<td style="padding:4px 6px;">' + stage + '</td>' +
+                    '<td style="padding:4px 6px;text-align:right;">' + yieldCell + '</td>';
+          if (hasSlaughterhouse) {
+            const meat = ANIMAL_MEAT[it.id];
+            let slaughterCell;
+            if (!meat) {
+              slaughterCell = '<span style="color:#7a7060;">—</span>';
+            } else if (!canSlaughter(it.id, it)) {
+              slaughterCell = '<span style="color:#a87a20;">too young</span>';
+            } else {
+              const mul   = animalAgeMul(it);
+              const yMul  = yieldMultiplier() * siloYieldMul() * marketSellMul();
+              const price = Math.round(meat.coins * mul * yMul) + siloSlaughterBonus();
+              slaughterCell = '<b>' + price + '¢</b>';
+            }
+            row += '<td style="padding:4px 6px;text-align:right;">' + slaughterCell + '</td>';
+          }
+          row += '</tr>';
+          html += row;
+        }
+        html += '</tbody></table></div>';
+        if (!hasSlaughterhouse) {
+          html += '<div style="font-size:11px;color:#8a5a1f;margin-top:6px;font-style:italic;">Build a Slaughterhouse to see meat prices and process animals.</div>';
+        }
+      }
+      return html;
+    },
     actions: [{ label: '🐮 Buy Animals', run: () => { activeShopTab = 'animal'; openShop(); } }],
   },
   building_market_stall: {
@@ -5221,6 +5482,20 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
       slaughterBtn.style.borderColor = '';
     }
     wireActionBtn(slaughterBtn, actionList[2]);
+  }
+  // Move button — every non-permanent building can be relocated from its
+  // own menu, so the player has to explicitly opt in to picking it up
+  // (avoids accidental drag-paint relocations when the Move tool is hot).
+  const moveBtn = document.getElementById('amMove');
+  if (moveBtn) {
+    const placedHere = state.placed[tileKey(ix, iy)];
+    const canMove = placedHere && !placedHere.permanent;
+    moveBtn.style.display = canMove ? '' : 'none';
+    moveBtn.disabled = !canMove;
+    moveBtn.onclick = canMove ? () => {
+      closeAnimalMenu();
+      actOnTile('move', ix, iy, false);
+    } : null;
   }
   menu.classList.remove('hidden');
   const w = menu.offsetWidth, h = menu.offsetHeight;
@@ -6345,6 +6620,16 @@ function canActOnTile(tool, ix, iy) {
     if (!inWorld(ix, iy)) return false;
     return true;
   }
+  // Slaughter tool — clicking an animal that can be slaughtered marks
+  // it; clicking the slaughterhouse afterwards delivers it. Hit on any
+  // tile that holds either a slaughter-eligible animal or the slaughterhouse.
+  if (tool === 'slaughter') {
+    const placed = state.placed[tileKey(ix, iy)];
+    if (!placed) return false;
+    if (placed.id === 'building_slaughterhouse') return !!live.slaughterTarget;
+    if (placed.id && placed.id.startsWith('animal_') && canSlaughter(placed.id, placed)) return true;
+    return false;
+  }
   // Sell can reach placed items anywhere in the world (except permanent ones).
   if (tool === 'sell') {
     const placed = state.placed[tileKey(ix, iy)];
@@ -6396,6 +6681,11 @@ function canActOnTile(tool, ix, iy) {
   // A tile occupied by a tree / decor / building can't also be plowed
   // or planted — sell the placed item first to free the tile.
   if (state.placed[tileKey(ix, iy)]) return false;
+  // Tall buildings (cottage, barn, etc.) render with a body that extends
+  // several tiles NW of their anchor. Block farming on any tile that's
+  // visually under a building's footprint, even though those tiles aren't
+  // in state.placed themselves.
+  if (tileCoveredByBuilding(ix, iy)) return false;
   const p = state.plots[tileKey(ix, iy)];
   if (tool === 'plow')    return !p || p.state === 'dirt';
   if (!p || p.state === 'dirt') return tool === 'auto';   // grass/dirt + auto → plow
@@ -7305,6 +7595,8 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       fxBurst(ix, iy, '#FFE066', 14);
       fxFloat(ix, iy, '+' + coins + '¢');
       toast(`Sold ${meat.name} for ${coins}¢.`, false, 'good', 4000);
+      bumpStat('slaughtered');
+      bumpStat('slaughteredByAnimal.' + aid);
     }
     storage.save(); refreshHud();
     return 'ok';
@@ -7598,6 +7890,10 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       fxFloat(ix, iy, '+' + coins + '¢');
       fxFloat(ix, iy, '+' + xp + ' XP', 1, '#6CFFB4');
       placed.yieldAt = Date.now() + Math.round(ANIMAL_YIELD_MS * loyaltyYieldMul(placed));
+      // Track per-animal lifetime stats so the barn menu can show how
+      // much each individual has produced.
+      placed.totalYields = (placed.totalYields || 0) + 1;
+      placed.totalYieldCoins = (placed.totalYieldCoins || 0) + coins;
       bumpStat('harvested');
       bumpStat('harvestedByCrop.' + (y.name || placed.id));
       storage.save(); refreshHud();
@@ -7726,21 +8022,29 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     if (p.state !== 'planted') return fail('Nothing to harvest.');
     const ph = cropPhase(p);
     if (ph === 'withered') return fail('Withered — use Sell to clear.');
-    if (ph !== 'ready') return fail('Not ready yet.');
+    if (ph !== 'ready') {
+      // Pop a tile-side float so the feedback shows up where the player is
+      // looking, not just in the corner toast. Includes the remaining time
+      // so the message is actionable instead of generic.
+      const c = CROPS[p.crop];
+      const speed = Math.max(0.001, growSpeedMul(p));
+      const remain = c ? Math.max(0, Math.ceil(c.time - (Date.now() - p.plantedAt) / 1000 * speed)) : 0;
+      fxFloat(ix, iy, 'Not ready yet · ' + formatTimeMS(remain), 0, '#FF9966');
+      return fail('Crop isn\'t ready yet — ' + formatTimeMS(remain) + ' to go.');
+    }
     const c = CROPS[p.crop];
     if (c.feed) {
-      // Animal Feed: deposits straight into the silo. No coins, only XP.
+      // Animal Feed: deposits across the silo network. Cascades into the
+      // next silo whenever one tops out so a partial harvest is never lost.
       if (!state.silo) state.silo = { feed: 0, lastTickAt: Date.now(), boostMs: 0 };
       const cap = siloCapacity();
-      const before = state.silo.feed;
       const yieldQty = c.feedYield || SILO_FEED_PER_HARVEST;
-      state.silo.feed = Math.min(cap, state.silo.feed + yieldQty);
-      const added = Math.round(state.silo.feed - before);
+      const added = addSiloFeed(yieldQty);
       const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul()));
       fxBurst(ix, iy, '#F5C84B', 14);
       if (cap === 0) fxFloat(ix, iy, 'No silo!', 0, '#FF9966');
       else if (added > 0) fxFloat(ix, iy, '+' + added + ' feed', 0, '#F5C84B');
-      else fxFloat(ix, iy, 'Silo full!', 0, '#FF9966');
+      else fxFloat(ix, iy, 'Silos full!', 0, '#FF9966');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
       audio.play('harvest');
       grantXp(xpGain);
@@ -8487,17 +8791,19 @@ async function renderLeaderboardTab(wrap) {
   }
   const me = cloud.user ? cloud.user.id : null;
   const cols = [
-    { key: 'level',        label: 'Lv'      },
-    { key: 'coins',        label: 'Coins'   },
-    { key: 'day_count',    label: 'Day'     },
-    { key: 'harvested',    label: 'Harvest' },
-    { key: 'planted',      label: 'Plant'   },
-    { key: 'plowed',       label: 'Plow'    },
-    { key: 'watered',      label: 'Water'   },
-    { key: 'trees_placed', label: 'Trees'   },
-    { key: 'daily_streak', label: 'Streak'  },
-    { key: 'quests_done',  label: 'Quests'  },
-    { key: 'dailies_done', label: 'Daily'   },
+    { key: 'level',               label: 'Lv'      },
+    { key: 'coins',               label: 'Coins'   },
+    { key: 'day_count',           label: 'Day'     },
+    { key: 'harvested',           label: 'Harvest' },
+    { key: 'planted',             label: 'Plant'   },
+    { key: 'plowed',              label: 'Plow'    },
+    { key: 'watered',             label: 'Water'   },
+    { key: 'trees_placed',        label: 'Trees'   },
+    { key: 'animals_owned',       label: 'Animals' },
+    { key: 'animals_slaughtered', label: 'Slaughtered' },
+    { key: 'daily_streak',        label: 'Streak'  },
+    { key: 'quests_done',         label: 'Quests'  },
+    { key: 'dailies_done',        label: 'Daily'   },
   ];
   let html = '<p style="margin-top:6px;color:#6E4D22;font-size:12px;">Top 10 farmers, sorted by Level then Coins. Updates whenever you save.</p>';
   html += '<div style="overflow-x:auto;margin-top:8px;">';
@@ -8794,15 +9100,19 @@ function refreshHud() {
   refreshQuestsPanel();
 }
 const TOOLS = [
-  { id: 'plow',    label: 'Plow',    asset: 'tool_plow'    },
-  { id: 'plant',   label: 'Plant',   asset: 'tool_plant'   },
-  { id: 'water',   label: 'Water',   asset: 'tool_water'   },
-  { id: 'harvest', label: 'Harvest', asset: 'tool_harvest' },
-  // Slot 5 — opens the Shop directly on the Trees tab. Acts as a
+  { id: 'plow',      label: 'Plow',      asset: 'tool_plow'    },
+  { id: 'plant',     label: 'Plant',     asset: 'tool_plant'   },
+  { id: 'water',     label: 'Water',     asset: 'tool_water'   },
+  { id: 'harvest',   label: 'Harvest',   asset: 'tool_harvest' },
+  // Slaughter tool — visible by default, greyed out until the
+  // Slaughterhouse becomes available at level 11.
+  { id: 'slaughter', label: 'Slaughter', asset: 'building_slaughterhouse',
+    unlockBuilding: 'building_slaughterhouse' },
+  // Trees tab — opens the Shop directly on the Trees tab. Acts as a
   // shortcut, not a regular action tool.
-  { id: 'tree',    label: 'Trees',   asset: 'tree_oak_4',   shortcut: 'shopTree' },
-  { id: 'sell',    label: 'Sell',    asset: 'tool_cash'    },
-  { id: 'move',    label: 'Move',    asset: 'tool_move'    },
+  { id: 'tree',      label: 'Trees',     asset: 'tree_oak_4',   shortcut: 'shopTree' },
+  { id: 'sell',      label: 'Sell',      asset: 'tool_cash'    },
+  { id: 'move',      label: 'Move',      asset: 'tool_move'    },
 ];
 // Admin-only sprayer: bumps any planted crop to its next growth stage.
 // Toggle from the browser console with `enableAdmin()` / `disableAdmin()`,
@@ -8885,12 +9195,31 @@ function buildToolbar() {
     b.className = 'tool';
     if (t.shortcut === 'shopTree') b.classList.add('toolTrees');
     b.dataset.tool = t.id;
-    b.title = `${t.label} (${i+1})`;
+    // Some tools are gated by an unlockable building (e.g. Slaughter
+    // appears once the Slaughterhouse unlocks at level 11). Keep the
+    // button visible — it just looks disabled until the gate opens.
+    let toolLocked = false;
+    if (t.unlockBuilding) {
+      const gate = SHOP_ITEMS.find(s => s.id === t.unlockBuilding);
+      const lvl  = gate ? (gate.unlock || 1) : 1;
+      toolLocked = state.level < lvl;
+      if (toolLocked) {
+        b.classList.add('toolLocked');
+        b.title = `${t.label} — unlocks at Lv ${lvl}`;
+      } else {
+        b.title = `${t.label} (${i+1})`;
+      }
+    } else {
+      b.title = `${t.label} (${i+1})`;
+    }
     const ic = document.createElement('img');
     ic.src = imgPath(t.asset); ic.alt = t.label;
     if (t.shortcut === 'shopTree') {
       // Trees fall back to the mature alias if the staged sprite is missing.
       ic.onerror = () => { ic.src = imgPath('tree_oak'); };
+      ic.style.cssText = 'object-fit:contain;width:60px;height:60px;';
+    } else if (t.id === 'slaughter') {
+      // Slaughterhouse PNG is large; fit it like the other tool icons.
       ic.style.cssText = 'object-fit:contain;width:60px;height:60px;';
     }
     const tag = document.createElement('div');
@@ -8916,6 +9245,11 @@ function buildToolbar() {
       b.title = 'Spray (admin) — instantly grow a crop one stage';
     }
     b.addEventListener('click', () => {
+      if (toolLocked) {
+        toast(`${t.label} unlocks at Lv ${(SHOP_ITEMS.find(s => s.id === t.unlockBuilding) || {}).unlock || 1}.`, true);
+        audio.play('error');
+        return;
+      }
       if (t.shortcut === 'shopTree') {
         activeShopTab = 'tree';
         openShop();
@@ -9335,8 +9669,8 @@ function buildUpgradesGrid(grid) {
     const curCost   = WATER_COSTS[lvl];
     const nextCost  = maxed ? curCost : WATER_COSTS[lvl + 1];
     const sub = maxed
-      ? `Boost +${curBoost}% · ${curCost}¢ per water`
-      : `Boost +${curBoost}% → +${nextBoost}% · ${curCost}¢ → ${nextCost}¢ per water`;
+      ? `Crops &amp; trees +${curBoost}% growth · ${curCost}¢ per water`
+      : `Crops &amp; trees +${curBoost}% → +${nextBoost}% growth · ${curCost}¢ → ${nextCost}¢ per water`;
     makeUpgradeCard(grid, {
       iconKey: 'tool_water',
       name: 'Water Efficiency',
@@ -9678,6 +10012,24 @@ function bindInput() {
     const k = tileKey(ix, iy);
     if (live.draggedTiles.has(k)) return;
     live.draggedTiles.add(k);
+    // Tree placement: when the player is drag-painting in tree placeMode,
+    // each tile crossed queues a placeHere walk-and-plant. Lets bulk
+    // orchards happen with a single drag instead of click-per-tile.
+    if (live.placeMode && live.placeMode.id && live.placeMode.id.startsWith('tree_')) {
+      if (!isPlaceableTile(ix, iy)) return;
+      if (state.coins < live.placeMode.cost) return;
+      // De-dupe in case the player loops the cursor back over a queued tile.
+      for (const q of state.player.queue) {
+        if (q.tool === 'placeHere' && q.ix === ix && q.iy === iy) return;
+      }
+      state.player.queue.push({
+        tool: 'placeHere',
+        ix, iy,
+        placeData: { id: live.placeMode.id, name: live.placeMode.name,
+                     cost: live.placeMode.cost, moving: false },
+      });
+      return;
+    }
     // Queue the action for the farmer to walk to and perform. queueAction
     // refuses tiles where the current tool can't act, so dragging across
     // grass with the Sell tool only picks up placed items, etc.
@@ -9745,11 +10097,24 @@ function bindInput() {
       let hereIx = startT.ix, hereIy = startT.iy;
       let placedHere = state.placed[tileKey(hereIx, hereIy)];
       const canActHere = canActOnTile(state.selectedTool, startT.ix, startT.iy);
+      // Pen animals wander away from their home tile, so prefer the
+      // wandering animal under the cursor over its home tile entry. We
+      // only redirect when the cursor's literal tile didn't already hit
+      // a placed item, so drag-painting near a busy pen still works.
+      if (!placedHere) {
+        const wandered = findAnimalAt(hereIx, hereIy);
+        if (wandered) { hereIx = wandered.ix; hereIy = wandered.iy; placedHere = wandered.placed; }
+      }
       if (!placedHere && !canActHere && !e.shiftKey) {
         // Buildings get a wider probe (their bodies are big), trees and
         // animals only get the immediate SE neighbour so their hitboxes
         // don't stretch across multiple tiles.
-        const buildingProbes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2]];
+        // Tall buildings (silo, barn, greenhouse) extend several tiles
+        // above their anchor in screen space, so the probe ring reaches
+        // ~3 tiles SE of the cursor for buildings. Small sprites stay on
+        // the immediate ring so trees / animals don't bleed into adjacent
+        // tiles' hitboxes.
+        const buildingProbes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[3,2],[2,3],[3,3]];
         const smallProbes    = [[1,0],[0,1],[1,1]];
         for (const [dx, dy] of buildingProbes) {
           const px = startT.ix + dx, py = startT.iy + dy;
@@ -9762,6 +10127,13 @@ function bindInput() {
           if (isSmall && !smallProbes.some(p => p[0] === dx && p[1] === dy)) continue;
           hereIx = px; hereIy = py; placedHere = it;
           break;
+        }
+        // Probe SE for wandering animals as a final fallback.
+        if (!placedHere) {
+          for (const [dx, dy] of smallProbes) {
+            const wandered = findAnimalAt(startT.ix + dx, startT.iy + dy);
+            if (wandered) { hereIx = wandered.ix; hereIy = wandered.iy; placedHere = wandered.placed; break; }
+          }
         }
       }
       const hereK = tileKey(hereIx, hereIy);
@@ -9855,6 +10227,16 @@ function bindInput() {
         if (live.placeMode.moving || (queuedId && queuedId.startsWith('building_'))) {
           cancelPlaceMode();
         }
+        // Trees: keep placeMode AND enter paint mode so a held drag plants
+        // the next tiles too. Track the start tile so the move handler
+        // doesn't re-queue it.
+        if (queuedId && queuedId.startsWith('tree_')) {
+          live.dragMode = 'paint';
+          live.draggedTiles.add(startT.ix + ',' + startT.iy);
+          stage.setPointerCapture(e.pointerId);
+          if (e.preventDefault) e.preventDefault();
+          return;
+        }
       }
       live.dragMode = 'idle';
       return;
@@ -9901,6 +10283,64 @@ function bindInput() {
       state.selectedTool = null;
       refreshTools(); refreshSeedStrip();
       audio.play('click');
+    }
+
+    // Slaughter tool: clicking an animal marks it for slaughter (no walk),
+    // clicking the slaughterhouse queues the carry-and-deliver flow with
+    // the marked target. Probe the SE neighbours so the click registers on
+    // the visible sprite even when the cursor lands on the empty tile in
+    // front of the body.
+    if (e.button === 0 && !e.shiftKey && state.selectedTool === 'slaughter') {
+      let sx = startT.ix, sy = startT.iy;
+      let target = state.placed[tileKey(sx, sy)];
+      // Wandering animals don't sit on their home tile, so try them first.
+      if (!target) {
+        const wandered = findAnimalAt(sx, sy);
+        if (wandered) { sx = wandered.ix; sy = wandered.iy; target = wandered.placed; }
+      }
+      if (!target) {
+        const probes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[3,2],[2,3],[3,3]];
+        for (const [dx, dy] of probes) {
+          const px = startT.ix + dx, py = startT.iy + dy;
+          const t = state.placed[tileKey(px, py)];
+          if (t && t.id && (t.id.startsWith('animal_') || t.id === 'building_slaughterhouse')) {
+            sx = px; sy = py; target = t; break;
+          }
+          const wandered = findAnimalAt(px, py);
+          if (wandered) { sx = wandered.ix; sy = wandered.iy; target = wandered.placed; break; }
+        }
+      }
+      if (target && target.id === 'building_slaughterhouse') {
+        if (live.slaughterTarget) {
+          const aKey = live.slaughterTarget;
+          const animal = state.placed[aKey];
+          live.slaughterTarget = null;
+          if (animal && ANIMAL_MEAT[animal.id]) {
+            const [ax, ay] = aKey.split(',').map(Number);
+            const ageMul = animalAgeMul(animal);
+            state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey: aKey, animalId: animal.id });
+            state.player.queue.push({ tool: 'slaughterDeliver', ix: sx, iy: sy, animalId: animal.id, ageMul });
+            audio.play('click');
+          } else {
+            toast('Marked animal vanished.', true); audio.play('error');
+          }
+        } else {
+          toast('Click an animal first to mark it.', true);
+          audio.play('error');
+        }
+      } else if (target && target.id && target.id.startsWith('animal_') && canSlaughter(target.id, target)) {
+        live.slaughterTarget = tileKey(sx, sy);
+        const item = shopItem(target.id);
+        toast(`Marked ${item ? item.name : target.id}. Click the slaughterhouse.`, false);
+        audio.play('click');
+      } else {
+        toast('Pick an animal that can be slaughtered.', true);
+        audio.play('error');
+      }
+      live.dragMode = 'idle';
+      stage.setPointerCapture(e.pointerId);
+      if (e.preventDefault) e.preventDefault();
+      return;
     }
 
     // Move tool: a single click walks the farmer to the chosen tile —
@@ -10022,7 +10462,12 @@ function bindInput() {
           !canActOnTile(state.selectedTool, t.ix, t.iy)) {
         // Buildings get a wider probe (their bodies span ~2 tiles up);
         // trees and animals only register on the immediate ring.
-        const buildingProbes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2]];
+        // Tall buildings (silo, barn, greenhouse) extend several tiles
+        // above their anchor in screen space, so the probe ring reaches
+        // ~3 tiles SE of the cursor for buildings. Small sprites stay on
+        // the immediate ring so trees / animals don't bleed into adjacent
+        // tiles' hitboxes.
+        const buildingProbes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[3,2],[2,3],[3,3]];
         const smallProbes    = [[1,0],[0,1],[1,1]];
         for (const [dx, dy] of buildingProbes) {
           const it = state.placed[tileKey(t.ix + dx, t.iy + dy)];
@@ -10051,7 +10496,7 @@ function bindInput() {
         // animals/staff should ALWAYS read as clickable, even when the
         // selected tool happens to be able to act on the empty tile in
         // front of them.
-        const clickProbes = [[0,0],[1,0],[0,1],[1,1],[2,1],[1,2],[2,2]];
+        const clickProbes = [[0,0],[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[3,2],[2,3],[3,3]];
         let clickStaff = null, clickPlaced = null;
         for (const [dx, dy] of clickProbes) {
           const px = t.ix + dx, py = t.iy + dy;
@@ -10284,7 +10729,14 @@ function buildTooltipHTML(ix, iy) {
         // earlier in this function.
         const BUILDING_HOVER = {
           building_house:        () => `<span style="color:#2D6E33">+${Math.round((cottageXpMul()-1)*100)}% XP per harvest</span> · +5% per copy`,
-          building_silo:         () => `<span style="color:#2D6E33">+${Math.round((siloYieldMul()-1)*100)}% harvest yield</span><br>Feed: <b>${Math.floor(siloFeed())} / ${siloCapacity()}</b>`,
+          building_silo:         (p) => {
+            const own = Math.floor((p && typeof p.feed === 'number') ? p.feed : 0);
+            const total = Math.floor(siloFeed());
+            const cap = siloCapacity();
+            return `<span style="color:#2D6E33">+${Math.round((siloYieldMul()-1)*100)}% harvest yield</span>` +
+                   `<br>This silo: <b>${own} / ${SILO_CAPACITY_PER}</b>` +
+                   `<br>Network: <b>${total} / ${cap}</b>`;
+          },
           building_market_stall: () => `<span style="color:#2D6E33">+${Math.round((marketSellMul()-1)*100)}% sell prices</span> · +5% per copy`,
           building_windmill:     () => `<span style="color:#2D6E33">+${Math.round((windmillGrowMul()-1)*100)}% crop growth speed</span> · +5% per copy`,
           building_barn:         () => `Opens the fenced animal pen — buy animals in the shop and drop them inside.`,
@@ -11363,6 +11815,25 @@ async function startGame() {
       if (typeof state.silo.boostMs !== 'number') state.silo.boostMs = 0;
       state.silo.lastTickAt = Date.now();
     }
+    // Per-silo feed migration: legacy saves stored one global feed pool on
+    // state.silo.feed. New code reads + writes feed on each placed silo
+    // record. Distribute the legacy total across placed silos in iteration
+    // order, then null the legacy field so it's never double-counted.
+    if (state.silo.feed > 0) {
+      let leftover = state.silo.feed;
+      for (const k in state.placed) {
+        const p = state.placed[k];
+        if (!p || p.id !== 'building_silo') continue;
+        if (typeof p.feed !== 'number') p.feed = 0;
+        const room = SILO_CAPACITY_PER - p.feed;
+        if (room <= 0) continue;
+        const fill = Math.min(leftover, room);
+        p.feed += fill;
+        leftover -= fill;
+        if (leftover <= 0) break;
+      }
+      state.silo.feed = 0;
+    }
     // Coffee stand: same treatment as the silo.
     if (!state.coffeeStand || typeof state.coffeeStand !== 'object') {
       state.coffeeStand = { coffee: 0, lastTickAt: Date.now() };
@@ -11707,6 +12178,11 @@ const cloud = {
     const s = state.stats || {};
     const dayMs = (Date.now() - (state.startedAt || Date.now()));
     const day = Math.max(1, Math.floor(dayMs / DAY_MS) + 1);
+    let animals = 0;
+    for (const k in state.placed) {
+      const p = state.placed[k];
+      if (p && p.id && p.id.startsWith('animal_')) animals++;
+    }
     const { error } = await sb.from('leaderboard').upsert({
       user_id: this.user.id,
       farmer_name: (state.farmer && state.farmer.name) || meta.farmer_name || 'Anonymous',
@@ -11718,6 +12194,8 @@ const cloud = {
       plowed:    s.plowed    || 0,
       watered:   s.watered   || 0,
       trees_placed: s.treesPlaced || 0,
+      animals_owned:      animals,
+      animals_slaughtered: s.slaughtered || 0,
       daily_streak: state.dailyStreak || 0,
       quests_done:  state.questsCompleted || 0,
       dailies_done: state.dailiesCompleted || 0,
@@ -11729,7 +12207,7 @@ const cloud = {
   async fetchLeaderboard(limit = 10) {
     if (!sb) return [];
     const { data, error } = await sb.from('leaderboard')
-      .select('user_id, farmer_name, level, coins, day_count, harvested, planted, plowed, watered, trees_placed, daily_streak, quests_done, dailies_done, updated_at')
+      .select('user_id, farmer_name, level, coins, day_count, harvested, planted, plowed, watered, trees_placed, animals_owned, animals_slaughtered, daily_streak, quests_done, dailies_done, updated_at')
       .order('level', { ascending: false })
       .order('coins', { ascending: false })
       .limit(limit);

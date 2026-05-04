@@ -4,21 +4,28 @@
 -- =====================================================================
 
 create table if not exists public.leaderboard (
-  user_id        uuid primary key references auth.users (id) on delete cascade,
-  farmer_name    text not null,
-  level          int  not null default 1,
-  coins          int  not null default 0,
-  day_count      int  not null default 1,
-  harvested      int  not null default 0,
-  planted        int  not null default 0,
-  plowed         int  not null default 0,
-  watered        int  not null default 0,
-  trees_placed   int  not null default 0,
-  daily_streak   int  not null default 0,
-  quests_done    int  not null default 0,
-  dailies_done   int  not null default 0,
-  updated_at     timestamptz not null default now()
+  user_id              uuid primary key references auth.users (id) on delete cascade,
+  farmer_name          text not null,
+  level                int  not null default 1,
+  coins                int  not null default 0,
+  day_count            int  not null default 1,
+  harvested            int  not null default 0,
+  planted              int  not null default 0,
+  plowed               int  not null default 0,
+  watered              int  not null default 0,
+  trees_placed         int  not null default 0,
+  animals_owned        int  not null default 0,
+  animals_slaughtered  int  not null default 0,
+  daily_streak         int  not null default 0,
+  quests_done          int  not null default 0,
+  dailies_done         int  not null default 0,
+  updated_at           timestamptz not null default now()
 );
+
+-- Migration for existing tables:
+alter table public.leaderboard
+  add column if not exists animals_owned       int not null default 0,
+  add column if not exists animals_slaughtered int not null default 0;
 
 -- Indexes for the two sort orders the leaderboard uses.
 create index if not exists leaderboard_level_coins_idx
