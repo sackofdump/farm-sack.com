@@ -3276,7 +3276,7 @@ const SHOP_ITEMS = [
   { cat: 'seed', id: 'watermelon', name: 'Watermelon', cost: 130, sub: '35m · sells 600¢',  unlock: 13 },
   { cat: 'seed', id: 'pineapple',  name: 'Pineapple',  cost: 160, sub: '45m · sells 780¢',  unlock: 15 },
   { cat: 'seed', id: 'feed_corn',  name: 'Animal Feed',cost: 30,  sub: '10m · fills the silo (XP only)', unlock: 9  },
-  { cat: 'seed', id: 'coffee',     name: 'Coffee Beans', cost: 35, sub: '12m · fills the Coffee Stand (XP only)', unlock: 18 },
+  { cat: 'seed', id: 'coffee',     name: 'Coffee Beans', cost: 35, sub: '12m · brews coffee that speeds up workers', unlock: 18 },
   // ---- Trees (yield fruit from the mature stage) ----
   { cat: 'tree', id: 'tree_oak',         name: 'Oak Tree',     cost: 80,  sub: 'Yields walnuts',     unlock: 1  },
   { cat: 'tree', id: 'tree_pine_dark',   name: 'Pine Tree',    cost: 120, sub: 'Yields pine nuts',   unlock: 4  },
@@ -5606,14 +5606,21 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           // Select: open that animal's per-instance action menu — same
           // popup the player gets by clicking the animal in the world,
           // so they can pet / slaughter / ride / etc. without hunting
-          // for the wandering sprite.
+          // for the wandering sprite. Capture the button's rect BEFORE
+          // closing the host menu (the button is inside #animalMenu,
+          // which closeAnimalMenu hides — getBoundingClientRect() on a
+          // hidden element returns 0,0 and the new popup ends up in the
+          // top-left corner).
           const animal = state.placed[animalKey];
           if (!animal) return;
-          closeAnimalMenu();
-          // Anchor the new popup near the button so it doesn't fly across
-          // the screen.
           const r = btn.getBoundingClientRect();
-          openAnimalMenu(animalKey, animal, r.left, r.top);
+          // Center the popup on screen instead of pinning it to the row
+          // — the row sits at the table's right edge so anchoring there
+          // shoves the new menu off the visible area.
+          const cx = window.innerWidth / 2 - 130;
+          const cy = window.innerHeight / 2 - 140;
+          closeAnimalMenu();
+          openAnimalMenu(animalKey, animal, cx, cy);
           audio.play('click');
         }
       });
@@ -11374,7 +11381,18 @@ function buildTooltipHTML(ix, iy) {
         // otherwise the seed-specific blurb is irrelevant noise.
         if (state.selectedTool === 'plant') {
           const c = CROPS[state.selectedSeed];
-          html = `<b>Plowed soil</b><br>Plant <b>${c.name}</b> (${c.cost}¢) — sells for ${c.sell}¢ in ${formatTimeMS(c.time)}.`;
+          // Special-case feed/coffee crops — they don't sell for coins,
+          // they brew into a stand-fueled buff. Spell that out so the
+          // player knows what the planting actually does.
+          let sellLine;
+          if (c.coffee) {
+            sellLine = `fills the <b>Coffee Stand</b> · while it has coffee, every worker moves + plants <b>+${Math.round(COFFEE_SPEED_BONUS*100)}% faster</b>`;
+          } else if (c.feed) {
+            sellLine = `fills the <b>Silo</b> · feeds animals + speeds yields/age-up`;
+          } else {
+            sellLine = `sells for ${c.sell}¢`;
+          }
+          html = `<b>Plowed soil</b><br>Plant <b>${c.name}</b> (${c.cost}¢) — ${sellLine} in ${formatTimeMS(c.time)}.`;
         } else {
           html = '<b>Plowed soil</b><br>Switch to <b>Plant</b> (2) to seed it.';
         }
