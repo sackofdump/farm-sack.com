@@ -2422,8 +2422,8 @@ function playerSpeed() {
   return base;
 }
 function bootsCost(level) {
-  // Steep ramp so each tier feels earned: 900, 2250, ~5.6k, ~14k, ~35k, ~88k.
-  return Math.round(900 * Math.pow(2.5, level));
+  // Steep ramp so each tier feels earned: 3600, 9k, 22.5k, ~56k, ~141k, ~352k.
+  return Math.round(3600 * Math.pow(2.5, level));
 }
 
 // ----- Yield boost (harvest sell multiplier) -----
@@ -2432,7 +2432,7 @@ const YIELD_MAX_LEVEL = 5;
 function yieldMultiplier() {
   return 1 + (state.player.yieldLevel || 0) * YIELD_PER_LEVEL;
 }
-function yieldCost(level) { return Math.round(1350 * Math.pow(2.5, level)); }
+function yieldCost(level) { return Math.round(5400 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
 const AUTO_HARVEST_CHANCE = [0, 0.15, 0.30, 0.50, 0.75];
@@ -2440,7 +2440,7 @@ const AUTO_HARVEST_MAX_LEVEL = AUTO_HARVEST_CHANCE.length - 1;
 function autoHarvestChance() {
   return AUTO_HARVEST_CHANCE[state.player.autoHarvestLevel || 0] || 0;
 }
-function autoHarvestCost(level) { return Math.round(1800 * Math.pow(2.6, level)); }
+function autoHarvestCost(level) { return Math.round(7200 * Math.pow(2.6, level)); }
 
 // ----- Water efficiency (cost + bonus) -----
 const WATER_COSTS    = [2, 1, 0];           // coin cost per water
@@ -3055,9 +3055,7 @@ function performCropFarmerAction(m, task) {
     state.coins -= wc; p.watered = true;
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 8);
     bumpStat('watered');
-    grantXp(1);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
-    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
     storage.save(); refreshHud();
   } else if (task.action === 'harvest') {
     if (cropPhase(p) !== 'ready') return;
@@ -3181,7 +3179,7 @@ function siloTick() {
 function growSpeedMul(p) {
   return (p && p.watered ? wateredSpeedMul() : 1) * windmillGrowMul() * cowFertilizerMul();
 }
-function waterCostUpgrade(level) { return Math.round(1125 * Math.pow(2.5, level)); }
+function waterCostUpgrade(level) { return Math.round(4500 * Math.pow(2.5, level)); }
 
 // ----- Crop field expansion -----
 const CROP_FARM_MAX_DIM = 12;
@@ -3337,41 +3335,41 @@ const SHOP_ITEMS = [
 // ============================================================
 const ACHIEVEMENTS = [
   { id:'first_sprout',  name:'First Sprout',     desc:'Plant your first seed.',           icon:'tool_plant',
-    check: s => s.planted >= 1,                                                   reward:{coins:25,   xp:10}  },
+    check: s => s.planted >= 1,                                                   reward:{coins:12,   xp:5}   },
   { id:'first_harvest', name:'First Harvest',    desc:'Harvest your first crop.',         icon:'tool_harvest',
-    check: s => s.harvested >= 1,                                                 reward:{coins:50,   xp:20}  },
+    check: s => s.harvested >= 1,                                                 reward:{coins:25,   xp:10}  },
   { id:'green_thumb',   name:'Green Thumb',      desc:'Harvest 50 crops.',                icon:'tool_harvest',
-    check: s => s.harvested >= 50,                                                reward:{coins:500,  xp:100} },
+    check: s => s.harvested >= 50,                                                reward:{coins:250,  xp:50}  },
   { id:'master_farmer', name:'Master Farmer',    desc:'Harvest 500 crops.',               icon:'tool_harvest',
-    check: s => s.harvested >= 500,                                               reward:{coins:5000, xp:600} },
+    check: s => s.harvested >= 500,                                               reward:{coins:2500, xp:300} },
   { id:'variety_pack',  name:'Variety Pack',     desc:'Harvest one of every crop.',       icon:'crop_pumpkin_4',
-    check: s => CROP_IDS.every(c => (s.harvestedByCrop[c]||0) >= 1),              reward:{coins:1000, xp:200} },
+    check: s => CROP_IDS.every(c => (s.harvestedByCrop[c]||0) >= 1),              reward:{coins:500,  xp:100} },
   { id:'pumpkin_king',  name:'Pumpkin King',     desc:'Harvest 25 pumpkins.',             icon:'crop_pumpkin_4',
-    check: s => (s.harvestedByCrop.pumpkin||0) >= 25,                             reward:{coins:1500, xp:250} },
+    check: s => (s.harvestedByCrop.pumpkin||0) >= 25,                             reward:{coins:750,  xp:125} },
   { id:'corn_country',  name:'Corn Country',     desc:'Harvest 50 corn.',                 icon:'crop_corn_4',
-    check: s => (s.harvestedByCrop.corn||0) >= 50,                                reward:{coins:1000, xp:180} },
+    check: s => (s.harvestedByCrop.corn||0) >= 50,                                reward:{coins:500,  xp:90}  },
   { id:'wheat_walker',  name:'Wheat Walker',     desc:'Harvest 100 wheat.',               icon:'crop_wheat_4',
-    check: s => (s.harvestedByCrop.wheat||0) >= 100,                              reward:{coins:600,  xp:120} },
+    check: s => (s.harvestedByCrop.wheat||0) >= 100,                              reward:{coins:300,  xp:60}  },
   { id:'coin_hoard',    name:'Coin Hoarder',     desc:'Hold 5,000¢ at once.',             icon:'small_coin',
-    check: () => state.coins >= 5000,                                             reward:{coins:200,  xp:50}  },
+    check: () => state.coins >= 5000,                                             reward:{coins:100,  xp:25}  },
   { id:'tycoon',        name:'Tycoon',           desc:'Hold 50,000¢ at once.',            icon:'small_cash',
-    check: () => state.coins >= 50000,                                            reward:{coins:2000, xp:500} },
+    check: () => state.coins >= 50000,                                            reward:{coins:1000, xp:250} },
   { id:'land_baron',    name:'Land Baron',       desc:'Own 50 expansion tiles.',          icon:'tool_build',
-    check: () => Object.keys(state.farmExpansion||{}).length >= 50,               reward:{coins:1500, xp:300} },
+    check: () => Object.keys(state.farmExpansion||{}).length >= 50,               reward:{coins:750,  xp:150} },
   { id:'forester',      name:'Forester',         desc:'Place 10 trees.',                  icon:'tree_oak',
-    check: s => s.treesPlaced >= 10,                                              reward:{coins:300,  xp:80}  },
+    check: s => s.treesPlaced >= 10,                                              reward:{coins:150,  xp:40}  },
   { id:'decorator',     name:'Decorator',        desc:'Place 20 decor items.',            icon:'decor_daisies',
-    check: s => s.decorPlaced >= 20,                                              reward:{coins:300,  xp:80}  },
+    check: s => s.decorPlaced >= 20,                                              reward:{coins:150,  xp:40}  },
   { id:'plow_century',  name:'Hundred Acres',    desc:'Plow 100 tiles.',                  icon:'tool_plow',
-    check: s => s.plowed >= 100,                                                  reward:{coins:400,  xp:80}  },
+    check: s => s.plowed >= 100,                                                  reward:{coins:200,  xp:40}  },
   { id:'hydration',     name:'Hydration',        desc:'Water 100 crops.',                 icon:'tool_water',
-    check: s => s.watered >= 100,                                                 reward:{coins:300,  xp:80}  },
+    check: s => s.watered >= 100,                                                 reward:{coins:150,  xp:40}  },
   { id:'wither_blight', name:'Withered Heart',   desc:'Let 5 crops wither.',              icon:'tool_harvest',
-    check: s => s.withered >= 5,                                                  reward:{coins:50,   xp:25}  },
+    check: s => s.withered >= 5,                                                  reward:{coins:25,   xp:12}  },
   { id:'spinster',      name:'Around We Go',     desc:'Rotate the camera 10 times.',      icon:'tool_select',
-    check: s => s.rotations >= 10,                                                reward:{coins:100,  xp:25}  },
+    check: s => s.rotations >= 10,                                                reward:{coins:50,   xp:12}  },
   { id:'questmaster',   name:'Questmaster',      desc:'Complete 10 quests.',              icon:'ui_orders',
-    check: s => (state.questsCompleted||0) >= 10,                                 reward:{coins:1500, xp:300} },
+    check: s => (state.questsCompleted||0) >= 10,                                 reward:{coins:750,  xp:150} },
 ];
 
 // ============================================================
@@ -8581,10 +8579,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     state.coins -= wc; p.watered = true;
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
     bumpStat('watered');
-    // Tiny XP drip per water — keeps progression flowing while crops grow.
-    grantXp(1);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
-    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
   } else if (tool === 'spray') {
     // Admin-only: jump the crop to the next growth stage threshold.
     // 0..0.33 → 0.34, 0.33..0.66 → 0.67, 0.66..1 → ready (1.0).
