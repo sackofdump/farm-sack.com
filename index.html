@@ -1660,13 +1660,14 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-04</div>
       <ul>
+        <li>Toolbar gets a Big Red Barn shortcut to the left of Shop — opens the barn menu in one click.</li>
+        <li>Each barn can have its own pen — first barn auto-fences, later ones ask via an in-game prompt.</li>
         <li>Each silo stores its own feed — overflow cascades into the next silo instead of being lost.</li>
         <li>Hover tooltips + pointer cursor work on every building (silo, barn, cottage, etc.) without a click.</li>
         <li>Drag-paint multiple trees in one motion, just like crops.</li>
         <li>Slaughter is a toolbar button — grayed out until the slaughterhouse unlocks at Lv 11.</li>
         <li>Click a barn to see every animal in its pen (age, lifetime yield, slaughter price).</li>
         <li>Animal hitboxes follow the wandering sprite, not the original drop tile.</li>
-        <li>Each barn can have its own pen — first barn auto-fences, subsequent barns ask first.</li>
         <li>Workers can be renamed and have their gender swapped from the worker menu.</li>
         <li>Leaderboard now ranks by animals owned and animals slaughtered.</li>
         <li>Buildings lock by default — open the menu and tap "Unlock To Move" to relocate.</li>
@@ -2252,6 +2253,25 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 
 <!-- Pop-up action menu for clicking on an animal — shows Collect / Slaughter
      buttons whichever apply. -->
+<!-- Yes/no popup that asks the player whether the second-or-later Big Red
+     Barn should come with its own fenced pen. Replaces the browser
+     `confirm()` so the prompt matches the game's UI. Sticky — the player
+     has to actually pick one of the two buttons. -->
+<div id="barnPenChoiceModal" class="modal hidden">
+  <div class="modal-body" style="width:auto;max-width:min(420px,92vw);padding:22px 26px;text-align:center;">
+    <h2>🐴 Add an Animal Pen?</h2>
+    <p style="color:#4A2E15;font-size:14px;line-height:1.5;text-align:left;">
+      Build a fenced pen attached to this Big Red Barn? Choose <b>Add Pen</b>
+      to enclose a 6×6 yard for animals; choose <b>Barn Only</b> to keep this
+      barn standalone (decorative — no animals).
+    </p>
+    <div class="modal-foot" style="justify-content:center;gap:10px;margin-top:14px;">
+      <button class="splashBtn" id="barnPenChoiceNo" style="width:auto;padding:10px 20px;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border-color:var(--wood-3);box-shadow:0 3px 0 var(--wood-3);">Barn Only</button>
+      <button class="splashBtn primary" id="barnPenChoiceYes" style="width:auto;padding:10px 20px;">Add Pen</button>
+    </div>
+  </div>
+</div>
+
 <!-- Lightweight modal for editing a worker's name + gender. Wired by
      openWorkerEditModal() — replaces the per-staff inline UI so the form
      can sit on top of the field without crowding the menu. -->
@@ -6024,6 +6044,61 @@ function barnPenAt(ix, iy) {
   }
   return { x0: ix + dx0, y0: iy + dy0, w: BARN_PEN_W, h: BARN_PEN_H };
 }
+// Spawn a fresh 6×6 pen anchored to the barn at (barnIx, barnIy) and
+// clear the soon-to-be-pen tiles (refunding any decor / placed items
+// that would otherwise vanish under the new fence).
+function attachBarnPen(barnIx, barnIy) {
+  const pen = barnPenAt(barnIx, barnIy);
+  pen.barnIx = barnIx;
+  pen.barnIy = barnIy;
+  addBarnPen(pen);
+  const barnKey = tileKey(barnIx, barnIy);
+  for (let dy = 0; dy < pen.h; dy++) {
+    for (let dx = 0; dx < pen.w; dx++) {
+      const tx = pen.x0 + dx, ty = pen.y0 + dy;
+      const k = tileKey(tx, ty);
+      delete state.plots[k];
+      if (state.farmExpansion) delete state.farmExpansion[k];
+      if (k !== barnKey && state.placed[k]) {
+        const placed = state.placed[k];
+        const refund = Math.max(1, Math.round((placed.cost ?? 10) * 0.5));
+        state.coins += refund;
+        delete state.placed[k];
+      }
+    }
+  }
+  storage.save();
+  refreshHud();
+}
+// Open the in-game "Add Pen?" modal. The player has to actually pick one
+// of the buttons — sticky modal, no backdrop dismiss. Resolves the choice
+// against (barnIx, barnIy) so we know which barn to anchor the pen to.
+function askBarnPenChoice(barnIx, barnIy) {
+  const modal = document.getElementById('barnPenChoiceModal');
+  if (!modal) return;
+  const yes = document.getElementById('barnPenChoiceYes');
+  const no  = document.getElementById('barnPenChoiceNo');
+  const finish = (pickPen) => {
+    modal.classList.add('hidden');
+    if (pickPen) {
+      // Validate the pen still fits — the player might have placed the
+      // barn with the world filling in around it. If it doesn't, drop a
+      // toast and bail rather than silently doing nothing.
+      const pen = barnPenAt(barnIx, barnIy);
+      if (pen.x0 < 0 || pen.y0 < 0 ||
+          pen.x0 + pen.w > WORLD_W || pen.y0 + pen.h > WORLD_H) {
+        toast('Not enough room around this barn for a 6×6 pen.', true);
+        audio.play('error');
+        return;
+      }
+      attachBarnPen(barnIx, barnIy);
+      toast('Pen added to the new barn.', false, 'good');
+    }
+  };
+  if (yes) yes.onclick = () => finish(true);
+  if (no)  no.onclick  = () => finish(false);
+  modal.classList.remove('hidden');
+}
 // Move the existing animal pen + every placed item inside it so the
 // barn drag-and-drop carries the entire enclosure with it. Conflicting
 // items in tiles entering the new pen footprint (and not coming from
@@ -7828,54 +7903,31 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     if (!data.id.startsWith('animal_')) delete state.plots[k];
     state.placed[k] = rec;
     // Big Red Barn placement: every barn can have its own fenced pen.
-    // The first barn always comes with a pen; subsequent barns ask the
-    // player up front. The pen anchors back to its barn so the fence +
-    // gate redraw correctly from state.
+    // The first barn always comes with a pen; subsequent barns surface an
+    // in-game modal to ask. The pen anchors back to its barn so the fence
+    // + gate redraw correctly from state.
     if (data.id === 'building_barn' && !data.moving) {
       const existingPens = getAllBarnPens();
       const isFirstBarn = existingPens.length === 0;
-      const wantPen = isFirstBarn || (typeof data.includePen === 'boolean'
-        ? data.includePen
-        : confirm('Build a fenced pen attached to this barn? (Cancel = barn only.)'));
-      if (wantPen) {
-        const pen = barnPenAt(ix, iy);
-        pen.barnIx = ix;
-        pen.barnIy = iy;
-        addBarnPen(pen);
-        // Clear anything already on the soon-to-be-pen tiles: growing crops,
-        // bought farm-expansion ownership, AND placed items (other than the
-        // barn itself). Without this last sweep, decor/animals/buildings
-        // dropped on those tiles before the barn went down get visually
-        // overlapped by the new pen fence.
-        const barnKey = tileKey(ix, iy);
-        for (let dy = 0; dy < pen.h; dy++) {
-          for (let dx = 0; dx < pen.w; dx++) {
-            const tx = pen.x0 + dx, ty = pen.y0 + dy;
-            const k = tileKey(tx, ty);
-            delete state.plots[k];
-            if (state.farmExpansion) delete state.farmExpansion[k];
-            if (k !== barnKey && state.placed[k]) {
-              // Refund the placed item so the player isn't punished for the move.
-              const placed = state.placed[k];
-              const refund = Math.max(1, Math.round((placed.cost ?? 10) * 0.5));
-              state.coins += refund;
-              delete state.placed[k];
+      if (isFirstBarn) {
+        attachBarnPen(ix, iy);
+        // First-time barn tutorial — pop a popup explaining the new pen +
+        // shop animals workflow. Pulses the shop button to draw the eye.
+        if (!state.barnTutorialShown) {
+          state.barnTutorialShown = true;
+          setTimeout(() => {
+            openModal('barnTutorialModal');
+            const sBtn = document.getElementById('toolShopBtn');
+            if (sBtn) {
+              sBtn.classList.add('tutHighlight');
+              setTimeout(() => sBtn.classList.remove('tutHighlight'), 8000);
             }
-          }
+          }, 350);
         }
-      }
-      // First-time barn tutorial — pop a popup explaining the new pen +
-      // shop animals workflow. Pulses the shop button to draw the eye.
-      if (isFirstBarn && wantPen && !state.barnTutorialShown) {
-        state.barnTutorialShown = true;
-        setTimeout(() => {
-          openModal('barnTutorialModal');
-          const sBtn = document.getElementById('toolShopBtn');
-          if (sBtn) {
-            sBtn.classList.add('tutHighlight');
-            setTimeout(() => sBtn.classList.remove('tutHighlight'), 8000);
-          }
-        }, 350);
+      } else {
+        // Subsequent barn — ask via modal instead of a browser confirm().
+        // Defer one tick so the toast / placement FX don't fight the modal.
+        setTimeout(() => askBarnPenChoice(ix, iy), 50);
       }
     }
     if (!data.id.startsWith('tree_')) {
@@ -12327,7 +12379,7 @@ async function startGame() {
     'barnTutorialModal', 'greenhouseTutorialModal', 'slaughterhouseTutorialModal',
     'greenhouseUnlockTutorialModal', 'staffComboTutorialModal', 'dogTutorialModal',
     'siloTutorialModal', 'expandHintModal', 'seedContainerReminderModal',
-    'levelUpModal', 'mutationDiscoveryModal',
+    'levelUpModal', 'mutationDiscoveryModal', 'barnPenChoiceModal',
   ]);
   document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => {
     if (e.target !== m) return;
