@@ -4212,13 +4212,8 @@ function pickPlacedItem(wx, wy) {
     const hitTop = isTreeStaged
       ? bottom - Math.min(h * 0.14, TILE_H * 0.30)
       : top;
-    // Tree trunks render slightly left of the sprite center in the
-    // asset set, so shift the hitbox center left a touch. Without this
-    // the trunk sat in the right half of the symmetric hitbox and
-    // clicks just left of the visible trunk missed.
-    const treeTrunkCx = c.x - w * 0.08;
-    const hitLeft  = isTreeStaged ? treeTrunkCx - w * 0.18 : left;
-    const hitRight = isTreeStaged ? treeTrunkCx + w * 0.18 : right;
+    const hitLeft  = isTreeStaged ? c.x - w * 0.18 : left;
+    const hitRight = isTreeStaged ? c.x + w * 0.18 : right;
     if (wx < hitLeft || wx > hitRight || wy < hitTop || wy > bottom) continue;
     // Inside the sprite's screen bbox — sample the alpha at the cursor pixel
     // so transparent corners of the sprite don't capture clicks.
