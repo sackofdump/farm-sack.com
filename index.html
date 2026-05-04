@@ -1719,6 +1719,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
       <li>More trees.</li>
       <li>More animals.</li>
       <li>More crops.</li>
+      <li>More plant mutations.</li>
       <li>Crafting system with crops.</li>
       <li>Animal automation.</li>
       <li>Mobile optimization.</li>
@@ -2471,10 +2472,14 @@ const SILO_CAPACITY_PER             = 100;     // capacity per placed silo
 const SILO_FEED_PER_HARVEST         = 8;       // feed units per Animal Feed harvest
 const SILO_DRAIN_PER_ANIMAL_PER_MIN = 0.5;     // 0.5 units per animal per minute
 const SILO_AGE_BONUS                = 0.5;     // +50% age-up speed while feeding
+const SILO_YIELD_SPEED_BONUS        = 0.25;    // +25% faster yield timers while feeding
 // Slaughter bonus: +20¢ per 5 feed in the silo (so 100 feed = +400¢, paid
 // flat on top of the meat's age-scaled coin price). Stops when feed = 0.
 const SILO_SLAUGHTER_BONUS_COINS    = 20;
 const SILO_SLAUGHTER_BONUS_PER_FEED = 5;
+// Yield-rate multiplier — divide the next-yield delay by this so each
+// timer counts down 25% faster while the silo is feeding.
+function siloYieldSpeedMul() { return siloHasFeed() ? 1 + SILO_YIELD_SPEED_BONUS : 1; }
 function siloCapacity()  { return SILO_CAPACITY_PER * buildingCount('building_silo'); }
 // Per-silo feed lives on each placed silo record (`state.placed[k].feed`).
 // We iterate `state.placed` in key order so the cascade fill is stable.
@@ -5379,7 +5384,7 @@ const BUILDING_MENUS = {
             if (live.placeMode) cancelPlaceMode();
             state.selectedTool = 'slaughter';
             refreshTools(); refreshSeedStrip();
-            toast('Click an animal to mark it, then click the slaughterhouse.', false);
+            toast('Click an animal — the farmer auto-delivers it to the slaughterhouse.', false);
           },
         },
       ];
@@ -5425,7 +5430,7 @@ const BUILDING_MENUS = {
         `${animalLine}<br>` +
         `Harvest <b>Animal Feed</b> to refill (each harvest = +${SILO_FEED_PER_HARVEST}).<br>` +
         (active
-          ? `<span style="color:#1f7a3e;">Active: +<b>${siloSlaughterBonus()}¢</b> slaughter bonus · +${Math.round(SILO_AGE_BONUS * 100)}% faster age-up</span>`
+          ? `<span style="color:#1f7a3e;">Active: +<b>${siloSlaughterBonus()}¢</b> slaughter bonus · +${Math.round(SILO_AGE_BONUS * 100)}% faster age-up · +${Math.round(SILO_YIELD_SPEED_BONUS * 100)}% faster yields</span>`
           : `<span style="color:#8a5a1f;">Idle — fill the silo to unlock the bonus.</span>`) +
         `</div>`
       );
@@ -5584,10 +5589,19 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const [aix, aiy] = btn.getAttribute('data-collect-animal').split(',').map(Number);
-        closeAnimalMenu();
         if (!state.player.queue) state.player.queue = [];
-        state.player.queue.push({ tool: 'harvest', ix: aix, iy: aiy });
+        // De-dupe so a double-click doesn't queue twice.
+        const already = state.player.queue.some(q => q.tool === 'harvest' && q.ix === aix && q.iy === aiy);
+        if (!already) state.player.queue.push({ tool: 'harvest', ix: aix, iy: aiy });
         audio.play('click');
+        // Keep the menu open so the player can collect from multiple
+        // animals in a row. Visually mark this button as queued and
+        // disable it until the farmer collects (a re-open of the menu
+        // refreshes the timer/yield-state).
+        btn.textContent = 'Queued';
+        btn.disabled = true;
+        btn.style.opacity = '0.65';
+        btn.style.cursor = 'default';
       });
     });
   }
@@ -8068,7 +8082,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         rec.siloBaselineMs = (state.silo && state.silo.boostMs) || 0;
         rec.loyalty = LOYALTY_MAX;
       }
-      if (ANIMAL_YIELDS[data.id]) rec.yieldAt = Date.now() + Math.round(ANIMAL_YIELD_MS * loyaltyYieldMul(rec));
+      if (ANIMAL_YIELDS[data.id]) rec.yieldAt = Date.now() + Math.round(ANIMAL_YIELD_MS * loyaltyYieldMul(rec) / siloYieldSpeedMul());
     }
     if (!data.id.startsWith('animal_')) delete state.plots[k];
     state.placed[k] = rec;
@@ -8312,7 +8326,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       fxBurst(ix, iy, '#FFE066', 12);
       fxFloat(ix, iy, '+' + coins + '¢');
       fxFloat(ix, iy, '+' + xp + ' XP', 1, '#6CFFB4');
-      placed.yieldAt = Date.now() + Math.round(ANIMAL_YIELD_MS * loyaltyYieldMul(placed));
+      placed.yieldAt = Date.now() + Math.round(ANIMAL_YIELD_MS * loyaltyYieldMul(placed) / siloYieldSpeedMul());
       // Track per-animal lifetime stats so the barn menu can show how
       // much each individual has produced.
       placed.totalYields = (placed.totalYields || 0) + 1;
@@ -11305,9 +11319,13 @@ function buildTooltipHTML(ix, iy) {
             const own = Math.floor((p && typeof p.feed === 'number') ? p.feed : 0);
             const total = Math.floor(siloFeed());
             const cap = siloCapacity();
+            const active = total > 0 && cap > 0;
             return `<span style="color:#2D6E33">+${Math.round((siloYieldMul()-1)*100)}% harvest yield</span>` +
                    `<br>This silo: <b>${own} / ${SILO_CAPACITY_PER}</b>` +
-                   `<br>Network: <b>${total} / ${cap}</b>`;
+                   `<br>Network: <b>${total} / ${cap}</b>` +
+                   (active
+                     ? `<br><span style="color:#2D6E33">Active: faster animal yields + age-up</span>`
+                     : `<br><span style="color:#8a5a1f">Idle — fill it to speed up animal yields.</span>`);
           },
           building_market_stall: () => `<span style="color:#2D6E33">+${Math.round((marketSellMul()-1)*100)}% sell prices</span> · +5% per copy`,
           building_windmill:     () => `<span style="color:#2D6E33">+${Math.round((windmillGrowMul()-1)*100)}% crop growth speed</span> · +5% per copy`,
