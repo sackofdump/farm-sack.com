@@ -2999,7 +2999,9 @@ function performArboristAction(m, task) {
     if (!f) return;
     const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
     const coins = Math.round(f.coins * yieldMul);
-    const xp    = Math.max(1, Math.round(f.xp * 0.5 * cottageXpMul()));
+    // Tree XP follows the crop formula (sell / 10) — same as the
+    // player's tree-harvest path above.
+    const xp    = Math.max(1, Math.round((coins / 10) * cottageXpMul()));
     state.coins += coins;
     grantXp(xp);
     audio.play('harvest');
@@ -8491,7 +8493,9 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       const f = TREE_FRUITS[placed.id];
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
       const coins = Math.round(f.coins * yieldMul);
-      const xp    = Math.max(1, Math.round(f.xp * 0.5 * cottageXpMul()));
+      // Tree XP follows the crop formula (sell / 10) so a basket of
+      // apples and a basket of grapes pay roughly the same XP-per-coin.
+      const xp    = Math.max(1, Math.round((coins / 10) * cottageXpMul()));
       state.coins += coins;
       grantXp(xp);
       // Just the soft rustle — no extra coin chirp.
@@ -9690,6 +9694,19 @@ function refreshHud() {
   const nxt = LEVEL_THRESHOLDS[state.level];
   const pct = nxt && nxt > cur ? Math.max(0, Math.min(100, (state.xp - cur) / (nxt - cur) * 100)) : 100;
   document.getElementById('xpFill').style.width = pct + '%';
+  // Hover tooltip on the level chip: current XP into the level / total
+  // XP needed for it. MAX once the player tops the threshold table.
+  const xpFill = document.getElementById('xpFill');
+  const lvlChip = xpFill && xpFill.closest('.chip');
+  if (lvlChip) {
+    if (nxt && nxt > cur) {
+      const into = Math.max(0, Math.floor(state.xp - cur));
+      const need = nxt - cur;
+      lvlChip.title = `Lv ${state.level} — ${formatCoins(into)} / ${formatCoins(need)} XP to next`;
+    } else {
+      lvlChip.title = `Lv ${state.level} — MAX`;
+    }
+  }
   const day = Math.floor((Date.now() - state.startedAt) / DAY_MS) + 1;
   document.getElementById('dayTxt').textContent = day;
   refreshQuestsPanel();
