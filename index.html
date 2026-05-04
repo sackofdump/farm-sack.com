@@ -5344,21 +5344,20 @@ const BUILDING_MENUS = {
             }
             row += '<td style="padding:4px 6px;text-align:right;">' + slaughterCell + '</td>';
           }
-          // Per-row Select button — queues a harvest walk-over so the
-          // farmer collects the yield. Disabled when there's nothing to
-          // collect right now (no yield species or timer not done).
-          const btnEnabled = !!y;
+          // Per-row button: "Collect" (green) when the animal's yield is
+          // ready — queues a harvest walk-over directly. Otherwise
+          // "Select" (amber) opens that animal's full menu so the player
+          // can pet / mark for slaughter / ride etc. without hunting for
+          // the sprite. Every animal — including non-yield species like
+          // dog / horse — gets a button now so all of them are reachable.
           const btnLabel = canCollect ? 'Collect' : 'Select';
           const btnStyle = canCollect
             ? 'background:linear-gradient(to bottom,#7DC159,#4F8C2D);color:#FFF;border-color:#2A4A1A;'
             : 'background:linear-gradient(to bottom,#E5C77A,#B0863A);color:#3a2410;border-color:#5C3F1A;';
-          if (btnEnabled) {
-            row += `<td style="padding:4px 6px;text-align:right;">` +
-                   `<button data-collect-animal="${ix},${iy}" style="border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid;${btnStyle}">${btnLabel}</button>` +
-                   `</td>`;
-          } else {
-            row += '<td style="padding:4px 6px;"></td>';
-          }
+          const action = canCollect ? 'collect' : 'select';
+          row += `<td style="padding:4px 6px;text-align:right;">` +
+                 `<button data-animal-action="${action}" data-animal-tile="${ix},${iy}" style="border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid;${btnStyle}">${btnLabel}</button>` +
+                 `</td>`;
           row += '</tr>';
           html += row;
         }
@@ -5585,23 +5584,38 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     // queue a harvest walk-over so the farmer collects that animal's
     // yield. Wired here (not via inline onclick) so the closure has
     // access to the menu's close path.
-    desc.querySelectorAll('[data-collect-animal]').forEach(btn => {
+    desc.querySelectorAll('[data-animal-action]').forEach(btn => {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
-        const [aix, aiy] = btn.getAttribute('data-collect-animal').split(',').map(Number);
-        if (!state.player.queue) state.player.queue = [];
-        // De-dupe so a double-click doesn't queue twice.
-        const already = state.player.queue.some(q => q.tool === 'harvest' && q.ix === aix && q.iy === aiy);
-        if (!already) state.player.queue.push({ tool: 'harvest', ix: aix, iy: aiy });
-        audio.play('click');
-        // Keep the menu open so the player can collect from multiple
-        // animals in a row. Visually mark this button as queued and
-        // disable it until the farmer collects (a re-open of the menu
-        // refreshes the timer/yield-state).
-        btn.textContent = 'Queued';
-        btn.disabled = true;
-        btn.style.opacity = '0.65';
-        btn.style.cursor = 'default';
+        const action = btn.getAttribute('data-animal-action');
+        const [aix, aiy] = btn.getAttribute('data-animal-tile').split(',').map(Number);
+        const animalKey = aix + ',' + aiy;
+        if (action === 'collect') {
+          // Queue a harvest walk-over and keep the menu open so the
+          // player can chain collects across the whole pen. Mark this
+          // button as queued so it's obvious it took.
+          if (!state.player.queue) state.player.queue = [];
+          const already = state.player.queue.some(q => q.tool === 'harvest' && q.ix === aix && q.iy === aiy);
+          if (!already) state.player.queue.push({ tool: 'harvest', ix: aix, iy: aiy });
+          audio.play('click');
+          btn.textContent = 'Queued';
+          btn.disabled = true;
+          btn.style.opacity = '0.65';
+          btn.style.cursor = 'default';
+        } else {
+          // Select: open that animal's per-instance action menu — same
+          // popup the player gets by clicking the animal in the world,
+          // so they can pet / slaughter / ride / etc. without hunting
+          // for the wandering sprite.
+          const animal = state.placed[animalKey];
+          if (!animal) return;
+          closeAnimalMenu();
+          // Anchor the new popup near the button so it doesn't fly across
+          // the screen.
+          const r = btn.getBoundingClientRect();
+          openAnimalMenu(animalKey, animal, r.left, r.top);
+          audio.play('click');
+        }
       });
     });
   }
