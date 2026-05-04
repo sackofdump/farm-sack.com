@@ -1,0 +1,11 @@
+NOW
+-add coyotes, vermin, etc. to hurt crops. haaving dogs decrease hurting crops
+
+LATER
+-will need a staff system (crop farmers, animal keepers, etc)
+-weather patterns (bonuses, debuffs)
+
+
+
+ME
+-more ai music soundtracks (11 labs)

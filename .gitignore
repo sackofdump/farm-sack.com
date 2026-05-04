@@ -1,0 +1,28 @@
+# Source-asset workspaces — only the processed files in assets/named/
+# need to ship; the originals live outside git.
+NEW ASSETS/
+old music/
+splice/
+
+# One-off marketing screenshots and logo dumps.
+_card_preview*.png
+farm.png
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+.idea/
+.vscode/
+
+# Local-only Claude Code workspace
+.claude/
+
+# Build artefacts (none right now, but reserve)
+node_modules/
+dist/
+
+# Debug spritesheet dumps
+walk_row.png
+
