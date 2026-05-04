@@ -882,15 +882,18 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   padding: 10px 12px;
   box-shadow: 0 6px 16px rgba(0,0,0,0.4);
   display: flex; flex-direction: column; gap: 6px;
-  min-width: 180px;
-  max-width: 280px;
+  min-width: 220px;
+  max-width: min(480px, 92vw);
   max-height: 70vh;
   overflow-y: auto;
 }
 #animalMenu .am-desc { word-wrap: break-word; overflow-wrap: anywhere; }
 #animalMenu .am-desc table { width: 100%; }
 #animalMenu .am-desc table td,
-#animalMenu .am-desc table th { word-break: break-word; }
+#animalMenu .am-desc table th {
+  white-space: nowrap;
+  vertical-align: middle;
+}
 #animalMenu.hidden { display: none; }
 #animalMenu .am-title {
   font-weight: 900; color: #4A2E15; text-align: center;
