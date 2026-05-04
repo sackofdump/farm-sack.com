@@ -883,7 +883,14 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   box-shadow: 0 6px 16px rgba(0,0,0,0.4);
   display: flex; flex-direction: column; gap: 6px;
   min-width: 180px;
+  max-width: 280px;
+  max-height: 70vh;
+  overflow-y: auto;
 }
+#animalMenu .am-desc { word-wrap: break-word; overflow-wrap: anywhere; }
+#animalMenu .am-desc table { width: 100%; }
+#animalMenu .am-desc table td,
+#animalMenu .am-desc table th { word-break: break-word; }
 #animalMenu.hidden { display: none; }
 #animalMenu .am-title {
   font-weight: 900; color: #4A2E15; text-align: center;
@@ -10757,43 +10764,61 @@ function bindInput() {
     }
     if (!stage.classList.contains('dragging')) {
       const t = screenToTile(e.clientX, e.clientY);
-      // While placing a building, accept hover anywhere in WORLD_W × WORLD_H
-      // (the meadow outside the main farm). For everything else stay
-      // bound to inWorld so off-fence tiles don't get tooltips.
-      const isBuildingPlace = live.placeMode && (shopItem(live.placeMode.id) || {}).cat === 'building';
-      const inBounds = isBuildingPlace
-        ? (t.ix >= 0 && t.iy >= 0 && t.ix < WORLD_W && t.iy < WORLD_H)
-        : inWorld(t.ix, t.iy);
-      // Tall sprite hitbox: when the cursor's tile is empty / non-actionable,
-      // snap hover to a building/tree/animal sitting SE of it so the
-      // highlight diamond + tooltip + cursor register on the visible sprite
-      // instead of the empty grass tile above it.
-      let snapT = t;
-      if (inBounds && !live.placeMode && !live.zoneSelect &&
-          !state.placed[tileKey(t.ix, t.iy)] &&
-          !canActOnTile(state.selectedTool, t.ix, t.iy)) {
-        // Buildings get a wider probe (their bodies span ~2 tiles up);
-        // trees and animals only register on the immediate ring.
-        // Tall buildings (silo, barn, greenhouse) extend several tiles
-        // above their anchor in screen space, so the probe ring reaches
-        // ~3 tiles SE of the cursor for buildings. Small sprites stay on
-        // the immediate ring so trees / animals don't bleed into adjacent
-        // tiles' hitboxes.
-        const buildingProbes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[3,2],[2,3],[3,3]];
-        const smallProbes    = [[1,0],[0,1],[1,1]];
+      // First: pixel-perfect lookup. Buildings extend several tiles north
+      // of their anchor in screen space, so screenToTile may have already
+      // returned the anchor (via pickPlacedItem) but only when it's at or
+      // behind the cursor's literal tile. For body pixels north of the
+      // anchor we still fall through here — kick off an explicit lookup
+      // so the cursor + tooltip read the building regardless.
+      const directHit = pickPlacedItem(
+        (e.clientX - state.camX) / state.zoom,
+        (e.clientY - state.camY) / state.zoom - Y_BASE
+      );
+      // Tall sprite hitbox: probe SE of the literal cursor tile for any
+      // placed building / animal whose anchor sits up to 4 tiles down-right.
+      // Larger probe than before so silo / greenhouse tops register.
+      const buildingProbes = [
+        [0,0],[1,0],[0,1],[1,1],[2,0],[0,2],[2,1],[1,2],[2,2],
+        [3,1],[1,3],[3,2],[2,3],[3,3],[4,2],[2,4],[4,3],[3,4],[4,4],
+      ];
+      const smallProbes = [[0,0],[1,0],[0,1],[1,1]];
+      const probeFor = (kindFilter) => {
+        // Direct alpha hit beats every probe — pickPlacedItem already
+        // pixel-tested the sprite so we trust it.
+        if (directHit) {
+          const it = state.placed[tileKey(directHit.ix, directHit.iy)];
+          if (it && kindFilter(it)) return { ix: directHit.ix, iy: directHit.iy, placed: it };
+        }
         for (const [dx, dy] of buildingProbes) {
-          const it = state.placed[tileKey(t.ix + dx, t.iy + dy)];
+          const px = t.ix + dx, py = t.iy + dy;
+          const it = state.placed[tileKey(px, py)];
           if (!it || !it.id) continue;
           const isBuilding = it.id.startsWith('building_');
           const isSmall    = it.id.startsWith('tree_') || it.id.startsWith('animal_');
           if (!isBuilding && !isSmall) continue;
           if (isSmall && !smallProbes.some(p => p[0] === dx && p[1] === dy)) continue;
-          {
-            snapT = { ix: t.ix + dx, iy: t.iy + dy };
-            break;
-          }
+          if (!kindFilter(it)) continue;
+          return { ix: px, iy: py, placed: it };
         }
+        return null;
+      };
+      const isBuildingPlace = live.placeMode && (shopItem(live.placeMode.id) || {}).cat === 'building';
+      // Hover snap: prefer a placed item under or SE of the cursor when
+      // the literal tile is empty / non-actionable; falls back to the
+      // literal tile.
+      let snapT = t;
+      if (!live.placeMode && !live.zoneSelect &&
+          !state.placed[tileKey(t.ix, t.iy)] &&
+          !canActOnTile(state.selectedTool, t.ix, t.iy)) {
+        const hit = probeFor(it => true);
+        if (hit) snapT = { ix: hit.ix, iy: hit.iy };
       }
+      // inBounds is computed against the SNAPPED tile so the body of a
+      // building near a world edge still gets a hover even when the
+      // literal cursor tile is just outside the playfield.
+      const inBounds = isBuildingPlace
+        ? (snapT.ix >= 0 && snapT.iy >= 0 && snapT.ix < WORLD_W && snapT.iy < WORLD_H)
+        : inWorld(snapT.ix, snapT.iy);
       if (inBounds) {
         live.hover = snapT;
         showTooltip(snapT.ix, snapT.iy, e);
@@ -10801,36 +10826,26 @@ function bindInput() {
         live.hover = null;
         hideTooltip();
       }
-      // Cursor hint based on what's under the pointer.
+      // Cursor hint based on what's under the pointer. Use the same probe
+      // helper so silo / barn / staff bodies always get the pointer-finger
+      // even when the literal cursor tile is empty grass north of them.
       stage.classList.remove('curAct', 'curPlace', 'curBad', 'curClick');
       if (inBounds) {
-        // Run an independent SE-probe just for the cursor — buildings/
-        // animals/staff should ALWAYS read as clickable, even when the
-        // selected tool happens to be able to act on the empty tile in
-        // front of them.
-        const clickProbes = [[0,0],[1,0],[0,1],[1,1],[2,1],[1,2],[2,2],[3,2],[2,3],[3,3]];
-        let clickStaff = null, clickPlaced = null;
-        for (const [dx, dy] of clickProbes) {
-          const px = t.ix + dx, py = t.iy + dy;
-          const s = staffAtTile(px, py);
+        let clickStaff = null;
+        for (const [dx, dy] of buildingProbes) {
+          const s = staffAtTile(t.ix + dx, t.iy + dy);
           if (s) { clickStaff = s; break; }
-          const it = state.placed[tileKey(px, py)];
-          if (it && it.id && (
-                it.id.startsWith('building_') ||
-                it.id.startsWith('animal_'))) {
-            clickPlaced = it; break;
-          }
         }
-        const isClickable = !!clickStaff || !!clickPlaced;
+        const clickHit = probeFor(it =>
+          it.id && (it.id.startsWith('building_') || it.id.startsWith('animal_')));
+        const isClickable = !!clickStaff || !!clickHit;
         if (live.placeMode) {
           stage.classList.add(
-            isPlaceableTile(t.ix, t.iy) && state.coins >= live.placeMode.cost
+            isPlaceableTile(snapT.ix, snapT.iy) && state.coins >= live.placeMode.cost
               ? 'curPlace' : 'curBad');
         } else if (isClickable) {
-          // Pointer finger over any clickable placed thing — overrides
-          // the action cursor so buildings always look clickable.
           stage.classList.add('curClick');
-        } else if (state.selectedTool && canActOnTile(state.selectedTool, t.ix, t.iy)) {
+        } else if (state.selectedTool && canActOnTile(state.selectedTool, snapT.ix, snapT.iy)) {
           stage.classList.add('curAct');
         }
       }
