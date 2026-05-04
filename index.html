@@ -6073,6 +6073,43 @@ function barnPenAt(ix, iy) {
 // Spawn a fresh 6×6 pen anchored to the barn at (barnIx, barnIy) and
 // clear the soon-to-be-pen tiles (refunding any decor / placed items
 // that would otherwise vanish under the new fence).
+// Sweep every placed animal whose home tile sits outside ALL pens into
+// the closest free interior tile of the nearest pen. Idempotent — running
+// it twice on already-corralled animals is a no-op. Returns the count
+// moved so callers can surface a toast when they round strays up.
+function sweepStrayAnimalsIntoPens() {
+  const pens = getAllBarnPens();
+  if (pens.length === 0) return 0;
+  let moved = 0;
+  for (const k in state.placed) {
+    const it = state.placed[k];
+    if (!it || !it.id || !it.id.startsWith('animal_')) continue;
+    // Dogs roam freely — they're not pen-bound.
+    if (it.id === 'animal_dog') continue;
+    const [hx, hy] = k.split(',').map(Number);
+    if (findBarnPenAt(hx, hy)) continue;   // already inside a pen
+    let best = null, bestD = Infinity;
+    for (const pen of pens) {
+      for (let dy = 0; dy < pen.h; dy++) {
+        for (let dx = 0; dx < pen.w; dx++) {
+          const tx = pen.x0 + dx, ty = pen.y0 + dy;
+          const tk = tx + ',' + ty;
+          if (state.placed[tk]) continue;
+          const d = Math.hypot(tx - hx, ty - hy);
+          if (d < bestD) { best = { tx, ty, tk }; bestD = d; }
+        }
+      }
+    }
+    if (best) {
+      delete state.placed[k];
+      state.placed[best.tk] = it;
+      // Reset wander offsets so the sprite snaps cleanly to its new home.
+      it.dx = it.dy = it.tx = it.ty = 0;
+      moved++;
+    }
+  }
+  return moved;
+}
 function attachBarnPen(barnIx, barnIy) {
   const pen = barnPenAt(barnIx, barnIy);
   // Guardrail: refuse to attach a pen that would render past the world
@@ -6102,6 +6139,11 @@ function attachBarnPen(barnIx, barnIy) {
       }
     }
   }
+  // Round up any animals that were stranded outside a fence — common
+  // after a botched move/sell where the pen was lost. The new pen
+  // sweeps them in so the player doesn't have to manually relocate.
+  const swept = sweepStrayAnimalsIntoPens();
+  if (swept > 0) toast(`Rounded up ${swept} stray animal${swept === 1 ? '' : 's'} into the pen.`, false, 'good');
   storage.save();
   refreshHud();
 }
@@ -6186,6 +6228,9 @@ function movePenWithBarn(newBarnIx, newBarnIy, newBarnKey, oldBarnIx, oldBarnIy)
   oldPen.y0 += dy;
   oldPen.barnIx = newBarnIx;
   oldPen.barnIy = newBarnIy;
+  // Belt-and-braces: if any animal landed outside the translated pen
+  // (shouldn't happen, but botched saves can carry strays), pull them in.
+  sweepStrayAnimalsIntoPens();
 }
 // The pen has a one-tile gate facing the barn so the farmer can walk in.
 // Returns { ix, iy, dir } pointing at the pen tile aligned with the barn,
@@ -8412,6 +8457,15 @@ function tryPlace(ix, iy, silent=false) {
   // A tree / decor / building takes over the tile — drop any plowed-soil
   // or dirt plot record so the renderer doesn't paint dirt under it.
   if (!pm.id.startsWith('animal_')) delete state.plots[k];
+  // Defensive: a move should have already cleared the original tile in
+  // actOnTile('move'), but if any code path skipped that (e.g. a queued
+  // placement firing twice, a duplicate event), drop the source tile now
+  // so the move doesn't leave a free copy of the building behind. Skip
+  // when origKey === k (same-tile drop — the assignment below handles it).
+  if (pm.moving && pm.origKey && pm.origKey !== k) {
+    const orig = state.placed[pm.origKey];
+    if (orig && orig.id === pm.id) delete state.placed[pm.origKey];
+  }
   state.placed[k] = rec;
   // Barn move: translate the existing pen + everything inside it so the
   // animal pen follows the barn instead of being orphaned at the old spot.
