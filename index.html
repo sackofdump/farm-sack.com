@@ -1719,6 +1719,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <h4>🗺️ Roadmap</h4>
     <div class="patchDate">Coming soon</div>
     <ul>
+      <li>Greenhouse mutation system overhaul.</li>
       <li>Weather patterns (bonuses + debuffs).</li>
       <li>More trees.</li>
       <li>More animals.</li>
@@ -2038,7 +2039,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
       Three new buildings just opened up — together they let you hire farmhands and automate the busywork:
     </p>
     <ol style="text-align:left;color:#4A2E15;font-size:13px;line-height:1.6;padding-left:22px;">
-      <li><b>Staff Hall</b> — click it to hire a <b>Crop Farmer</b> (auto-plows, plants, waters, harvests in a zone you draw), an <b>Arborist</b> (auto-tends trees), or an <b>Animal Keeper</b> (stops loyalty decay). Wages: 50¢/day per staffer.</li>
+      <li><b>Staff Hall</b> — click it to hire a <b>Crop Farmer</b> (auto-plows, plants, waters, harvests in a zone you draw), an <b>Arborist</b> (auto-tends trees), or an <b>Animal Keeper</b> (stops loyalty decay). Wages: 500¢/day per staffer.</li>
       <li><b>Seed Container</b> — drop one inside (or within 2 tiles of) a Crop Farmer's zone, click to open the buy menu, and queue up to 200 seeds for them to plant.</li>
       <li><b>Coffee Stand</b> — harvest <b>Coffee Beans</b> to fill it. While there's coffee, every staffer moves + works <b>+50% faster</b>. Each extra stand stacks +25%, capped at +100%.</li>
     </ol>
@@ -2314,6 +2315,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   <button class="am-btn am-ride" id="amRide" style="display:none;background:linear-gradient(to bottom,#7BC56A,#3F8338);border-color:#2A4A1A;">Ride</button>
   <button class="am-btn am-pet" id="amPet" style="display:none;background:linear-gradient(to bottom,#FFB1D8,#D6549A);border-color:#7E2A55;color:#3a1024;">Pet</button>
   <button class="am-btn am-move" id="amMove" style="display:none;background:linear-gradient(to bottom,#E5C77A,#B0863A);border-color:#5C3F1A;color:#3a2410;">🔓 Unlock To Move</button>
+  <button class="am-btn am-sell" id="amSell" style="display:none;background:linear-gradient(to bottom,#E27464,#A03423);border-color:#6A1A12;color:#FFF;">🏷️ Sell (50% refund)</button>
   <button class="am-close" id="amClose">Cancel</button>
 </div>
 <!-- Floating Dismount banner — only visible while the farmer is mounted.
@@ -2372,31 +2374,31 @@ const DAY_MS = 5 * 60 * 1000;
 // Cumulative XP needed to enter level N. The curve roughly compounds
 // 1.6× per tier so each level feels meaningful all the way to Lv 25.
 const LEVEL_THRESHOLDS = [
-  0,         // Lv 1
-  80,        // Lv 2
-  220,       // Lv 3
-  480,       // Lv 4
-  920,       // Lv 5
-  1700,      // Lv 6
-  3000,      // Lv 7
-  5200,      // Lv 8
-  8800,      // Lv 9
-  14500,     // Lv 10
-  23500,     // Lv 11
-  37500,     // Lv 12
-  58500,     // Lv 13
-  90000,     // Lv 14
-  138000,    // Lv 15
-  208000,    // Lv 16
-  310000,    // Lv 17
-  455000,    // Lv 18
-  655000,    // Lv 19
-  925000,    // Lv 20
-  1280000,   // Lv 21
-  1740000,   // Lv 22
-  2330000,   // Lv 23
-  3080000,   // Lv 24
-  4030000,   // Lv 25
+  0,          // Lv 1
+  160,        // Lv 2
+  440,        // Lv 3
+  960,        // Lv 4
+  1840,       // Lv 5
+  3400,       // Lv 6
+  6000,       // Lv 7
+  10400,      // Lv 8
+  17600,      // Lv 9
+  29000,      // Lv 10
+  47000,      // Lv 11
+  75000,      // Lv 12
+  117000,     // Lv 13
+  180000,     // Lv 14
+  276000,     // Lv 15
+  416000,     // Lv 16
+  620000,     // Lv 17
+  910000,     // Lv 18
+  1310000,    // Lv 19
+  1850000,    // Lv 20
+  2560000,    // Lv 21
+  3480000,    // Lv 22
+  4660000,    // Lv 23
+  6160000,    // Lv 24
+  8060000,    // Lv 25
 ];
 
 // Camera zoom range.
@@ -2420,8 +2422,8 @@ function playerSpeed() {
   return base;
 }
 function bootsCost(level) {
-  // Steep ramp so each tier feels earned: 600, 1500, 3750, 9375, ~23k, ~58k.
-  return Math.round(600 * Math.pow(2.5, level));
+  // Steep ramp so each tier feels earned: 900, 2250, ~5.6k, ~14k, ~35k, ~88k.
+  return Math.round(900 * Math.pow(2.5, level));
 }
 
 // ----- Yield boost (harvest sell multiplier) -----
@@ -2430,7 +2432,7 @@ const YIELD_MAX_LEVEL = 5;
 function yieldMultiplier() {
   return 1 + (state.player.yieldLevel || 0) * YIELD_PER_LEVEL;
 }
-function yieldCost(level) { return Math.round(900 * Math.pow(2.5, level)); }
+function yieldCost(level) { return Math.round(1350 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
 const AUTO_HARVEST_CHANCE = [0, 0.15, 0.30, 0.50, 0.75];
@@ -2438,20 +2440,20 @@ const AUTO_HARVEST_MAX_LEVEL = AUTO_HARVEST_CHANCE.length - 1;
 function autoHarvestChance() {
   return AUTO_HARVEST_CHANCE[state.player.autoHarvestLevel || 0] || 0;
 }
-function autoHarvestCost(level) { return Math.round(1200 * Math.pow(2.6, level)); }
+function autoHarvestCost(level) { return Math.round(1800 * Math.pow(2.6, level)); }
 
 // ----- Water efficiency (cost + bonus) -----
-const WATER_COSTS    = [2, 1, 1, 0];     // coin cost per water
-const WATER_SPEED_M  = [1.5, 1.75, 2.0, 2.5]; // multiplier when watered (+50/75/100/150%)
+const WATER_COSTS    = [2, 1, 0];           // coin cost per water
+const WATER_SPEED_M  = [1.25, 1.50, 1.75];  // multiplier when watered (+25/50/75%)
 const WATER_MAX_LEVEL = WATER_COSTS.length - 1;
 function waterCost()       { return WATER_COSTS[state.player.waterLevel || 0] ?? 2; }
 function wateredSpeedMul() { return WATER_SPEED_M[state.player.waterLevel || 0] ?? 1.5; }
 // Building bonus counters. Each placed building of a given kind stacks
-// its +5% bonus, capped at +50% (10 copies).
+// its +5% bonus, capped at +25% (5 copies).
 function buildingCount(id) {
   let n = 0;
   for (const k in state.placed) if (state.placed[k].id === id) n++;
-  return Math.min(10, n);
+  return Math.min(5, n);
 }
 function cottageXpMul()    { return 1 + 0.05 * buildingCount('building_house'); }
 function siloYieldMul()    { return 1 + 0.05 * buildingCount('building_silo'); }
@@ -2865,7 +2867,7 @@ const LOYALTY_DECAY_PER_TICK     = 1;
 const LOYALTY_DECAY_INTERVAL_MS  = 3 * 60 * 1000;     // 3 min per −1 loyalty
 const PET_LOYALTY_GAIN           = 20;                // +20 per pet
 const PET_COOLDOWN_MS            = DAY_MS;            // once per in-game day per animal
-const STAFF_DAILY_UPKEEP         = 50;                // coins/day per staff
+const STAFF_DAILY_UPKEEP         = 500;               // coins/day per staff
 const STAFF_ROLES = {
   animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen.', unlock: 20, max: 1 },
   crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 18, max: 3, levelStep: 3 },
@@ -3053,7 +3055,9 @@ function performCropFarmerAction(m, task) {
     state.coins -= wc; p.watered = true;
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 8);
     bumpStat('watered');
+    grantXp(1);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
+    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
     storage.save(); refreshHud();
   } else if (task.action === 'harvest') {
     if (cropPhase(p) !== 'ready') return;
@@ -3177,7 +3181,7 @@ function siloTick() {
 function growSpeedMul(p) {
   return (p && p.watered ? wateredSpeedMul() : 1) * windmillGrowMul() * cowFertilizerMul();
 }
-function waterCostUpgrade(level) { return Math.round(750 * Math.pow(2.5, level)); }
+function waterCostUpgrade(level) { return Math.round(1125 * Math.pow(2.5, level)); }
 
 // ----- Crop field expansion -----
 const CROP_FARM_MAX_DIM = 12;
@@ -3230,32 +3234,28 @@ function expandCropFarm() {
 // crop is a real progression milestone.
 const WITHER_SECONDS = 12 * 60 * 60;   // 12 hours
 const CROPS = {
-  // Original 6 — wheat is already balanced; the rest got halved.
-  wheat:      { name: 'Wheat',      cost: 5,   sell: 11,   time: 45,    wither: WITHER_SECONDS, unlock: 1  },
-  strawberry: { name: 'Strawberry', cost: 14,  sell: 25,   time: 150,   wither: WITHER_SECONDS, unlock: 2  },
-  carrot:     { name: 'Carrot',     cost: 24,  sell: 45,   time: 360,   wither: WITHER_SECONDS, unlock: 5  },
-  corn:       { name: 'Corn',       cost: 42,  sell: 85,   time: 720,   wither: WITHER_SECONDS, unlock: 7  },
-  tomato:     { name: 'Tomato',     cost: 70,  sell: 145,  time: 1200,  wither: WITHER_SECONDS, unlock: 9  },
-  pumpkin:    { name: 'Pumpkin',    cost: 110, sell: 250,  time: 1800,  wither: WITHER_SECONDS, unlock: 11 },
-  // 12 new crops staggered through the level curve (also halved)
-  potato:     { name: 'Potato',     cost: 18,  sell: 32,   time: 240,   wither: WITHER_SECONDS, unlock: 4  },
-  onion:      { name: 'Onion',      cost: 22,  sell: 40,   time: 300,   wither: WITHER_SECONDS, unlock: 4  },
-  blueberry:  { name: 'Blueberry',  cost: 30,  sell: 60,   time: 480,   wither: WITHER_SECONDS, unlock: 6  },
-  pepper:     { name: 'Bell Pepper',cost: 35,  sell: 70,   time: 540,   wither: WITHER_SECONDS, unlock: 6  },
-  rice:       { name: 'Rice',       cost: 38,  sell: 75,   time: 600,   wither: WITHER_SECONDS, unlock: 7  },
-  cotton:     { name: 'Cotton',     cost: 48,  sell: 100,  time: 840,   wither: WITHER_SECONDS, unlock: 8  },
-  eggplant:   { name: 'Eggplant',   cost: 60,  sell: 125,  time: 1020,  wither: WITHER_SECONDS, unlock: 9  },
-  sunflower:  { name: 'Sunflower',  cost: 65,  sell: 135,  time: 1100,  wither: WITHER_SECONDS, unlock: 10 },
-  grape:      { name: 'Grape',      cost: 80,  sell: 170,  time: 1320,  wither: WITHER_SECONDS, unlock: 10 },
-  mushroom:   { name: 'Mushroom',   cost: 95,  sell: 210,  time: 1560,  wither: WITHER_SECONDS, unlock: 12 },
-  watermelon: { name: 'Watermelon', cost: 130, sell: 300,  time: 2100,  wither: WITHER_SECONDS, unlock: 13 },
-  pineapple:  { name: 'Pineapple',  cost: 160, sell: 390,  time: 2700,  wither: WITHER_SECONDS, unlock: 15 },
-  // Animal Feed — corn-like crop. Harvest deposits straight into the silo
-  // (no coins, just XP). Silo feed boosts animal age-up + slaughter price.
-  feed_corn:  { name: 'Animal Feed',cost: 30,  sell: 0,    time: 600,   wither: WITHER_SECONDS, unlock: 9, feed: true, feedYield: SILO_FEED_PER_HARVEST },
-  // Coffee Beans — fills the Coffee Stand. While stand has coffee, every
-  // hired staff member moves + works ~50% faster.
-  coffee:     { name: 'Coffee Beans', cost: 35, sell: 0,   time: 720,   wither: WITHER_SECONDS, unlock: 18, coffee: true, coffeeYield: COFFEE_PER_HARVEST },
+  // Times ×2 and sells ×0.7 vs the previous tuning so progression is
+  // slower and coin gains lighter per harvest.
+  wheat:      { name: 'Wheat',      cost: 5,   sell: 8,    time: 90,    wither: WITHER_SECONDS, unlock: 1  },
+  strawberry: { name: 'Strawberry', cost: 14,  sell: 18,   time: 300,   wither: WITHER_SECONDS, unlock: 2  },
+  carrot:     { name: 'Carrot',     cost: 24,  sell: 32,   time: 720,   wither: WITHER_SECONDS, unlock: 5  },
+  corn:       { name: 'Corn',       cost: 42,  sell: 60,   time: 1440,  wither: WITHER_SECONDS, unlock: 7  },
+  tomato:     { name: 'Tomato',     cost: 70,  sell: 102,  time: 2400,  wither: WITHER_SECONDS, unlock: 9  },
+  pumpkin:    { name: 'Pumpkin',    cost: 110, sell: 175,  time: 3600,  wither: WITHER_SECONDS, unlock: 11 },
+  potato:     { name: 'Potato',     cost: 18,  sell: 22,   time: 480,   wither: WITHER_SECONDS, unlock: 4  },
+  onion:      { name: 'Onion',      cost: 22,  sell: 28,   time: 600,   wither: WITHER_SECONDS, unlock: 4  },
+  blueberry:  { name: 'Blueberry',  cost: 30,  sell: 42,   time: 960,   wither: WITHER_SECONDS, unlock: 6  },
+  pepper:     { name: 'Bell Pepper',cost: 35,  sell: 49,   time: 1080,  wither: WITHER_SECONDS, unlock: 6  },
+  rice:       { name: 'Rice',       cost: 38,  sell: 53,   time: 1200,  wither: WITHER_SECONDS, unlock: 7  },
+  cotton:     { name: 'Cotton',     cost: 48,  sell: 70,   time: 1680,  wither: WITHER_SECONDS, unlock: 8  },
+  eggplant:   { name: 'Eggplant',   cost: 60,  sell: 88,   time: 2040,  wither: WITHER_SECONDS, unlock: 9  },
+  sunflower:  { name: 'Sunflower',  cost: 65,  sell: 95,   time: 2200,  wither: WITHER_SECONDS, unlock: 10 },
+  grape:      { name: 'Grape',      cost: 80,  sell: 120,  time: 2640,  wither: WITHER_SECONDS, unlock: 10 },
+  mushroom:   { name: 'Mushroom',   cost: 95,  sell: 145,  time: 3120,  wither: WITHER_SECONDS, unlock: 12 },
+  watermelon: { name: 'Watermelon', cost: 130, sell: 210,  time: 4200,  wither: WITHER_SECONDS, unlock: 13 },
+  pineapple:  { name: 'Pineapple',  cost: 160, sell: 275,  time: 5400,  wither: WITHER_SECONDS, unlock: 15 },
+  feed_corn:  { name: 'Animal Feed',cost: 30,  sell: 0,    time: 1200,  wither: WITHER_SECONDS, unlock: 9, feed: true, feedYield: SILO_FEED_PER_HARVEST },
+  coffee:     { name: 'Coffee Beans', cost: 35, sell: 0,   time: 1440,  wither: WITHER_SECONDS, unlock: 18, coffee: true, coffeeYield: COFFEE_PER_HARVEST },
 };
 // Mutable list — rebuilt whenever a mutation is registered as plantable.
 let CROP_IDS = Object.keys(CROPS);
@@ -3264,26 +3264,26 @@ function rebuildCropIds() { CROP_IDS = Object.keys(CROPS); }
 // Shop catalog. cat = seed | tree | decor | animal | building.
 const SHOP_ITEMS = [
   // ---- Seeds ----
-  { cat: 'seed', id: 'wheat',      name: 'Wheat',      cost: 5,   sub: '45s · sells 11¢',   unlock: 1  },
-  { cat: 'seed', id: 'strawberry', name: 'Strawberry', cost: 14,  sub: '2.5m · sells 50¢',  unlock: 2  },
-  { cat: 'seed', id: 'carrot',     name: 'Carrot',     cost: 24,  sub: '6m · sells 90¢',    unlock: 5  },
-  { cat: 'seed', id: 'corn',       name: 'Corn',       cost: 42,  sub: '12m · sells 170¢',  unlock: 7  },
-  { cat: 'seed', id: 'tomato',     name: 'Tomato',     cost: 70,  sub: '20m · sells 290¢',  unlock: 9  },
-  { cat: 'seed', id: 'pumpkin',    name: 'Pumpkin',    cost: 110, sub: '30m · sells 500¢',  unlock: 11 },
-  { cat: 'seed', id: 'potato',     name: 'Potato',     cost: 18,  sub: '4m · sells 65¢',    unlock: 4  },
-  { cat: 'seed', id: 'onion',      name: 'Onion',      cost: 22,  sub: '5m · sells 80¢',    unlock: 4  },
-  { cat: 'seed', id: 'blueberry',  name: 'Blueberry',  cost: 30,  sub: '8m · sells 120¢',   unlock: 6  },
-  { cat: 'seed', id: 'pepper',     name: 'Bell Pepper',cost: 35,  sub: '9m · sells 140¢',   unlock: 6  },
-  { cat: 'seed', id: 'rice',       name: 'Rice',       cost: 38,  sub: '10m · sells 150¢',  unlock: 7  },
-  { cat: 'seed', id: 'cotton',     name: 'Cotton',     cost: 48,  sub: '14m · sells 200¢',  unlock: 8  },
-  { cat: 'seed', id: 'eggplant',   name: 'Eggplant',   cost: 60,  sub: '17m · sells 250¢',  unlock: 9  },
-  { cat: 'seed', id: 'sunflower',  name: 'Sunflower',  cost: 65,  sub: '18m · sells 270¢',  unlock: 10 },
-  { cat: 'seed', id: 'grape',      name: 'Grape',      cost: 80,  sub: '22m · sells 340¢',  unlock: 10 },
-  { cat: 'seed', id: 'mushroom',   name: 'Mushroom',   cost: 95,  sub: '26m · sells 420¢',  unlock: 12 },
-  { cat: 'seed', id: 'watermelon', name: 'Watermelon', cost: 130, sub: '35m · sells 600¢',  unlock: 13 },
-  { cat: 'seed', id: 'pineapple',  name: 'Pineapple',  cost: 160, sub: '45m · sells 780¢',  unlock: 15 },
-  { cat: 'seed', id: 'feed_corn',  name: 'Animal Feed',cost: 30,  sub: '10m · fills the silo (XP only)', unlock: 9  },
-  { cat: 'seed', id: 'coffee',     name: 'Coffee Beans', cost: 35, sub: '12m · brews coffee that speeds up workers', unlock: 18 },
+  { cat: 'seed', id: 'wheat',      name: 'Wheat',      cost: 5,   sub: '1.5m · sells 8¢',   unlock: 1  },
+  { cat: 'seed', id: 'strawberry', name: 'Strawberry', cost: 14,  sub: '5m · sells 18¢',    unlock: 2  },
+  { cat: 'seed', id: 'carrot',     name: 'Carrot',     cost: 24,  sub: '12m · sells 32¢',   unlock: 5  },
+  { cat: 'seed', id: 'corn',       name: 'Corn',       cost: 42,  sub: '24m · sells 60¢',   unlock: 7  },
+  { cat: 'seed', id: 'tomato',     name: 'Tomato',     cost: 70,  sub: '40m · sells 102¢',  unlock: 9  },
+  { cat: 'seed', id: 'pumpkin',    name: 'Pumpkin',    cost: 110, sub: '60m · sells 175¢',  unlock: 11 },
+  { cat: 'seed', id: 'potato',     name: 'Potato',     cost: 18,  sub: '8m · sells 22¢',    unlock: 4  },
+  { cat: 'seed', id: 'onion',      name: 'Onion',      cost: 22,  sub: '10m · sells 28¢',   unlock: 4  },
+  { cat: 'seed', id: 'blueberry',  name: 'Blueberry',  cost: 30,  sub: '16m · sells 42¢',   unlock: 6  },
+  { cat: 'seed', id: 'pepper',     name: 'Bell Pepper',cost: 35,  sub: '18m · sells 49¢',   unlock: 6  },
+  { cat: 'seed', id: 'rice',       name: 'Rice',       cost: 38,  sub: '20m · sells 53¢',   unlock: 7  },
+  { cat: 'seed', id: 'cotton',     name: 'Cotton',     cost: 48,  sub: '28m · sells 70¢',   unlock: 8  },
+  { cat: 'seed', id: 'eggplant',   name: 'Eggplant',   cost: 60,  sub: '34m · sells 88¢',   unlock: 9  },
+  { cat: 'seed', id: 'sunflower',  name: 'Sunflower',  cost: 65,  sub: '37m · sells 95¢',   unlock: 10 },
+  { cat: 'seed', id: 'grape',      name: 'Grape',      cost: 80,  sub: '44m · sells 120¢',  unlock: 10 },
+  { cat: 'seed', id: 'mushroom',   name: 'Mushroom',   cost: 95,  sub: '52m · sells 145¢',  unlock: 12 },
+  { cat: 'seed', id: 'watermelon', name: 'Watermelon', cost: 130, sub: '70m · sells 210¢',  unlock: 13 },
+  { cat: 'seed', id: 'pineapple',  name: 'Pineapple',  cost: 160, sub: '90m · sells 275¢',  unlock: 15 },
+  { cat: 'seed', id: 'feed_corn',  name: 'Animal Feed',cost: 30,  sub: '20m · fills the silo (XP only)', unlock: 9  },
+  { cat: 'seed', id: 'coffee',     name: 'Coffee Beans', cost: 35, sub: '24m · brews coffee that speeds up workers', unlock: 18 },
   // ---- Trees (yield fruit from the mature stage) ----
   { cat: 'tree', id: 'tree_oak',         name: 'Oak Tree',     cost: 80,  sub: 'Yields walnuts',     unlock: 1  },
   { cat: 'tree', id: 'tree_pine_dark',   name: 'Pine Tree',    cost: 120, sub: 'Yields pine nuts',   unlock: 4  },
@@ -3309,25 +3309,25 @@ const SHOP_ITEMS = [
   { cat: 'decor', id: 'decor_well',         name: 'Stone Well',    cost: 350, sub: 'Decorative',         unlock: 11 },
   // ---- Animals ----
   // Animals only start trickling in after the Barn unlocks at level 8.
-  { cat: 'animal', id: 'animal_chicken', name: 'Chicken', cost: 200,  sub: 'Yields eggs (25¢) · meat 220-440¢',        unlock: 8  },
-  { cat: 'animal', id: 'animal_duck',    name: 'Duck',    cost: 250,  sub: 'Yields duck eggs (35¢) · meat 280-560¢',   unlock: 9  },
-  { cat: 'animal', id: 'animal_pig',     name: 'Pig',     cost: 450,  sub: 'Slaughter for pork (480-960¢)',            unlock: 10 },
-  { cat: 'animal', id: 'animal_sheep',   name: 'Sheep',   cost: 550,  sub: 'Yields wool (60¢) · meat 590-1180¢',       unlock: 11 },
-  { cat: 'animal', id: 'animal_goat',    name: 'Goat',    cost: 600,  sub: 'Yields goat milk (70¢) · meat 640-1280¢',  unlock: 12 },
-  { cat: 'animal', id: 'animal_cow',     name: 'Cow',     cost: 750,  sub: 'Milk (90¢) · meat 800-1600¢ · Cow Dung +5% Plant Growth Speed', unlock: 13 },
+  { cat: 'animal', id: 'animal_chicken', name: 'Chicken', cost: 200,  sub: 'Yields eggs (18¢) · meat 155-310¢',        unlock: 8  },
+  { cat: 'animal', id: 'animal_duck',    name: 'Duck',    cost: 250,  sub: 'Yields duck eggs (25¢) · meat 195-390¢',   unlock: 9  },
+  { cat: 'animal', id: 'animal_pig',     name: 'Pig',     cost: 450,  sub: 'Slaughter for pork (335-670¢)',            unlock: 10 },
+  { cat: 'animal', id: 'animal_sheep',   name: 'Sheep',   cost: 550,  sub: 'Yields wool (42¢) · meat 415-830¢',        unlock: 11 },
+  { cat: 'animal', id: 'animal_goat',    name: 'Goat',    cost: 600,  sub: 'Yields goat milk (50¢) · meat 450-900¢',   unlock: 12 },
+  { cat: 'animal', id: 'animal_cow',     name: 'Cow',     cost: 750,  sub: 'Milk (65¢) · meat 560-1120¢ · Cow Dung +5% Plant Growth Speed', unlock: 13 },
   { cat: 'animal', id: 'animal_dog',     name: 'Dog',     cost: 350,  sub: 'Loyal guardian — chases off coyotes',      unlock: 14 },
   { cat: 'animal', id: 'animal_horse',   name: 'Horse',   cost: 1200, sub: 'Majestic · ride for fast travel',          unlock: 15 },
   // ---- Buildings (each gives a stacking farm bonus while placed) ----
-  { cat: 'building', id: 'building_house',        name: 'Cottage',      cost: 1500, sub: '+5% XP per harvest',         unlock: 6  },
-  { cat: 'building', id: 'building_barn',         name: 'Big Red Barn', cost: 2200, sub: 'Opens the animal pen — unlocks livestock', unlock: 8  },
-  { cat: 'building', id: 'building_market_stall', name: 'Market Stall', cost: 1800, sub: '+5% sell prices',            unlock: 8  },
-  { cat: 'building', id: 'building_windmill',     name: 'Windmill',     cost: 3500, sub: '+5% crop growth speed',      unlock: 10 },
-  { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 2400, sub: '+5% harvest yield · stores Animal Feed for animal bonuses', unlock: 9  },
-  { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1200, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 18 },
-  { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 600,  sub: 'Stockpile up to 200 seeds for your crop farmer to plant', unlock: 18 },
-  { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 900,  sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 18 },
-  { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 4200, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
-  { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 5500, sub: 'Brew rare seed mutations for XP + coins — click to open the greenhouse', unlock: 12 },
+  { cat: 'building', id: 'building_house',        name: 'Cottage',      cost: 2250, sub: '+5% XP per harvest (cap +25%)',  unlock: 6  },
+  { cat: 'building', id: 'building_barn',         name: 'Big Red Barn', cost: 3300, sub: 'Opens the animal pen — unlocks livestock', unlock: 8  },
+  { cat: 'building', id: 'building_market_stall', name: 'Market Stall', cost: 2700, sub: '+5% sell prices (cap +25%)',     unlock: 8  },
+  { cat: 'building', id: 'building_windmill',     name: 'Windmill',     cost: 5250, sub: '+5% crop growth speed (cap +25%)', unlock: 10 },
+  { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% harvest yield (cap +25%) · stores Animal Feed for animal bonuses', unlock: 9  },
+  { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1800, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 18 },
+  { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile up to 200 seeds for your crop farmer to plant', unlock: 18 },
+  { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 18 },
+  { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
+  { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations for XP + coins — click to open the greenhouse', unlock: 12 },
 ];
 
 // ============================================================
@@ -5054,11 +5054,11 @@ const TREE_FRUIT_MS = 4 * 60 * 1000;   // 4 minutes between fruit harvests
 // in this list and use a separate mechanic.
 const ANIMAL_YIELD_MS = 4 * 60 * 1000;   // 4 minutes between yields
 const ANIMAL_YIELDS = {
-  animal_chicken: { name: 'eggs',      coins: 25,  xp: 4 },
-  animal_duck:    { name: 'duck eggs', coins: 35,  xp: 6 },
-  animal_sheep:   { name: 'wool',      coins: 60,  xp: 10 },
-  animal_goat:    { name: 'goat milk', coins: 70,  xp: 12 },
-  animal_cow:     { name: 'milk',      coins: 90,  xp: 15 },
+  animal_chicken: { name: 'eggs',      coins: 18,  xp: 4 },
+  animal_duck:    { name: 'duck eggs', coins: 25,  xp: 6 },
+  animal_sheep:   { name: 'wool',      coins: 42,  xp: 10 },
+  animal_goat:    { name: 'goat milk', coins: 50,  xp: 12 },
+  animal_cow:     { name: 'milk',      coins: 65,  xp: 15 },
   // pig / horse / dog have no passive yield — pigs use the slaughterhouse,
   // horses are rideable for travel, dogs are companions.
 };
@@ -5073,18 +5073,18 @@ function animalReadyToHarvest(placed) {
 // Young (1×) slaughter at least breaks even with a small profit, while
 // Adult (1.5×) and Mature (2×) really pay off.
 const ANIMAL_MEAT = {
-  animal_chicken: { name: 'chicken meat', coins: 220,  xp: 30 },   // buy 200
-  animal_duck:    { name: 'duck meat',    coins: 280,  xp: 36 },   // buy 250
-  animal_pig:     { name: 'pork',         coins: 480,  xp: 70 },   // buy 450
-  animal_sheep:   { name: 'mutton',       coins: 590,  xp: 88 },   // buy 550
-  animal_goat:    { name: 'chevon',       coins: 640,  xp: 96 },   // buy 600
-  animal_cow:     { name: 'beef',         coins: 800,  xp: 120 },  // buy 750
+  animal_chicken: { name: 'chicken meat', coins: 155,  xp: 30 },   // buy 200
+  animal_duck:    { name: 'duck meat',    coins: 195,  xp: 36 },   // buy 250
+  animal_pig:     { name: 'pork',         coins: 335,  xp: 70 },   // buy 450
+  animal_sheep:   { name: 'mutton',       coins: 415,  xp: 88 },   // buy 550
+  animal_goat:    { name: 'chevon',       coins: 450,  xp: 96 },   // buy 600
+  animal_cow:     { name: 'beef',         coins: 560,  xp: 120 },  // buy 750
 };
 // Animals age up in discrete steps every ANIMAL_AGE_STEP_MS. The 4
 // stages are Baby (0), Young (1), Adult (2), Mature (3). Slaughter
 // price multipliers are tied to the stage so older = better payout,
 // but babies can't be slaughtered at all.
-const ANIMAL_AGE_STEP_MS = 5 * 60 * 1000;   // 5 minutes per age stage
+const ANIMAL_AGE_STEP_MS = 10 * 60 * 1000;  // 10 minutes per age stage
 const ANIMAL_AGE_STAGES  = ['Baby', 'Young', 'Adult', 'Mature'];
 const ANIMAL_AGE_MULS    = [0,        1.0,     1.5,    2.0];   // Baby = unsellable
 function animalAgeMs(placed) {
@@ -5261,7 +5261,7 @@ function closeAnimalMenu() {
 const BUILDING_MENUS = {
   building_house: {
     title: 'Cottage',
-    desc: '+5% XP per harvest (stacks per copy, capped at +50%).',
+    desc: '+5% XP per harvest (stacks per copy, capped at +25%).',
   },
   building_barn: {
     title: 'Big Red Barn',
@@ -5351,19 +5351,26 @@ const BUILDING_MENUS = {
             }
             row += '<td style="padding:4px 6px;text-align:right;">' + slaughterCell + '</td>';
           }
-          // Per-row button: "Collect" (green) when the animal's yield is
+          // Per-row buttons: "Collect" (green) when the animal's yield is
           // ready — queues a harvest walk-over directly. Otherwise
           // "Select" (amber) opens that animal's full menu so the player
           // can pet / mark for slaughter / ride etc. without hunting for
-          // the sprite. Every animal — including non-yield species like
-          // dog / horse — gets a button now so all of them are reachable.
+          // the sprite. Plus a red "Slaughter" button when the player has
+          // a slaughterhouse and the animal is mature enough — quick
+          // one-click slaughter without picking the tool from the toolbar.
           const btnLabel = canCollect ? 'Collect' : 'Select';
           const btnStyle = canCollect
             ? 'background:linear-gradient(to bottom,#7DC159,#4F8C2D);color:#FFF;border-color:#2A4A1A;'
             : 'background:linear-gradient(to bottom,#E5C77A,#B0863A);color:#3a2410;border-color:#5C3F1A;';
           const action = canCollect ? 'collect' : 'select';
-          row += `<td style="padding:4px 6px;text-align:right;">` +
+          const meatHere = ANIMAL_MEAT[it.id];
+          const showSlaughterBtn = hasSlaughterhouse && meatHere && canSlaughter(it.id, it);
+          const slaughterBtnHtml = showSlaughterBtn
+            ? `<button data-animal-action="slaughter" data-animal-tile="${ix},${iy}" style="margin-left:4px;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid #6A1A12;background:linear-gradient(to bottom,#E27464,#A03423);color:#FFF;">Slaughter</button>`
+            : '';
+          row += `<td style="padding:4px 6px;text-align:right;white-space:nowrap;">` +
                  `<button data-animal-action="${action}" data-animal-tile="${ix},${iy}" style="border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid;${btnStyle}">${btnLabel}</button>` +
+                 slaughterBtnHtml +
                  `</td>`;
           row += '</tr>';
           html += row;
@@ -5407,6 +5414,8 @@ const BUILDING_MENUS = {
       // Lay the buttons out so Slaughter Mode lands in the slaughter
       // slot (kept red via danger:true), Buy Animals in the green
       // collect slot, and the Expand Pen action takes the top slot.
+      // Sell is rendered as a generic per-building button in
+      // openBuildingMenu, so no need to add it here.
       return [
         expandAction,
         { label: '🐮 Buy Animals', run: () => { activeShopTab = 'animal'; openShop(); } },
@@ -5428,12 +5437,12 @@ const BUILDING_MENUS = {
   },
   building_market_stall: {
     title: 'Market Stall',
-    desc: '+5% sell prices (stacks per copy, capped at +50%).',
+    desc: '+5% sell prices (stacks per copy, capped at +25%).',
     actions: [{ label: '🛒 Open Shop', run: () => { openShop(); } }],
   },
   building_windmill: {
     title: 'Windmill',
-    desc: '+5% crop growth speed (stacks per copy, capped at +50%).',
+    desc: '+5% crop growth speed (stacks per copy, capped at +25%).',
   },
   building_silo: {
     title: 'Grain Silo',
@@ -5639,6 +5648,22 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           btn.disabled = true;
           btn.style.opacity = '0.65';
           btn.style.cursor = 'default';
+        } else if (action === 'slaughter') {
+          // Quick slaughter: route through the same one-click flow used
+          // by the toolbar's Slaughter mode so the farmer fetches the
+          // animal and delivers it to the nearest slaughterhouse. Menu
+          // stays open so the player can chain rows.
+          const animal = state.placed[animalKey];
+          if (animal && ANIMAL_MEAT[animal.id] && canSlaughter(animal.id, animal)) {
+            queueOneClickSlaughter(animalKey, animal);
+            btn.textContent = 'Queued';
+            btn.disabled = true;
+            btn.style.opacity = '0.65';
+            btn.style.cursor = 'default';
+          } else {
+            toast('Animal isn\'t ready to slaughter.', true);
+            audio.play('error');
+          }
         } else {
           // Select: open that animal's per-instance action menu — same
           // popup the player gets by clicking the animal in the world,
@@ -5757,6 +5782,21 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
       actOnTile('move', ix, iy, false);
     } : null;
   }
+  // Sell button — every non-permanent building can be sold for a 50%
+  // refund from its own menu, no toolbar tool required. Barns drop their
+  // pen but leave animals + slaughterhouse standing (handled inside the
+  // sell action), so a fresh barn-with-pen sweeps them back in.
+  const sellBtn = document.getElementById('amSell');
+  if (sellBtn) {
+    const placedHere = state.placed[tileKey(ix, iy)];
+    const canSell = placedHere && !placedHere.permanent;
+    sellBtn.style.display = canSell ? '' : 'none';
+    sellBtn.disabled = !canSell;
+    sellBtn.onclick = canSell ? () => {
+      closeAnimalMenu();
+      actOnTile('sell', ix, iy, false);
+    } : null;
+  }
   menu.classList.remove('hidden');
   const w = menu.offsetWidth, h = menu.offsetHeight;
   const x = Math.min(window.innerWidth - w - 8, Math.max(8, screenX + 12));
@@ -5803,14 +5843,14 @@ function refreshDismountBanner() {
   el.style.display = mounted ? 'flex' : 'none';
 }
 const TREE_FRUITS = {
-  tree_oak:         { name: 'walnuts',     coins: 120, xp: 20 },
-  tree_maple:       { name: 'maple syrup', coins: 320, xp: 55 },
-  tree_apple:       { name: 'apples',    coins: 220, xp: 38 },
-  tree_orange:      { name: 'oranges',   coins: 280, xp: 48 },
-  tree_cherry:      { name: 'cherries',  coins: 400, xp: 70 },
-  tree_pine_dark:   { name: 'pine nuts', coins: 90,  xp: 16 },
-  tree_pine_yellow: { name: 'pine nuts', coins: 160, xp: 28 },
-  tree_pine_snow:   { name: 'pine nuts', coins: 220, xp: 38 },
+  tree_oak:         { name: 'walnuts',     coins: 84,  xp: 20 },
+  tree_maple:       { name: 'maple syrup', coins: 225, xp: 55 },
+  tree_apple:       { name: 'apples',    coins: 155, xp: 38 },
+  tree_orange:      { name: 'oranges',   coins: 195, xp: 48 },
+  tree_cherry:      { name: 'cherries',  coins: 280, xp: 70 },
+  tree_pine_dark:   { name: 'pine nuts', coins: 65,  xp: 16 },
+  tree_pine_yellow: { name: 'pine nuts', coins: 110, xp: 28 },
+  tree_pine_snow:   { name: 'pine nuts', coins: 155, xp: 38 },
   // tree_stump intentionally absent — stumps are pure decor, no harvest.
 };
 function treeReadyToHarvest(placed) {
@@ -8281,13 +8321,17 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     const placed = state.placed[k];
     if (placed) {
       if (placed.permanent) return fail("That can't be sold.");
-      // The barn anchors its pen — refuse to sell while that specific
-      // pen exists, otherwise the pen would float orphaned with no barn.
-      // Multi-pen farms only block selling the barn whose pen is attached;
-      // standalone (no-pen) barns sell freely.
+      // The barn anchors its pen. Selling a barn-with-pen drops the pen
+      // rect but leaves every animal + the slaughterhouse standing where
+      // they were — placing a new barn-with-pen later sweeps the strays
+      // back inside via attachBarnPen → sweepStrayAnimalsIntoPens.
+      let strayHint = false;
       if (placed.id === 'building_barn') {
         const myPen = findBarnPenForBarn(ix, iy);
-        if (myPen) return fail('Sell the animal pen first (Move handles it).');
+        if (myPen) {
+          removeBarnPen(myPen);
+          strayHint = true;
+        }
       }
       const item = shopItem(placed.id);
       const refund = Math.max(1, Math.round((placed.cost ?? (item ? item.cost : 10)) * 0.5));
@@ -8295,6 +8339,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       delete state.placed[k];
       audio.play('coin'); fxBurst(ix, iy, '#FFE066', 12);
       fxFloat(ix, iy, '+' + refund + '¢');
+      if (strayHint) toast('Animals are loose — build a new barn-with-pen to round them up.', false);
       storage.save(); refreshHud();
       return 'ok';
     }
@@ -10363,7 +10408,10 @@ function applyExpandPen(pen) {
       delete state.plots[k];
       if (state.farmExpansion) delete state.farmExpansion[k];
       const blocker = state.placed[k];
-      if (blocker && blocker.id !== 'building_barn' && !blocker.id.startsWith('animal_')) {
+      if (blocker &&
+          blocker.id !== 'building_barn' &&
+          blocker.id !== 'building_slaughterhouse' &&
+          !blocker.id.startsWith('animal_')) {
         const refund = Math.max(1, Math.round((blocker.cost ?? 10) * 0.5));
         state.coins += refund;
         delete state.placed[k];
@@ -10725,28 +10773,18 @@ function bindInput() {
       }
     }
 
-    // -------- Click on a hired staff member → manage popup --------
-    if (e.button === 0 && !live.placeMode && state.selectedTool !== 'sell' && state.selectedTool !== 'move') {
-      const staffHere = staffAtTile(startT.ix, startT.iy);
-      if (staffHere) {
-        openStaffMenu(staffHere, e.clientX, e.clientY);
-        audio.play('click');
-        live.dragMode = 'idle';
-        return;
-      }
-    }
-
-    // -------- Animal action menu / barn shortcut --------
-    if (e.button === 0 && !live.placeMode && state.selectedTool !== 'sell' && state.selectedTool !== 'move') {
-      // Tall building/animal sprites visually extend NW of their anchor
-      // tile, so a click on the upper body lands on an empty tile above
-      // the real building. Probe SE neighbours when the clicked tile is
-      // empty so the hitbox effectively reaches further up — but only if
-      // the player isn't mid-action on the actual clicked tile (otherwise
-      // drag-painting plow/plant near a building would get hijacked into
-      // a popup).
-      let hereIx = startT.ix, hereIy = startT.iy;
-      let placedHere = state.placed[tileKey(hereIx, hereIy)];
+    // -------- SE-probe + menu opens --------
+    // Tall building/animal sprites visually extend NW of their anchor
+    // tile, so a click on the upper body lands on an empty tile above
+    // the real building. Probe SE neighbours when the clicked tile is
+    // empty so the hitbox effectively reaches further up. The probe
+    // runs for every tool so Sell / Move can also find tall sprites;
+    // the menu-opens below stay gated to non-sell, non-move tools.
+    let hereIx = startT.ix, hereIy = startT.iy;
+    let placedHere = (e.button === 0 && !live.placeMode)
+      ? state.placed[tileKey(hereIx, hereIy)]
+      : null;
+    if (e.button === 0 && !live.placeMode) {
       const canActHere = canActOnTile(state.selectedTool, startT.ix, startT.iy);
       // Pen animals wander away from their home tile, so prefer the
       // wandering animal under the cursor over its home tile entry. We
@@ -10787,49 +10825,62 @@ function bindInput() {
           }
         }
       }
-      const hereK = tileKey(hereIx, hereIy);
-      if (placedHere) {
-        // Click on an animal that has a yield or can be slaughtered →
-        // show the action menu so the player picks Collect or Slaughter.
-        if (placedHere.id && placedHere.id.startsWith('animal_') && state.selectedTool !== 'harvest') {
-          const hasYield  = !!ANIMAL_YIELDS[placedHere.id];
-          const slaughter = canSlaughter(placedHere.id, placedHere);
-          const rideable  = placedHere.id === 'animal_horse' && !state.player.mounted;
-          if (hasYield || slaughter || rideable) {
-            openAnimalMenu(hereK, placedHere, e.clientX, e.clientY);
+      // Menu-opens / shortcut clicks stay gated to non-sell, non-move
+      // tools so a click with Sell / Move falls through to the action
+      // dispatch below and can actually sell or relocate the sprite.
+      const menusEligible = state.selectedTool !== 'sell' && state.selectedTool !== 'move';
+      if (menusEligible) {
+        const staffHere = staffAtTile(startT.ix, startT.iy);
+        if (staffHere) {
+          openStaffMenu(staffHere, e.clientX, e.clientY);
+          audio.play('click');
+          live.dragMode = 'idle';
+          return;
+        }
+        const hereK = tileKey(hereIx, hereIy);
+        if (placedHere) {
+          // Click on an animal that has a yield or can be slaughtered →
+          // show the action menu so the player picks Collect or Slaughter.
+          if (placedHere.id && placedHere.id.startsWith('animal_') && state.selectedTool !== 'harvest') {
+            const hasYield  = !!ANIMAL_YIELDS[placedHere.id];
+            const slaughter = canSlaughter(placedHere.id, placedHere);
+            const rideable  = placedHere.id === 'animal_horse' && !state.player.mounted;
+            if (hasYield || slaughter || rideable) {
+              openAnimalMenu(hereK, placedHere, e.clientX, e.clientY);
+              audio.play('click');
+              live.dragMode = 'idle';
+              return;
+            }
+          }
+          // Click on the slaughterhouse — queue a walk-pickup-deliver
+          // sequence so the farmer fetches the marked animal and trundles
+          // it to the slaughterhouse before the meat coins land.
+          if (placedHere.id === 'building_slaughterhouse' && live.slaughterTarget) {
+            const aKey = live.slaughterTarget;
+            const animal = state.placed[aKey];
+            live.slaughterTarget = null;
+            if (animal && ANIMAL_MEAT[animal.id]) {
+              const [ax, ay] = aKey.split(',').map(Number);
+              const ageMul = animalAgeMul(animal);
+              state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey: aKey, animalId: animal.id });
+              state.player.queue.push({ tool: 'slaughterDeliver', ix: startT.ix, iy: startT.iy, animalId: animal.id, ageMul });
+              audio.play('click');
+            } else {
+              toast('Pick an animal first.', true); audio.play('error');
+            }
+            live.dragMode = 'idle';
+            return;
+          }
+          // Click on any building — pop a small in-place menu with the
+          // building's description and any contextual action button. Skips
+          // building_slaughterhouse when a slaughter target is set so the
+          // existing pickup/deliver flow above takes priority.
+          if (placedHere.id && placedHere.id.startsWith('building_') && BUILDING_MENUS[placedHere.id]) {
+            openBuildingMenu(placedHere.id, e.clientX, e.clientY, hereIx, hereIy);
             audio.play('click');
             live.dragMode = 'idle';
             return;
           }
-        }
-        // Click on the slaughterhouse — queue a walk-pickup-deliver
-        // sequence so the farmer fetches the marked animal and trundles
-        // it to the slaughterhouse before the meat coins land.
-        if (placedHere.id === 'building_slaughterhouse' && live.slaughterTarget) {
-          const aKey = live.slaughterTarget;
-          const animal = state.placed[aKey];
-          live.slaughterTarget = null;
-          if (animal && ANIMAL_MEAT[animal.id]) {
-            const [ax, ay] = aKey.split(',').map(Number);
-            const ageMul = animalAgeMul(animal);
-            state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey: aKey, animalId: animal.id });
-            state.player.queue.push({ tool: 'slaughterDeliver', ix: startT.ix, iy: startT.iy, animalId: animal.id, ageMul });
-            audio.play('click');
-          } else {
-            toast('Pick an animal first.', true); audio.play('error');
-          }
-          live.dragMode = 'idle';
-          return;
-        }
-        // Click on any building — pop a small in-place menu with the
-        // building's description and any contextual action button. Skips
-        // building_slaughterhouse when a slaughter target is set so the
-        // existing pickup/deliver flow above takes priority.
-        if (placedHere.id && placedHere.id.startsWith('building_') && BUILDING_MENUS[placedHere.id]) {
-          openBuildingMenu(placedHere.id, e.clientX, e.clientY, hereIx, hereIy);
-          audio.play('click');
-          live.dragMode = 'idle';
-          return;
         }
       }
     }
@@ -12165,7 +12216,6 @@ function renderMutationLab() {
       const t1 = CROPS[r.seedA]?.name || r.seedA;
       const t2 = CROPS[r.seedB]?.name || r.seedB;
       const slotStr = ghActiveSlots().map(k => `${MUT_SLOT_LABELS[k]}: ${_ghEsc(ghOption(k,r.slots[k]).label)}`).join(' &middot; ');
-      const accCost = ghAccelerateCost(r);
       runsHtml += `
         <div style="background:#FFF7E0;border:1px solid #B7944D;border-radius:6px;padding:8px 10px;margin-bottom:6px;">
           <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;">
@@ -12176,7 +12226,6 @@ function renderMutationLab() {
           </div>
           <div style="display:flex;gap:6px;margin-top:6px;">
             <button class="splashBtn primary" data-claim="${r.id}" style="width:auto;padding:6px 12px;font-size:12px;" ${ready?'':'disabled'}>Claim</button>
-            ${ready ? '' : `<button class="splashBtn" data-accel="${r.id}" style="width:auto;padding:6px 12px;font-size:12px;background:linear-gradient(to bottom,#FFD27F,#C98E4F);">Accelerate (${accCost}&cent;)</button>`}
           </div>
         </div>
       `;
@@ -12205,7 +12254,6 @@ function renderMutationLab() {
     sel.onchange = () => { _ghPickState.choices[sel.dataset.slot] = sel.value; renderMutationLab(); };
   });
   body.querySelectorAll('button[data-claim]').forEach(b => { b.onclick = () => ghClaim(b.dataset.claim); });
-  body.querySelectorAll('button[data-accel]').forEach(b => { b.onclick = () => ghAccelerate(b.dataset.accel); });
   const brewBtn = body.querySelector('#ghBrewBtn');
   if (brewBtn) brewBtn.onclick = () => {
     if (ghStartRun(seedA, seedB, choices)) renderMutationLab();
@@ -12362,7 +12410,7 @@ function loop(t) {
   siloTick();               // drain feed + accrue age-up boost while the silo has feed
   coffeeStandTick();        // drain coffee while staff sip it for the speed buff
   loyaltyTick();            // animals lose 1 loyalty every 3 min unless a keeper is on duty
-  staffUpkeepTick();        // deduct 50¢/day per hired staff (fires staff if you can't pay)
+  staffUpkeepTick();        // deduct 500¢/day per hired staff (fires staff if you can't pay)
   tickStaff(dt);            // wander the visible staffers around the staff hall
   tickCoyote(dt);           // roll for / move / despawn coyote raids and the chasing dog
   tickPlacedAnimals(dt);    // drift pen animals around inside the fence
