@@ -9528,7 +9528,16 @@ function buildToolbar() {
   // ---- Separator + Shop button (set off on the right) ----
   const sep = document.createElement('div'); sep.className = 'sep';
   tb.appendChild(sep);
-  // Barn shortcut — sits to the LEFT of the Shop button. Greyed out until
+  const shopBtn = document.createElement('button');
+  shopBtn.className = 'tool toolShop';
+  shopBtn.id = 'toolShopBtn';
+  shopBtn.title = 'Shop (S)';
+  const sicon = document.createElement('img');
+  sicon.src = imgPath('ui_shop'); sicon.alt = 'Shop';
+  shopBtn.appendChild(sicon);
+  shopBtn.addEventListener('click', () => { openShop(); audio.play('click'); });
+  tb.appendChild(shopBtn);
+  // Barn shortcut — sits to the RIGHT of the Shop button. Greyed out until
   // the Big Red Barn unlocks (or until the player has built at least one
   // barn). Clicking it pops the first placed barn's menu directly so the
   // player can see the pen roster without hunting for the building.
@@ -9564,15 +9573,6 @@ function buildToolbar() {
     audio.play('click');
   });
   tb.appendChild(barnBtn);
-  const shopBtn = document.createElement('button');
-  shopBtn.className = 'tool toolShop';
-  shopBtn.id = 'toolShopBtn';
-  shopBtn.title = 'Shop (S)';
-  const sicon = document.createElement('img');
-  sicon.src = imgPath('ui_shop'); sicon.alt = 'Shop';
-  shopBtn.appendChild(sicon);
-  shopBtn.addEventListener('click', () => { openShop(); audio.play('click'); });
-  tb.appendChild(shopBtn);
   // Staff Hall shortcut — sits to the right of the Shop button. Greyed
   // out until the player hits the Staff Hall unlock level (or builds one).
   const staffItem = SHOP_ITEMS.find(i => i.id === 'building_staff');
