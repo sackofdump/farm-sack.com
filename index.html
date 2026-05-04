@@ -12159,19 +12159,91 @@ async function startGame() {
     }
     state.barnPens = [];
     for (const [k, p] of seenAnchor) {
-      // Drop orphan pens whose barn no longer exists (avoids ghost fences
-      // where an old anchor lingers from a botched move).
-      const placed = state.placed && state.placed[k];
-      if (!placed || placed.id !== 'building_barn') continue;
+      // If the pen's recorded anchor no longer holds a barn, try to
+      // re-attach to an actual barn nearby instead of dropping the pen
+      // outright — drifted-duplicate saves have animals living inside
+      // these "orphan" pens and we don't want to lose them. A barn whose
+      // tile is adjacent (any of the 4 sides) becomes the new anchor.
+      let placed = state.placed && state.placed[k];
+      if (!placed || placed.id !== 'building_barn') {
+        const sides = [
+          { ix: p.x0 + Math.floor(p.w / 2), iy: p.y0 - 1, anchorIxOff: 0, anchorIyOff: 0 },
+          { ix: p.x0 + Math.floor(p.w / 2), iy: p.y0 + p.h, anchorIxOff: 0, anchorIyOff: 0 },
+          { ix: p.x0 - 1, iy: p.y0 + Math.floor(p.h / 2), anchorIxOff: 0, anchorIyOff: 0 },
+          { ix: p.x0 + p.w, iy: p.y0 + Math.floor(p.h / 2), anchorIxOff: 0, anchorIyOff: 0 },
+        ];
+        let anchored = false;
+        for (const s of sides) {
+          const sk = s.ix + ',' + s.iy;
+          const sp = state.placed && state.placed[sk];
+          if (sp && sp.id === 'building_barn') {
+            p.barnIx = s.ix; p.barnIy = s.iy;
+            anchored = true; break;
+          }
+        }
+        // Last resort: scan every barn for the closest one, anchor to it
+        // even if it isn't perfectly aligned (gate may end up offset but
+        // the pen survives + animals stay home).
+        if (!anchored) {
+          let best = null, bestD = Infinity;
+          for (const bk in state.placed || {}) {
+            const bp = state.placed[bk];
+            if (!bp || bp.id !== 'building_barn') continue;
+            const [bx, by] = bk.split(',').map(Number);
+            const cx = p.x0 + p.w / 2, cy = p.y0 + p.h / 2;
+            const d = Math.hypot(bx - cx, by - cy);
+            if (d < bestD) { best = { bx, by }; bestD = d; }
+          }
+          if (best) { p.barnIx = best.bx; p.barnIy = best.by; anchored = true; }
+        }
+        if (!anchored) continue;   // truly no barn in the world — drop it
+      }
       // Drop pens whose rect would render outside the world. Older
-      // builds let these slip through validation; we'd rather lose the
-      // ghost pen than keep drawing a fence beyond the map edge.
+      // builds let these slip through validation; clamp them inward
+      // when possible so the animals inside don't get evicted.
+      const w = p.w || BARN_PEN_W, h = p.h || BARN_PEN_H;
+      if (p.x0 < 0)             p.x0 = 0;
+      if (p.y0 < 0)             p.y0 = 0;
+      if (p.x0 + w > WORLD_W)   p.x0 = WORLD_W - w;
+      if (p.y0 + h > WORLD_H)   p.y0 = WORLD_H - h;
       if (p.x0 < 0 || p.y0 < 0 ||
-          p.x0 + (p.w || BARN_PEN_W) > WORLD_W ||
-          p.y0 + (p.h || BARN_PEN_H) > WORLD_H) continue;
+          p.x0 + w > WORLD_W || p.y0 + h > WORLD_H) continue;
       state.barnPens.push(p);
     }
     state.barnPen = state.barnPens[0] || null;
+    // Stray-animal sweep: any animal whose home tile isn't inside ANY
+    // pen gets re-homed to the nearest pen. Drifted saves (the old
+    // duplicate-pens bug) left animals stranded outside their fences;
+    // pull them back into the closest pen so they stop wandering loose.
+    if (state.barnPens.length > 0) {
+      for (const k in state.placed) {
+        const it = state.placed[k];
+        if (!it || !it.id || !it.id.startsWith('animal_')) continue;
+        // Dogs live wherever the player drops them — they're not pen-bound.
+        if (it.id === 'animal_dog') continue;
+        const [hx, hy] = k.split(',').map(Number);
+        if (findBarnPenAt(hx, hy)) continue;   // already inside a pen
+        // Find the nearest pen and pick the closest free interior tile.
+        let best = null, bestD = Infinity;
+        for (const pen of state.barnPens) {
+          for (let dy = 0; dy < pen.h; dy++) {
+            for (let dx = 0; dx < pen.w; dx++) {
+              const tx = pen.x0 + dx, ty = pen.y0 + dy;
+              const tk = tx + ',' + ty;
+              if (state.placed[tk]) continue;
+              const d = Math.hypot(tx - hx, ty - hy);
+              if (d < bestD) { best = { tx, ty, tk }; bestD = d; }
+            }
+          }
+        }
+        if (best) {
+          delete state.placed[k];
+          state.placed[best.tk] = it;
+          // Reset wander offsets so the animal doesn't snap visually.
+          it.dx = it.dy = it.tx = it.ty = 0;
+        }
+      }
+    }
     // Silo state: older saves don't have it; either way, reset lastTickAt
     // so the first siloTick after load doesn't drain a giant offline gap.
     if (!state.silo || typeof state.silo !== 'object') {
