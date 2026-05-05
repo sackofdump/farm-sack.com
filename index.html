@@ -3350,12 +3350,12 @@ const SHOP_ITEMS = [
   { cat: 'decor', id: 'decor_well',         name: 'Stone Well',    cost: 350, sub: 'Decorative',         unlock: 11 },
   // ---- Animals ----
   // Animals only start trickling in after the Barn unlocks at level 8.
-  { cat: 'animal', id: 'animal_chicken', name: 'Chicken', cost: 200,  sub: 'Yields eggs (18¢) · meat 155-310¢',        unlock: 8  },
-  { cat: 'animal', id: 'animal_duck',    name: 'Duck',    cost: 250,  sub: 'Yields duck eggs (25¢) · meat 195-390¢',   unlock: 9  },
-  { cat: 'animal', id: 'animal_pig',     name: 'Pig',     cost: 450,  sub: 'Slaughter for pork (335-670¢)',            unlock: 10 },
-  { cat: 'animal', id: 'animal_sheep',   name: 'Sheep',   cost: 550,  sub: 'Yields wool (42¢) · meat 415-830¢',        unlock: 11 },
-  { cat: 'animal', id: 'animal_goat',    name: 'Goat',    cost: 600,  sub: 'Yields goat milk (50¢) · meat 450-900¢',   unlock: 12 },
-  { cat: 'animal', id: 'animal_cow',     name: 'Cow',     cost: 750,  sub: 'Milk (65¢) · meat 560-1120¢ · Cow Dung +5% Plant Growth Speed', unlock: 13 },
+  { cat: 'animal', id: 'animal_chicken', name: 'Chicken', cost: 200,  sub: 'Yields eggs (23¢) · meat 194-388¢',        unlock: 8  },
+  { cat: 'animal', id: 'animal_duck',    name: 'Duck',    cost: 250,  sub: 'Yields duck eggs (31¢) · meat 244-488¢',   unlock: 9  },
+  { cat: 'animal', id: 'animal_pig',     name: 'Pig',     cost: 450,  sub: 'Slaughter for pork (419-838¢)',            unlock: 10 },
+  { cat: 'animal', id: 'animal_sheep',   name: 'Sheep',   cost: 550,  sub: 'Yields wool (53¢) · meat 519-1038¢',       unlock: 11 },
+  { cat: 'animal', id: 'animal_goat',    name: 'Goat',    cost: 600,  sub: 'Yields goat milk (63¢) · meat 563-1126¢',  unlock: 12 },
+  { cat: 'animal', id: 'animal_cow',     name: 'Cow',     cost: 750,  sub: 'Milk (81¢) · meat 700-1400¢ · Cow Dung +5% Plant Growth Speed', unlock: 13 },
   { cat: 'animal', id: 'animal_dog',     name: 'Dog',     cost: 350,  sub: 'Loyal guardian — chases off coyotes',      unlock: 14 },
   { cat: 'animal', id: 'animal_horse',   name: 'Horse',   cost: 1200, sub: 'Majestic · ride for fast travel',          unlock: 15 },
   // ---- Buildings (each gives a stacking farm bonus while placed) ----
@@ -5107,11 +5107,11 @@ const TREE_FRUIT_MS = 14 * 60 * 1000;  // 14 minutes between fruit harvests
 // in this list and use a separate mechanic.
 const ANIMAL_YIELD_MS = 4 * 60 * 1000;   // 4 minutes between yields
 const ANIMAL_YIELDS = {
-  animal_chicken: { name: 'eggs',      coins: 18,  xp: 4 },
-  animal_duck:    { name: 'duck eggs', coins: 25,  xp: 6 },
-  animal_sheep:   { name: 'wool',      coins: 42,  xp: 10 },
-  animal_goat:    { name: 'goat milk', coins: 50,  xp: 12 },
-  animal_cow:     { name: 'milk',      coins: 65,  xp: 15 },
+  animal_chicken: { name: 'eggs',      coins: 23,  xp: 4 },
+  animal_duck:    { name: 'duck eggs', coins: 31,  xp: 6 },
+  animal_sheep:   { name: 'wool',      coins: 53,  xp: 10 },
+  animal_goat:    { name: 'goat milk', coins: 63,  xp: 12 },
+  animal_cow:     { name: 'milk',      coins: 81,  xp: 15 },
   // pig / horse / dog have no passive yield — pigs use the slaughterhouse,
   // horses are rideable for travel, dogs are companions.
 };
@@ -5126,12 +5126,12 @@ function animalReadyToHarvest(placed) {
 // Young (1×) slaughter at least breaks even with a small profit, while
 // Adult (1.5×) and Mature (2×) really pay off.
 const ANIMAL_MEAT = {
-  animal_chicken: { name: 'chicken meat', coins: 155,  xp: 30 },   // buy 200
-  animal_duck:    { name: 'duck meat',    coins: 195,  xp: 36 },   // buy 250
-  animal_pig:     { name: 'pork',         coins: 335,  xp: 70 },   // buy 450
-  animal_sheep:   { name: 'mutton',       coins: 415,  xp: 88 },   // buy 550
-  animal_goat:    { name: 'chevon',       coins: 450,  xp: 96 },   // buy 600
-  animal_cow:     { name: 'beef',         coins: 560,  xp: 120 },  // buy 750
+  animal_chicken: { name: 'chicken meat', coins: 194,  xp: 30 },   // buy 200
+  animal_duck:    { name: 'duck meat',    coins: 244,  xp: 36 },   // buy 250
+  animal_pig:     { name: 'pork',         coins: 419,  xp: 70 },   // buy 450
+  animal_sheep:   { name: 'mutton',       coins: 519,  xp: 88 },   // buy 550
+  animal_goat:    { name: 'chevon',       coins: 563,  xp: 96 },   // buy 600
+  animal_cow:     { name: 'beef',         coins: 700,  xp: 120 },  // buy 750
 };
 // Animals age up in discrete steps every ANIMAL_AGE_STEP_MS. The 4
 // stages are Baby (0), Young (1), Adult (2), Mature (3). Slaughter
