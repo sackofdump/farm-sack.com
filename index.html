@@ -9137,9 +9137,9 @@ function buildQuest(id, skipIds) {
   const target = t.min + Math.floor(Math.random() * (t.max - t.min + 1));
   const baseline = readStat(t.stat);
   const coins = Math.round(target * t.payRate);
-  // Stingy XP — coins are the main reward. Quests are a steady trickle
-  // of progression, not a level-up engine.
-  const xp = Math.max(2, Math.round(coins / 25));
+  // XP works out to ~3 × the previous coins/25 rate so quests pull
+  // their weight toward leveling without flooding the coin curve.
+  const xp = Math.max(6, Math.round(coins * 3 / 25));
   return {
     id: t.id,
     verb: t.verb, noun: t.noun, stat: t.stat,
@@ -9220,9 +9220,9 @@ function rollNewDaily(skipIds) {
   const target = Math.round(base * tMul);
   const baseline = readStat(t.stat);
   const coins = Math.round(target * t.payRate * pMul);
-  // Dailies still pay better XP than slate quests but no longer
-  // generous enough to lift a level by themselves.
-  const xp = Math.max(4, Math.round(coins / 12));
+  // Daily XP also tripled vs the previous coins/12 baseline — dailies
+  // are now a meaningful chunk of the daily leveling budget.
+  const xp = Math.max(12, Math.round(coins * 3 / 12));
   return {
     id: t.id, daily: true,
     verb: t.verb, noun: t.noun, stat: t.stat,
