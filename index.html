@@ -1668,6 +1668,31 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   <aside class="splashPatchNotes" aria-label="Patch notes">
     <h4>📜 Patch Notes</h4>
     <div class="patchEntry">
+      <div class="patchDate">2026-05-05</div>
+      <ul>
+        <li>Sell button on every building's click menu — including barns, which now drop the pen rect on sell but leave animals + slaughterhouse standing for the next barn-with-pen to round up.</li>
+        <li>Per-row Slaughter button in the barn roster for one-click meat runs.</li>
+        <li>Fixed a long-standing Y_BASE math bug in tree / building hitboxes — clicks no longer leak onto the tile next to a tree.</li>
+        <li>Hover snap reaches SE for actionable crop tiles so the leaf-tops of mature wheat / corn etc. correctly highlight the plot.</li>
+        <li>XP bar tooltip now shows current XP / threshold for the next level.</li>
+        <li>Bigger Baskets is a flat +1¢ per harvest per upgrade (was a multiplier).</li>
+        <li>Tree harvests pay flat +5 XP and half the previous coin yield.</li>
+        <li>Watering no longer awards XP. Tree mutations + fishing added to the roadmap.</li>
+        <li>Quests: level-up daily removed; harvest-tree-fruit added to the slate.</li>
+        <li>Achievement + quest XP / coin payouts trimmed across the board.</li>
+        <li>Big balance pass — crop times, animal age, building costs, upgrade costs all bumped up; building bonus cap 25%, water upgrade ladder 25/50/75%.</li>
+        <li>Strawberry grow time set to 6m 45s; wheat to 3m.</li>
+        <li>Animal loyalty + silo + coffee + workers all paused while the tab is closed.</li>
+        <li>Leaderboard hides a few testing handles (sackofdump / dsack / dumpsack).</li>
+        <li>Farmer's face hides while walking away from the camera.</li>
+        <li>Mobile optimization pass: capped DPR + halved particle counts on touch devices.</li>
+        <li>Greenhouse Accelerate button removed.</li>
+        <li>Pen-expand no longer wipes the slaughterhouse.</li>
+        <li>Staff wage 50¢ → 500¢/day.</li>
+        <li>Expansion-hint nudge now fires at 6.7k¢ to match the new Expand Play Area cost.</li>
+      </ul>
+    </div>
+    <div class="patchEntry">
       <div class="patchDate">2026-05-04</div>
       <ul>
         <li>Big Red Barn shortcut on the toolbar — opens the barn roster in one click.</li>
@@ -1720,6 +1745,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchDate">Coming soon</div>
     <ul>
       <li>Greenhouse mutation system overhaul.</li>
+      <li>Tree mutations.</li>
+      <li>Fishing.</li>
       <li>Weather patterns (bonuses + debuffs).</li>
       <li>More trees.</li>
       <li>More animals.</li>
@@ -1727,7 +1754,6 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
       <li>More plant mutations.</li>
       <li>Crafting system with crops.</li>
       <li>Animal automation.</li>
-      <li>Mobile optimization.</li>
     </ul>
   </aside>
 </div>
@@ -2426,12 +2452,15 @@ function bootsCost(level) {
   return Math.round(3600 * Math.pow(2.5, level));
 }
 
-// ----- Yield boost (harvest sell multiplier) -----
-const YIELD_PER_LEVEL = 0.20;     // +20% per tier
+// ----- Yield boost (flat +1¢ per level on every harvest payout) -----
 const YIELD_MAX_LEVEL = 5;
 function yieldMultiplier() {
-  return 1 + (state.player.yieldLevel || 0) * YIELD_PER_LEVEL;
+  // Bigger Baskets is now a flat per-harvest bonus (yieldFlatBonus),
+  // not a multiplier — keep the multiplier hook returning 1 so every
+  // existing call site still produces the un-scaled coin amount.
+  return 1;
 }
+function yieldFlatBonus() { return state.player.yieldLevel || 0; }
 function yieldCost(level) { return Math.round(5400 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
@@ -2998,10 +3027,9 @@ function performArboristAction(m, task) {
     const f = TREE_FRUITS[placed.id];
     if (!f) return;
     const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
-    const coins = Math.round(f.coins * yieldMul);
-    // Tree XP follows the crop formula (sell / 10) — same as the
-    // player's tree-harvest path above.
-    const xp    = Math.max(1, Math.round((coins / 10) * cottageXpMul()));
+    const coins = Math.round(f.coins * yieldMul) + yieldFlatBonus();
+    // Flat +5 XP per tree harvest, scaled only by Cottage XP boost.
+    const xp    = Math.max(1, Math.round(5 * cottageXpMul()));
     state.coins += coins;
     grantXp(xp);
     audio.play('harvest');
@@ -3010,6 +3038,7 @@ function performArboristAction(m, task) {
     fxFloat(ix, iy, '+' + xp + ' XP', 1, '#6CFFB4');
     placed.fruitAt = Date.now() + TREE_FRUIT_MS;
     bumpStat('harvested');
+    bumpStat('treesHarvested');
     bumpStat('harvestedByCrop.' + (f.name || placed.id));
     storage.save(); refreshHud();
   }
@@ -3076,7 +3105,7 @@ function performCropFarmerAction(m, task) {
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
     } else {
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
-      const sellAmount = Math.round(c.sell * yieldMul);
+      const sellAmount = Math.round(c.sell * yieldMul) + yieldFlatBonus();
       const xpGain = Math.max(1, Math.round((sellAmount / 10) * cottageXpMul()));
       state.coins += sellAmount;
       grantXp(xpGain);
@@ -3416,10 +3445,9 @@ const QUEST_TEMPLATES = [
   // Tree placement back at a small target. flatTarget=true means the
   // daily slate doesn't apply the 2x daily multiplier (so 3 trees =
   // 3 trees on the daily, not 6).
-  { id:'tree',     verb:'Plant',  noun:'trees',           stat:'treesPlaced', min:1, max:2, payRate:120, unlock:3, flatTarget:true },
-  // Level-up daily — completing it requires actually levelling, so the
-  // target stays small and is never multiplied for dailies.
-  { id:'level_up', verb:'Level up', noun:'times',         stat:'levelUps',    min:5, max:8, payRate:60,  unlock:1, flatTarget:true, dailyOnly:true },
+  { id:'tree',         verb:'Plant',   noun:'trees',  stat:'treesPlaced',     min:1, max:2,  payRate:120, unlock:3,  flatTarget:true },
+  // Tree harvest. Smaller targets since fruit ripens slowly.
+  { id:'harvest_trees',verb:'Harvest', noun:'tree fruit', stat:'treesHarvested', min:3, max:8, payRate:18, unlock:3 },
 ];
 
 // Daily challenges are bigger versions of quest templates with ~2x targets
@@ -4401,9 +4429,18 @@ const camera = {
 // ============================================================
 const canvas = document.getElementById('stage');
 const ctx = canvas.getContext('2d');
+// Mobile-only optimizations: cap DPR at 1 on touch devices so the
+// canvas isn't doing 4x the pixel work, and scale particle counts
+// down via FX_SCALE. Browser rendering on desktop is unchanged.
+const IS_MOBILE = (typeof navigator !== 'undefined') && (
+  /Android|iPhone|iPad|iPod|Mobile|Opera Mini|IEMobile/i.test(navigator.userAgent || '') ||
+  (navigator.maxTouchPoints && navigator.maxTouchPoints > 1 && window.innerWidth <= 900)
+);
+const FX_SCALE = IS_MOBILE ? 0.5 : 1;
 let DPR = 1;
 function resizeCanvas() {
-  DPR = Math.max(1, Math.min(2, window.devicePixelRatio || 1));
+  const dprMax = IS_MOBILE ? 1 : 2;
+  DPR = Math.max(1, Math.min(dprMax, window.devicePixelRatio || 1));
   canvas.width  = Math.floor(window.innerWidth  * DPR);
   canvas.height = Math.floor(window.innerHeight * DPR);
   canvas.style.width  = window.innerWidth  + 'px';
@@ -5854,14 +5891,14 @@ function refreshDismountBanner() {
   el.style.display = mounted ? 'flex' : 'none';
 }
 const TREE_FRUITS = {
-  tree_oak:         { name: 'walnuts',     coins: 84,  xp: 20 },
-  tree_maple:       { name: 'maple syrup', coins: 225, xp: 55 },
-  tree_apple:       { name: 'apples',    coins: 155, xp: 38 },
-  tree_orange:      { name: 'oranges',   coins: 195, xp: 48 },
-  tree_cherry:      { name: 'cherries',  coins: 280, xp: 70 },
-  tree_pine_dark:   { name: 'pine nuts', coins: 65,  xp: 16 },
-  tree_pine_yellow: { name: 'pine nuts', coins: 110, xp: 28 },
-  tree_pine_snow:   { name: 'pine nuts', coins: 155, xp: 38 },
+  tree_oak:         { name: 'walnuts',     coins: 42,  xp: 20 },
+  tree_maple:       { name: 'maple syrup', coins: 113, xp: 55 },
+  tree_apple:       { name: 'apples',    coins: 78,  xp: 38 },
+  tree_orange:      { name: 'oranges',   coins: 98,  xp: 48 },
+  tree_cherry:      { name: 'cherries',  coins: 140, xp: 70 },
+  tree_pine_dark:   { name: 'pine nuts', coins: 33,  xp: 16 },
+  tree_pine_yellow: { name: 'pine nuts', coins: 55,  xp: 28 },
+  tree_pine_snow:   { name: 'pine nuts', coins: 78,  xp: 38 },
   // tree_stump intentionally absent — stumps are pure decor, no harvest.
 };
 function treeReadyToHarvest(placed) {
@@ -6057,7 +6094,7 @@ function drawPlacedItem(id, cx, cy, placed) {
 // ============================================================
 // PLAYER (procedural cartoon farmer)
 // ============================================================
-function drawPlayer(cx, cy, walking, facing, busy, time) {
+function drawPlayer(cx, cy, walking, facing, busy, time, facingBack) {
   ctx.save();
   // Soft round shadow
   ctx.globalAlpha = 0.35;
@@ -6174,17 +6211,22 @@ function drawPlayer(cx, cy, walking, facing, busy, time) {
     ctx.fillStyle = '#FFC107';
     ctx.beginPath(); ctx.arc(-4, -19, 0.7, 0, Math.PI * 2); ctx.fill();
   }
-  // Eyes (offset by facing)
-  ctx.fillStyle = '#1A1006';
-  ctx.beginPath(); ctx.arc(facing * 0.5 - 1.8, -15.5, 0.85, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc(facing * 0.5 + 1.8, -15.5, 0.85, 0, Math.PI * 2); ctx.fill();
-  // Mouth
-  ctx.strokeStyle = '#7A2A1A'; ctx.lineWidth = 0.9;
-  ctx.beginPath(); ctx.arc(0, -13, 1.5, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
-  // Cheek blush
-  ctx.fillStyle = 'rgba(230, 57, 70, 0.45)';
-  ctx.beginPath(); ctx.arc(-3, -13, 1.4, 0, Math.PI * 2); ctx.fill();
-  ctx.beginPath(); ctx.arc( 3, -13, 1.4, 0, Math.PI * 2); ctx.fill();
+  // Face features only render when the farmer is facing the camera.
+  // While walking away (facingBack), leave the head blank so the
+  // viewer reads them as turned around.
+  if (!facingBack) {
+    // Eyes (offset by facing)
+    ctx.fillStyle = '#1A1006';
+    ctx.beginPath(); ctx.arc(facing * 0.5 - 1.8, -15.5, 0.85, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(facing * 0.5 + 1.8, -15.5, 0.85, 0, Math.PI * 2); ctx.fill();
+    // Mouth
+    ctx.strokeStyle = '#7A2A1A'; ctx.lineWidth = 0.9;
+    ctx.beginPath(); ctx.arc(0, -13, 1.5, 0.15 * Math.PI, 0.85 * Math.PI); ctx.stroke();
+    // Cheek blush
+    ctx.fillStyle = 'rgba(230, 57, 70, 0.45)';
+    ctx.beginPath(); ctx.arc(-3, -13, 1.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc( 3, -13, 1.4, 0, Math.PI * 2); ctx.fill();
+  }
 
   // ----- Straw hat -----
   ctx.fillStyle = '#D9B574'; ctx.strokeStyle = '#7A5630'; ctx.lineWidth = 1.4;
@@ -6881,7 +6923,7 @@ function drawAll() {
       const walking = state.player.queue.length > 0 && state.player.busy <= 0;
       // Drop the farmer down toward the front-bottom of the diamond so
       // their feet sit on the ground instead of mid-tile.
-      drawPlayer(c.x, c.y + TILE_H * 0.30, walking, state.player.facing, state.player.busy, live.time);
+      drawPlayer(c.x, c.y + TILE_H * 0.30, walking, state.player.facing, state.player.busy, live.time, !!state.player.facingBack);
     } else if (it.kind === 'staff') {
       const c = isoCenter(it.staff.ix, it.staff.iy);
       const walking = !!it.staff._walking;
@@ -8103,6 +8145,10 @@ function tickPlayer(dtMs) {
     p.iy += dy * (step / dist);
   }
   p.facing = ((target.ix - p.ix) - (target.iy - p.iy)) >= 0 ? 1 : -1;
+  // facingBack = walking north on screen (decreasing ix+iy) so the
+  // farmer's facing the camera-away direction. Drawn as a blank head.
+  const sumDelta = (target.ix - p.ix) + (target.iy - p.iy);
+  p.facingBack = sumDelta < -0.05;
 }
 
 function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
@@ -8187,7 +8233,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       const ageMul   = (queuedAction && queuedAction.ageMul) || 1;
       // Silo boost is computed at delivery time — silo could have run dry
       // between marking and walking the animal over.
-      const coins = Math.round(meat.coins * yieldMul * ageMul) + siloSlaughterBonus();
+      const coins = Math.round(meat.coins * yieldMul * ageMul) + siloSlaughterBonus() + yieldFlatBonus();
       const xp    = Math.max(1, Math.round(meat.xp * cottageXpMul() * ageMul));
       state.coins += coins;
       grantXp(xp);
@@ -8471,7 +8517,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     if (placed && animalReadyToHarvest(placed)) {
       const y = ANIMAL_YIELDS[placed.id];
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
-      const coins = Math.round(y.coins * yieldMul);
+      const coins = Math.round(y.coins * yieldMul) + yieldFlatBonus();
       // Yield XP plus a flat +1 bonus per harvest so the player sees a
       // visible XP gain on every interaction (matches watering / trees).
       const xp    = Math.max(1, Math.round(y.xp * 0.5 * cottageXpMul())) + 1;
@@ -8500,10 +8546,9 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     if (placed && treeReadyToHarvest(placed)) {
       const f = TREE_FRUITS[placed.id];
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
-      const coins = Math.round(f.coins * yieldMul);
-      // Tree XP follows the crop formula (sell / 10) so a basket of
-      // apples and a basket of grapes pay roughly the same XP-per-coin.
-      const xp    = Math.max(1, Math.round((coins / 10) * cottageXpMul()));
+      const coins = Math.round(f.coins * yieldMul) + yieldFlatBonus();
+      // Flat +5 XP per tree harvest, scaled only by Cottage XP boost.
+      const xp    = Math.max(1, Math.round(5 * cottageXpMul()));
       state.coins += coins;
       grantXp(xp);
       // Just the soft rustle — no extra coin chirp.
@@ -8513,6 +8558,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       fxFloat(ix, iy, '+' + xp + ' XP', 1, '#6CFFB4');
       placed.fruitAt = Date.now() + TREE_FRUIT_MS;
       bumpStat('harvested');
+      bumpStat('treesHarvested');
       bumpStat('harvestedByCrop.' + (f.name || placed.id));
       storage.save(); refreshHud();
       return 'ok';
@@ -8663,9 +8709,10 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       bumpStat('harvestedByCrop.' + p.crop);
       p.state = 'dirt'; p.crop = null; p.plantedAt = null; p.watered = false;
     } else {
-      // Bonuses: Bigger Baskets upgrade × Silo count × Market Stall count.
+      // Silo + Market Stall multiply the base sell. Bigger Baskets adds
+      // a flat +1¢ per upgrade level (yieldFlatBonus) on top.
       const yieldMul   = yieldMultiplier() * siloYieldMul() * marketSellMul();
-      const sellAmount = Math.round(c.sell * yieldMul);
+      const sellAmount = Math.round(c.sell * yieldMul) + yieldFlatBonus();
       // XP is roughly 1/10 of sell value (was 1/5) — overall XP rate halved
       // so levelling feels more deliberate.
       const xpGain     = Math.max(1, Math.round((sellAmount / 10) * cottageXpMul()));
@@ -9390,7 +9437,12 @@ async function renderLeaderboardTab(wrap) {
   wrap.innerHTML = '<p style="margin-top:14px;color:#6E4D22;">Loading top farmers…</p>';
   // Push the local stats so the player's row is fresh before we read.
   if (cloud.user) { try { await cloud.pushLeaderboard(); } catch (e) {} }
-  const rows = await cloud.fetchLeaderboard(10);
+  // Pull a few extra rows so the post-filter list still has 10.
+  const rawRows = await cloud.fetchLeaderboard(20);
+  const HIDDEN_NAMES = new Set(['sackofdump', 'dsack', 'dumpsack']);
+  const rows = rawRows
+    .filter(r => !HIDDEN_NAMES.has(((r.farmer_name || '') + '').trim().toLowerCase()))
+    .slice(0, 10);
   if (!rows.length) {
     wrap.innerHTML = '<p style="margin-top:14px;color:#6E4D22;">No leaderboard data yet — be the first!</p>';
     return;
@@ -9622,6 +9674,8 @@ function tileScreen(ix, iy) {
 function fxBurst(ix, iy, color, count=8) {
   const { x, y } = tileScreen(ix, iy);
   const layer = document.getElementById('particles');
+  // Mobile: drop particle count so a busy harvest doesn't tank fps.
+  count = Math.max(2, Math.round(count * FX_SCALE));
   for (let k = 0; k < count; k++) {
     const p = document.createElement('div');
     p.className = 'particle';
@@ -9702,17 +9756,16 @@ function refreshHud() {
   const nxt = LEVEL_THRESHOLDS[state.level];
   const pct = nxt && nxt > cur ? Math.max(0, Math.min(100, (state.xp - cur) / (nxt - cur) * 100)) : 100;
   document.getElementById('xpFill').style.width = pct + '%';
-  // Hover tooltip on the level chip: current XP into the level / total
-  // XP needed for it. MAX once the player tops the threshold table.
+  // Hover tooltip on the level chip: absolute current XP / threshold
+  // for the next level. MAX once the player tops the threshold table.
   const xpFill = document.getElementById('xpFill');
   const lvlChip = xpFill && xpFill.closest('.chip');
   if (lvlChip) {
     if (nxt && nxt > cur) {
-      const into = Math.max(0, Math.floor(state.xp - cur));
-      const need = nxt - cur;
-      lvlChip.title = `Lv ${state.level} — ${formatCoins(into)} / ${formatCoins(need)} XP to next`;
+      const have = Math.max(0, Math.floor(state.xp));
+      lvlChip.title = `Lv ${state.level} — ${formatCoins(have)} / ${formatCoins(nxt)} XP`;
     } else {
-      lvlChip.title = `Lv ${state.level} — MAX`;
+      lvlChip.title = `Lv ${state.level} — MAX (${formatCoins(Math.floor(state.xp))} XP)`;
     }
   }
   const day = Math.floor((Date.now() - state.startedAt) / DAY_MS) + 1;
@@ -10309,7 +10362,7 @@ function buildUpgradesGrid(grid) {
     makeUpgradeCard(grid, {
       iconKey: 'tool_harvest',
       name: 'Bigger Baskets',
-      sub: 'Increase coins from harvest',
+      sub: `+1¢ per harvest per level (current: +${lvl}¢)`,
       price: cost, max: maxed, level: lvl, maxLevel: YIELD_MAX_LEVEL,
       buy: () => { p.yieldLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Bigger Baskets'); }
     });
