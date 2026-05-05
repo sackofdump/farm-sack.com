@@ -5337,28 +5337,56 @@ const BUILDING_MENUS = {
         return 'Standalone barn — no fenced pen attached. Buy a Big Red Barn ' +
                'and choose "with fence" to add an animal pen.';
       }
-      const rows = [];
+      let allRows = [];
       for (const k in state.placed) {
         const it = state.placed[k];
         if (!it || !it.id || !it.id.startsWith('animal_')) continue;
         const [ix, iy] = k.split(',').map(Number);
         if (ix < pen.x0 || iy < pen.y0 ||
             ix >= pen.x0 + pen.w || iy >= pen.y0 + pen.h) continue;
-        rows.push({ k, it, ix, iy });
+        allRows.push({ k, it, ix, iy });
       }
-      rows.sort((a, b) => {
+      // Filter / sort mode persists across menu re-renders. Defaults to
+      // species + age (the original ordering).
+      if (!state._barnRosterMode) state._barnRosterMode = 'species';
+      const mode = state._barnRosterMode;
+      let rows = allRows.slice();
+      if (mode === 'ready') {
+        rows = rows.filter(r => animalReadyToHarvest(r.it));
+      } else if (mode === 'mature') {
+        rows = rows.filter(r => canSlaughter(r.it.id, r.it));
+      }
+      const ageDescSort = (a, b) => {
+        const ai = animalAgeIndex(a.it), bi = animalAgeIndex(b.it);
+        if (ai !== bi) return bi - ai;
+        return (animalAgeMs(b.it) || 0) - (animalAgeMs(a.it) || 0);
+      };
+      if (mode === 'age')      rows.sort(ageDescSort);
+      else if (mode === 'ready')   rows.sort((a, b) => ((a.it.yieldAt || 0) - (b.it.yieldAt || 0)));
+      else if (mode === 'mature')  rows.sort(ageDescSort);
+      else rows.sort((a, b) => {
         if (a.it.id !== b.it.id) return a.it.id < b.it.id ? -1 : 1;
         return animalAgeIndex(b.it) - animalAgeIndex(a.it);
       });
       let html = '<div style="font-size:12px;color:#5b3f1f;margin-bottom:8px;">' +
                  'Buy farm animals and stable them in the pen.</div>';
+      // Filter dropdown — picks which slice of the roster to render.
+      // Re-renders the menu via window.refreshBarnRosterFilter when changed.
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12px;color:#4a2e15;">' +
+              '<label for="barnRosterMode"><b>Show:</b></label>' +
+              '<select id="barnRosterMode" data-barn-roster-mode="1" style="padding:3px 6px;border:1.5px solid #b58d4f;border-radius:6px;background:#FFF8E1;font-weight:700;color:#3a2410;">' +
+                `<option value="species" ${mode==='species'?'selected':''}>All — species + age</option>` +
+                `<option value="age"     ${mode==='age'    ?'selected':''}>All — by age</option>` +
+                `<option value="ready"   ${mode==='ready'  ?'selected':''}>Yields ready</option>` +
+                `<option value="mature"  ${mode==='mature' ?'selected':''}>Mature / slaughterable</option>` +
+              '</select></div>';
       // Slaughter column only renders when the player actually owns a
       // Slaughterhouse — without one those numbers would be misleading.
       const hasSlaughterhouse = buildingCount('building_slaughterhouse') > 0;
       if (rows.length === 0) {
-        html += '<div style="font-size:12px;color:#7a5430;font-style:italic;margin-bottom:6px;">No animals yet — buy one in the shop.</div>';
+        html += '<div style="font-size:12px;color:#7a5430;font-style:italic;margin-bottom:6px;">No animals match this filter.</div>';
       } else {
-        html += '<div style="font-size:12px;color:#4a2e15;margin-bottom:4px;"><b>Pen roster (' + rows.length + ')</b></div>';
+        html += `<div style="font-size:12px;color:#4a2e15;margin-bottom:4px;"><b>Pen roster (${rows.length}/${allRows.length})</b></div>`;
         html += '<div style="max-height:240px;overflow-y:auto;font-size:11px;color:#3b2a1a;border:2px solid #b58d4f;border-radius:8px;background:rgba(255,255,255,0.30);">';
         html += '<table style="width:100%;border-collapse:collapse;">';
         html += '<thead><tr style="background:rgba(74,46,21,0.18);">' +
@@ -5700,6 +5728,23 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     const descContent = typeof cfg.desc === 'function' ? cfg.desc({ ix, iy }) : (cfg.desc || '');
     desc.innerHTML = descContent;
     desc.style.display = descContent ? '' : 'none';
+    // Barn roster filter dropdown — re-opens the same menu so the row
+    // builder picks up the new state._barnRosterMode value.
+    const rosterModeSel = desc.querySelector('[data-barn-roster-mode]');
+    if (rosterModeSel) {
+      rosterModeSel.addEventListener('change', (ev) => {
+        ev.stopPropagation();
+        state._barnRosterMode = rosterModeSel.value;
+        // Re-render the desc only (no need to bounce the whole popup
+        // through closeAnimalMenu/openBuildingMenu — would re-position).
+        const newContent = typeof cfg.desc === 'function' ? cfg.desc({ ix, iy }) : (cfg.desc || '');
+        desc.innerHTML = newContent;
+        // Re-wire all the row + dropdown handlers on the freshly-rendered
+        // markup. The simplest path: call openBuildingMenu again, which
+        // resets every handler. Defer it so we exit this listener cleanly.
+        setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+      });
+    }
     desc.querySelectorAll('[data-animal-action]').forEach(btn => {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
