@@ -883,8 +883,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   box-shadow: 0 6px 16px rgba(0,0,0,0.4);
   display: flex; flex-direction: column; gap: 6px;
   min-width: 220px;
-  max-width: min(480px, 92vw);
-  max-height: 70vh;
+  max-width: min(640px, 94vw);
+  max-height: 88vh;
   overflow-y: auto;
 }
 #animalMenu .am-desc { word-wrap: break-word; overflow-wrap: anywhere; }
@@ -5371,8 +5371,7 @@ const BUILDING_MENUS = {
       let html = '<div style="font-size:12px;color:#5b3f1f;margin-bottom:8px;">' +
                  'Buy farm animals and stable them in the pen.</div>';
       // Filter dropdown — picks which slice of the roster to render.
-      // Re-renders the menu via window.refreshBarnRosterFilter when changed.
-      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12px;color:#4a2e15;">' +
+      html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12px;color:#4a2e15;flex-wrap:wrap;">' +
               '<label for="barnRosterMode"><b>Show:</b></label>' +
               '<select id="barnRosterMode" data-barn-roster-mode="1" style="padding:3px 6px;border:1.5px solid #b58d4f;border-radius:6px;background:#FFF8E1;font-weight:700;color:#3a2410;">' +
                 `<option value="species" ${mode==='species'?'selected':''}>All — species + age</option>` +
@@ -5383,11 +5382,30 @@ const BUILDING_MENUS = {
       // Slaughter column only renders when the player actually owns a
       // Slaughterhouse — without one those numbers would be misleading.
       const hasSlaughterhouse = buildingCount('building_slaughterhouse') > 0;
+      // Bulk-action buttons — act on whichever animals in the *visible*
+      // roster match their criterion. Counts come from the filtered rows
+      // so the labels match what the player sees.
+      const bulkCollectRows = rows.filter(r => animalReadyToHarvest(r.it));
+      const bulkSlaughterRows = hasSlaughterhouse
+        ? rows.filter(r => ANIMAL_MEAT[r.it.id] && canSlaughter(r.it.id, r.it))
+        : [];
+      const bulkBtnStyle = (palette, dim) =>
+        `border-radius:6px;padding:5px 10px;font-size:12px;font-weight:800;cursor:${dim?'default':'pointer'};` +
+        `border:1.5px solid;${palette};${dim?'opacity:0.45;':''}`;
+      const collectPalette = 'background:linear-gradient(to bottom,#7DC159,#4F8C2D);color:#FFF;border-color:#2A4A1A;';
+      const slaughterPalette = 'background:linear-gradient(to bottom,#E27464,#A03423);color:#FFF;border-color:#6A1A12;';
+      let bulkRow = '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">';
+      bulkRow += `<button data-barn-bulk="collect" style="${bulkBtnStyle(collectPalette, bulkCollectRows.length === 0)}" ${bulkCollectRows.length === 0 ? 'disabled' : ''}>Collect ready (${bulkCollectRows.length})</button>`;
+      if (hasSlaughterhouse) {
+        bulkRow += `<button data-barn-bulk="slaughter" style="${bulkBtnStyle(slaughterPalette, bulkSlaughterRows.length === 0)}" ${bulkSlaughterRows.length === 0 ? 'disabled' : ''}>Slaughter mature (${bulkSlaughterRows.length})</button>`;
+      }
+      bulkRow += '</div>';
+      html += bulkRow;
       if (rows.length === 0) {
         html += '<div style="font-size:12px;color:#7a5430;font-style:italic;margin-bottom:6px;">No animals match this filter.</div>';
       } else {
         html += `<div style="font-size:12px;color:#4a2e15;margin-bottom:4px;"><b>Pen roster (${rows.length}/${allRows.length})</b></div>`;
-        html += '<div style="max-height:240px;overflow-y:auto;font-size:11px;color:#3b2a1a;border:2px solid #b58d4f;border-radius:8px;background:rgba(255,255,255,0.30);">';
+        html += '<div style="max-height:min(60vh,520px);overflow-y:auto;font-size:11px;color:#3b2a1a;border:2px solid #b58d4f;border-radius:8px;background:rgba(255,255,255,0.30);">';
         html += '<table style="width:100%;border-collapse:collapse;">';
         html += '<thead><tr style="background:rgba(74,46,21,0.18);">' +
                 '<th style="text-align:left;padding:4px 6px;">Animal</th>' +
@@ -5735,16 +5753,66 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
       rosterModeSel.addEventListener('change', (ev) => {
         ev.stopPropagation();
         state._barnRosterMode = rosterModeSel.value;
-        // Re-render the desc only (no need to bounce the whole popup
-        // through closeAnimalMenu/openBuildingMenu — would re-position).
-        const newContent = typeof cfg.desc === 'function' ? cfg.desc({ ix, iy }) : (cfg.desc || '');
-        desc.innerHTML = newContent;
-        // Re-wire all the row + dropdown handlers on the freshly-rendered
-        // markup. The simplest path: call openBuildingMenu again, which
-        // resets every handler. Defer it so we exit this listener cleanly.
         setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
       });
     }
+    // Bulk-action buttons — Collect ready / Slaughter mature, scoped
+    // to the currently-displayed roster (so a filter narrows the bulk
+    // target the same way it narrows the visible rows).
+    desc.querySelectorAll('[data-barn-bulk]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        if (btn.disabled) return;
+        const kind = btn.getAttribute('data-barn-bulk');
+        // Recompute the visible roster on click — state may have ticked
+        // between the snapshot at render time and the click.
+        const pen = (typeof ix === 'number') ? findBarnPenForBarn(ix, iy) : (getAllBarnPens()[0] || null);
+        if (!pen) return;
+        const visibleRows = [];
+        for (const k in state.placed) {
+          const it = state.placed[k];
+          if (!it || !it.id || !it.id.startsWith('animal_')) continue;
+          const [aix, aiy] = k.split(',').map(Number);
+          if (aix < pen.x0 || aiy < pen.y0 ||
+              aix >= pen.x0 + pen.w || aiy >= pen.y0 + pen.h) continue;
+          visibleRows.push({ it, ix: aix, iy: aiy });
+        }
+        const m = state._barnRosterMode || 'species';
+        const filtered = m === 'ready'  ? visibleRows.filter(r => animalReadyToHarvest(r.it))
+                       : m === 'mature' ? visibleRows.filter(r => canSlaughter(r.it.id, r.it))
+                       : visibleRows;
+        if (kind === 'collect') {
+          if (!state.player.queue) state.player.queue = [];
+          let queued = 0;
+          for (const r of filtered) {
+            if (!animalReadyToHarvest(r.it)) continue;
+            const already = state.player.queue.some(q => q.tool === 'harvest' && q.ix === r.ix && q.iy === r.iy);
+            if (already) continue;
+            state.player.queue.push({ tool: 'harvest', ix: r.ix, iy: r.iy });
+            queued++;
+          }
+          audio.play(queued > 0 ? 'click' : 'error');
+          if (queued > 0) toast(`Queued ${queued} collect${queued === 1 ? '' : 's'}.`, false, 'good');
+          else toast('No ready yields to collect.', true);
+        } else if (kind === 'slaughter') {
+          let queued = 0;
+          for (const r of filtered) {
+            if (!ANIMAL_MEAT[r.it.id] || !canSlaughter(r.it.id, r.it)) continue;
+            const aKey = r.ix + ',' + r.iy;
+            const already = (state.player.queue || []).some(q =>
+              (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') && q.animalKey === aKey);
+            if (already) continue;
+            if (queueOneClickSlaughter(aKey, r.it)) queued++;
+          }
+          audio.play(queued > 0 ? 'click' : 'error');
+          if (queued > 0) toast(`Queued ${queued} slaughter${queued === 1 ? '' : 's'}.`, false, 'good');
+          else toast('No mature animals to slaughter.', true);
+        }
+        // Refresh the menu so the bulk-button counts + queued badges
+        // update on the rows that were just queued.
+        setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+      });
+    });
     desc.querySelectorAll('[data-animal-action]').forEach(btn => {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
