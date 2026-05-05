@@ -3511,7 +3511,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_market_stall', name: 'Market Stall', cost: 2700, sub: '+5% sell prices (cap +25%)',     unlock: 8  },
   { cat: 'building', id: 'building_windmill',     name: 'Windmill',     cost: 5250, sub: '+5% crop growth speed (cap +25%)', unlock: 10 },
   { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% harvest yield (cap +25%) · stores Animal Feed for animal bonuses', unlock: 9  },
-  { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1800, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 18 },
+  { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1800, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 15 },
   { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile up to 200 seeds for your crop farmer to plant', unlock: 18 },
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 18 },
   { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
@@ -5585,7 +5585,7 @@ const BUILDING_MENUS = {
       const bulkSlaughterRows = hasSlaughterhouse
         ? rows.filter(r => ANIMAL_MEAT[r.it.id] && canSlaughter(r.it.id, r.it))
         : [];
-      const bulkPetRows = rows.filter(r => getAnimalLoyalty(r.it) < 80);
+      const bulkPetRows = rows.filter(r => getAnimalLoyalty(r.it) < 60);
       const bulkBtnStyle = (palette, dim) =>
         `border-radius:6px;padding:5px 10px;font-size:12px;font-weight:800;cursor:${dim?'default':'pointer'};` +
         `border:1.5px solid;${palette};${dim?'opacity:0.45;':''}`;
@@ -6130,7 +6130,7 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           // pong across the pen.
           const candidates = [];
           for (const r of filtered) {
-            if (getAnimalLoyalty(r.it) >= 80) continue;
+            if (getAnimalLoyalty(r.it) >= 60) continue;
             const since = r.it.lastPettedAt ? (Date.now() - r.it.lastPettedAt) : Infinity;
             if (since < PET_COOLDOWN_MS) continue;
             if (state.player.queue.some(q => q.tool === 'pet' && q.ix === r.ix && q.iy === r.iy)) continue;
@@ -9569,7 +9569,7 @@ function grantXp(amount) {
       queueTutorial('dogTutorialModal');
     }
     // Staff Hall + Seed Container + Coffee Stand all open at level 18.
-    if (state.level === 18 && !state.staffComboTutorialShown) {
+    if (state.level === 15 && !state.staffComboTutorialShown) {
       state.staffComboTutorialShown = true;
       queueTutorial('staffComboTutorialModal');
     }
