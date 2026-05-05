@@ -3244,7 +3244,7 @@ const CROPS = {
   // Times ×2 and sells ×0.7 vs the previous tuning so progression is
   // slower and coin gains lighter per harvest.
   wheat:      { name: 'Wheat',      cost: 5,   sell: 8,    time: 180,   wither: WITHER_SECONDS, unlock: 1  },
-  strawberry: { name: 'Strawberry', cost: 14,  sell: 18,   time: 450,   wither: WITHER_SECONDS, unlock: 2  },
+  strawberry: { name: 'Strawberry', cost: 14,  sell: 18,   time: 405,   wither: WITHER_SECONDS, unlock: 2  },
   carrot:     { name: 'Carrot',     cost: 24,  sell: 32,   time: 1080,  wither: WITHER_SECONDS, unlock: 5  },
   corn:       { name: 'Corn',       cost: 42,  sell: 60,   time: 2160,  wither: WITHER_SECONDS, unlock: 7  },
   tomato:     { name: 'Tomato',     cost: 70,  sell: 102,  time: 3600,  wither: WITHER_SECONDS, unlock: 9  },
@@ -3272,7 +3272,7 @@ function rebuildCropIds() { CROP_IDS = Object.keys(CROPS); }
 const SHOP_ITEMS = [
   // ---- Seeds ----
   { cat: 'seed', id: 'wheat',      name: 'Wheat',      cost: 5,   sub: '3m · sells 8¢',     unlock: 1  },
-  { cat: 'seed', id: 'strawberry', name: 'Strawberry', cost: 14,  sub: '7.5m · sells 18¢',   unlock: 2  },
+  { cat: 'seed', id: 'strawberry', name: 'Strawberry', cost: 14,  sub: '6m 45s · sells 18¢', unlock: 2  },
   { cat: 'seed', id: 'carrot',     name: 'Carrot',     cost: 24,  sub: '18m · sells 32¢',    unlock: 5  },
   { cat: 'seed', id: 'corn',       name: 'Corn',       cost: 42,  sub: '36m · sells 60¢',    unlock: 7  },
   { cat: 'seed', id: 'tomato',     name: 'Tomato',     cost: 70,  sub: '60m · sells 102¢',   unlock: 9  },
@@ -4168,13 +4168,15 @@ function screenToTile(sx, sy) {
   // cursor — redirecting to a building anchor would make placements jump
   // off-target whenever the cursor passes over a tall sprite's body.
   if (live.placeMode) return isoTile;
-  // Otherwise prefer a placed item's anchor tile, BUT only when the iso
-  // tile under the cursor is the placed item's tile or behind it. Tiles
-  // that are visually IN FRONT of the placed item (south on the iso
-  // grid) keep their literal value — so hovering the tile below a tree
-  // doesn't snap onto the tree.
+  // Otherwise prefer a placed item's anchor tile when the cursor pixel
+  // is genuinely on its sprite (pickPlacedItem alpha-tests, so this
+  // only fires on opaque pixels). Strict less-than: clicks on tiles
+  // that are visually IN FRONT of (south, higher sum) or BESIDE (same
+  // sum, east/west on iso) the sprite keep their literal value, so a
+  // grass tile next to a tree doesn't get hijacked.
   const hit = pickPlacedItem(wx, wy);
-  if (hit && (hit.ix + hit.iy) <= (isoTile.ix + isoTile.iy)) return hit;
+  if (hit && (isoTile.ix + isoTile.iy) < (hit.ix + hit.iy)) return hit;
+  if (hit && hit.ix === isoTile.ix && hit.iy === isoTile.iy) return hit;
   return isoTile;
 }
 function pickPlacedItem(wx, wy) {
@@ -4215,17 +4217,14 @@ function pickPlacedItem(wx, wy) {
       TILE_H / 2 + 4
     );
     const top = bottom - h;
-    // Trees use a tight trunk-only hitbox: narrow to ~trunk width and a
-    // short strip just above the iso center, so the canopy and the dirt
-    // in front don't steal clicks. Buildings use the full sprite bbox.
-    const hitTop = isTreeStaged
-      ? bottom - Math.min(h * 0.14, TILE_H * 0.30)
-      : top;
-    // Tighter trunk-only hitbox for trees so neighbouring tiles aren't
-    // captured by the canopy / pot. ±10% of the sprite width keeps the
-    // hit region squarely on the trunk pixels.
-    const hitLeft  = isTreeStaged ? c.x - w * 0.10 : left;
-    const hitRight = isTreeStaged ? c.x + w * 0.10 : right;
+    // Trees: hit region runs the full sprite height (so clicks on the
+    // canopy/trunk register, not just a thin strip near the base) but
+    // stays narrow horizontally so the hitbox doesn't bleed into the
+    // tile to either side. The alpha test below rejects clicks that
+    // land on transparent leaf gaps in this column.
+    const hitTop  = isTreeStaged ? top : top;
+    const hitLeft  = isTreeStaged ? c.x - w * 0.12 : left;
+    const hitRight = isTreeStaged ? c.x + w * 0.12 : right;
     if (wx < hitLeft || wx > hitRight || wy < hitTop || wy > bottom) continue;
     // Inside the sprite's screen bbox — sample the alpha at the cursor pixel
     // so transparent corners of the sprite don't capture clicks.
