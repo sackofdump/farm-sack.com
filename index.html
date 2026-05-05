@@ -2784,6 +2784,18 @@ function placedDogKey() {
   }
   return null;
 }
+// Find a dog currently standing inside the given pen rect — returns
+// "ix,iy" or null. Used to gate per-pen coyote defence.
+function dogKeyInPen(pen) {
+  if (!pen) return null;
+  for (const k in state.placed) {
+    if (state.placed[k].id !== 'animal_dog') continue;
+    const [dx, dy] = k.split(',').map(Number);
+    if (dx >= pen.x0 && dy >= pen.y0 &&
+        dx < pen.x0 + pen.w && dy < pen.y0 + pen.h) return k;
+  }
+  return null;
+}
 function pickCoyoteTarget() {
   // Prefer real livestock in the pen — never the dog (would be silly), and
   // never the horse (player may need it for travel). Falls back to any
@@ -2915,18 +2927,27 @@ function tickCoyote(dtMs) {
       c.iy += (ddy / dist) * step;
     }
   }
-  // Spawn a chasing dog only AFTER the coyote has closed to within 10
-  // tiles of the barn pen — gives the coyote a long approach jog and
-  // means the dog doesn't sprint out the moment one appears in the
-  // distance.
+  // Spawn a chasing dog from the SAME pen as the coyote's target —
+  // each pen needs its own dog to defend itself. If the targeted pen
+  // has no dog standing inside it, the coyote walks in unopposed.
   if (state.coyote && !state.dogChase) {
-    const dk = placedDogKey();
-    const pen = state.barnPen;
-    let shouldDeploy = !pen;   // no pen → just react immediately
-    if (pen) {
-      const cx = state.coyote.ix, cy = state.coyote.iy;
-      const px0 = pen.x0, py0 = pen.y0, px1 = pen.x0 + pen.w - 1, py1 = pen.y0 + pen.h - 1;
-      // Closest point on the pen rect.
+    const c2 = state.coyote;
+    const targetPen = (c2.target && typeof c2.target.ix === 'number')
+      ? findBarnPenAt(c2.target.ix, c2.target.iy)
+      : null;
+    let dk = null;
+    if (targetPen) {
+      dk = dogKeyInPen(targetPen);
+    } else {
+      // Coyote raiding crops or a free-roaming animal: any dog can
+      // intervene since there's no pen to protect.
+      dk = placedDogKey();
+    }
+    let shouldDeploy = !targetPen;
+    if (targetPen) {
+      const cx = c2.ix, cy = c2.iy;
+      const px0 = targetPen.x0, py0 = targetPen.y0;
+      const px1 = px0 + targetPen.w - 1, py1 = py0 + targetPen.h - 1;
       const nx = Math.max(px0, Math.min(cx, px1));
       const ny = Math.max(py0, Math.min(cy, py1));
       const dist = Math.hypot(cx - nx, cy - ny);
