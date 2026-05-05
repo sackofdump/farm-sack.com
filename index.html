@@ -899,7 +899,10 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   font-weight: 900; color: #4A2E15; text-align: center;
   font-size: 14px; margin-bottom: 2px;
   font-family: "Fredoka", "Quicksand", sans-serif;
+  cursor: grab;
+  user-select: none;
 }
+#animalMenu .am-title:active { cursor: grabbing; }
 #animalMenu .am-btn {
   padding: 8px 12px;
   border: 2px solid #2A4A1A; border-radius: 8px;
@@ -5368,11 +5371,11 @@ const BUILDING_MENUS = {
         if (a.it.id !== b.it.id) return a.it.id < b.it.id ? -1 : 1;
         return animalAgeIndex(b.it) - animalAgeIndex(a.it);
       });
-      // Wrap the whole barn roster in a fixed-width frame so the menu
-      // doesn't snap narrow when a filter empties the table — the
-      // dropdown + bulk buttons stay in the same spot whether you have
-      // 0 or 30 visible animals.
-      let html = '<div style="width:min(660px,86vw);min-height:200px;display:flex;flex-direction:column;">';
+      // Wrap the whole barn roster in a fixed-size frame so the menu
+      // doesn't snap narrow / short when a filter empties the table —
+      // the dropdown + bulk buttons stay anchored whether you have 0
+      // or 30 visible animals.
+      let html = '<div style="width:min(660px,86vw);min-height:420px;display:flex;flex-direction:column;">';
       html += '<div style="font-size:12px;color:#5b3f1f;margin-bottom:8px;">' +
                  'Buy farm animals and stable them in the pen.</div>';
       // Filter dropdown — picks which slice of the roster to render.
@@ -11579,6 +11582,40 @@ function bindInput() {
   stage.addEventListener('pointerleave', () => {
     if (!live.pointerDown) { live.hover = null; hideTooltip(); }
   });
+
+  // Drag the building / animal popup by its title bar so the player
+  // can move it out of the way of whatever they're working on.
+  (function setupAnimalMenuDrag() {
+    const menu = document.getElementById('animalMenu');
+    const title = document.getElementById('amTitle');
+    if (!menu || !title) return;
+    let dragging = false, dx = 0, dy = 0;
+    title.addEventListener('pointerdown', (e) => {
+      if (e.button !== 0) return;
+      const rect = menu.getBoundingClientRect();
+      dx = e.clientX - rect.left;
+      dy = e.clientY - rect.top;
+      dragging = true;
+      title.setPointerCapture(e.pointerId);
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    title.addEventListener('pointermove', (e) => {
+      if (!dragging) return;
+      const w = menu.offsetWidth, h = menu.offsetHeight;
+      const nx = Math.max(8, Math.min(window.innerWidth - w - 8, e.clientX - dx));
+      const ny = Math.max(8, Math.min(window.innerHeight - h - 8, e.clientY - dy));
+      menu.style.left = nx + 'px';
+      menu.style.top  = ny + 'px';
+    });
+    const stop = (e) => {
+      if (!dragging) return;
+      dragging = false;
+      try { title.releasePointerCapture(e.pointerId); } catch (_) {}
+    };
+    title.addEventListener('pointerup', stop);
+    title.addEventListener('pointercancel', stop);
+  })();
 
   stage.addEventListener('wheel', (e) => {
     e.preventDefault();
