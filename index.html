@@ -4168,13 +4168,12 @@ function screenToTile(sx, sy) {
   // cursor — redirecting to a building anchor would make placements jump
   // off-target whenever the cursor passes over a tall sprite's body.
   if (live.placeMode) return isoTile;
-  // Otherwise prefer a placed item's anchor tile, BUT only when the iso
-  // tile under the cursor is the placed item's tile or behind it. Tiles
-  // that are visually IN FRONT of the placed item (south on the iso
-  // grid) keep their literal value — so hovering the tile below a tree
-  // doesn't snap onto the tree.
+  // pickPlacedItem alpha-tests the cursor pixel against the sprite, so
+  // any non-null hit means the cursor is genuinely on that sprite's
+  // body. Snap to it. With Y_BASE math correct in pickPlacedItem, the
+  // hitbox can't leak into neighbouring tiles, so this is safe.
   const hit = pickPlacedItem(wx, wy);
-  if (hit && (hit.ix + hit.iy) <= (isoTile.ix + isoTile.iy)) return hit;
+  if (hit) return hit;
   return isoTile;
 }
 function pickPlacedItem(wx, wy) {
@@ -4207,26 +4206,27 @@ function pickPlacedItem(wx, wy) {
     const cyW = c.y - Y_BASE;
     const left = c.x - w / 2;
     const right = c.x + w / 2;
-    // Trees render with biasY = -TILE_H/2 + 6 (bottom anchored just past
-    // the iso center). Everything else uses biasY = 4 (front-bottom).
-    // For buildings, snap the hitbox bottom to the iso tile center so
-    // it doesn't bleed into the tile in front (south) of the building.
     const isTreeStaged = it.placed.id && it.placed.id.startsWith('tree_') && it.placed.treeStage;
     const isBuildingHere = it.placed.id && it.placed.id.startsWith('building_');
+    // Hitbox bottom matches the rendered sprite bottom in WY-space:
+    //   trees    biasY = -TILE_H/2 + 6  → image bottom at cyW + 6
+    //   buildings biasY = 4             → image bottom at cyW + 28
+    //   else      biasY = -TILE_H/2     → image bottom at cyW
     const bottom = cyW + (
-      isTreeStaged   ? -8 :
-      isBuildingHere ?  0 :
-      TILE_H / 2 + 4
+      isTreeStaged   ? 6 :
+      isBuildingHere ? 28 :
+      0
     );
     const top = bottom - h;
-    // Trees use a tight trunk-only hitbox: narrow to ~trunk width and a
-    // short strip just above the iso center, so the canopy and the dirt
-    // in front don't steal clicks. Buildings use the full sprite bbox.
-    const hitTop = isTreeStaged
-      ? bottom - Math.min(h * 0.18, TILE_H * 0.35)
-      : top;
-    const hitLeft  = isTreeStaged ? c.x - w * 0.18 : left;
-    const hitRight = isTreeStaged ? c.x + w * 0.18 : right;
+    // Trees: full sprite height vertically + narrow horizontal column
+    // (±12% of sprite width). Alpha test below rejects clicks on
+    // transparent leaf gaps so the effective hit shape is "trunk plus
+    // the canopy column directly above it" — clicks visually on the
+    // tree always register, clicks on neighbour tiles never do.
+    // Buildings + other items use the full sprite bbox.
+    const hitTop = top;
+    const hitLeft  = isTreeStaged ? c.x - w * 0.12 : left;
+    const hitRight = isTreeStaged ? c.x + w * 0.12 : right;
     if (wx < hitLeft || wx > hitRight || wy < hitTop || wy > bottom) continue;
     // Inside the sprite's screen bbox — sample the alpha at the cursor pixel
     // so transparent corners of the sprite don't capture clicks.
@@ -11201,14 +11201,17 @@ function bindInput() {
           const it = state.placed[tileKey(directHit.ix, directHit.iy)];
           if (it && kindFilter(it)) return { ix: directHit.ix, iy: directHit.iy, placed: it };
         }
+        // Buildings extend several tiles NW of their anchor in screen
+        // space, so probe SE to catch clicks on the upper body when the
+        // alpha test missed (large hitboxes can have transparent gaps).
+        // Trees + animals rely on directHit only — their alpha-tested
+        // hitbox is reliable, and probing for them snaps neighbour
+        // tiles' hover onto the tree by mistake.
         for (const [dx, dy] of buildingProbes) {
           const px = t.ix + dx, py = t.iy + dy;
           const it = state.placed[tileKey(px, py)];
           if (!it || !it.id) continue;
-          const isBuilding = it.id.startsWith('building_');
-          const isSmall    = it.id.startsWith('tree_') || it.id.startsWith('animal_');
-          if (!isBuilding && !isSmall) continue;
-          if (isSmall && !smallProbes.some(p => p[0] === dx && p[1] === dy)) continue;
+          if (!it.id.startsWith('building_')) continue;
           if (!kindFilter(it)) continue;
           return { ix: px, iy: py, placed: it };
         }
