@@ -10421,7 +10421,7 @@ function buildUpgradesGrid(grid) {
     makeUpgradeCard(grid, {
       iconKey: 'tool_harvest',
       name: 'Bigger Baskets',
-      sub: `+5% harvest yield per level (current: +${lvl * 5}%)`,
+      sub: `+5% coins on every harvest per level (current: +${lvl * 5}%)`,
       price: cost, max: maxed, level: lvl, maxLevel: YIELD_MAX_LEVEL,
       buy: () => { p.yieldLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Bigger Baskets'); }
     });
