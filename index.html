@@ -11090,16 +11090,29 @@ function bindInput() {
       return;
     }
 
-    // Decide drag mode immediately. Action dispatch always uses the
-    // literal tile under the cursor (matches the Move tool) so a click
-    // that resolves visually to one tile can never act on a different
-    // tile. Right-click / shift / can't-act → pan camera.
-    const canAct = e.button === 0 && !e.shiftKey &&
-                   canActOnTile(state.selectedTool, startT.ix, startT.iy);
+    // Decide drag mode immediately. Action dispatch first tries the
+    // literal tile under the cursor; if that can't act, fall back to
+    // an SE probe so a click on the visible top of a tall crop (which
+    // iso-maps to the tile NW of the crop) still hits the crop. Same
+    // cure for clicks on the upper body of a placed sprite.
+    const canActDirect = e.button === 0 && !e.shiftKey &&
+                         canActOnTile(state.selectedTool, startT.ix, startT.iy);
+    let actIx = startT.ix, actIy = startT.iy;
+    let canActProbe = false;
+    if (!canActDirect && e.button === 0 && !e.shiftKey) {
+      const probes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2]];
+      for (const [dx, dy] of probes) {
+        const px = startT.ix + dx, py = startT.iy + dy;
+        if (canActOnTile(state.selectedTool, px, py)) {
+          actIx = px; actIy = py; canActProbe = true; break;
+        }
+      }
+    }
+    const canAct = canActDirect || canActProbe;
     if (canAct) {
       live.dragMode = 'paint';
-      paintTile(startT.ix, startT.iy, false);
-      lastPaintTile = { ix: startT.ix, iy: startT.iy };
+      paintTile(actIx, actIy, false);
+      lastPaintTile = { ix: actIx, iy: actIy };
     } else {
       // If the user clicked a farm tile with an action tool but the action
       // is invalid (e.g., Plant on untilled dirt), surface the error toast
