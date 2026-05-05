@@ -2513,7 +2513,12 @@ function playerSpeed() {
 }
 function bootsCost(level) {
   // Steep ramp so each tier feels earned: 1664, 4160, 10400, 26000, 65000, ~162k.
-  return Math.round(1664 * Math.pow(2.5, level));
+  // The two new tiers (buying Lv 6 + Lv 7 — i.e. level arg 5 & 6) are
+  // halved so the late-game speed levels stay reachable instead of
+  // ballooning past 400k for a +0.6 tile/sec bump.
+  const base = Math.round(1664 * Math.pow(2.5, level));
+  if (level === 5 || level === 6) return Math.round(base * 0.5);
+  return base;
 }
 
 // ----- Yield boost (Bigger Baskets) — +5% per level multiplier -----
