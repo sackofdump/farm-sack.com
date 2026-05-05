@@ -9133,6 +9133,13 @@ function checkAchievements() {
 // active slate. Returns null if the pool is exhausted (shouldn't happen).
 // Helper: build a Quest object from a specific template id, or null if
 // the template is unknown / locked / already in the slate.
+// Quest reward scaling per player level — coins +4% / XP +6% per level.
+// Stops quests from feeling worthless at higher levels without making
+// them eclipse harvest income / dwarf the coin economy. Level 25 → 2×
+// coins, ~2.5× XP relative to a level-1 quest.
+function questCoinScale() { return 1 + (state.level || 1) * 0.04; }
+function questXpScale()   { return 1 + (state.level || 1) * 0.06; }
+
 function buildQuest(id, skipIds) {
   const t = QUEST_TEMPLATES.find(q => q.id === id);
   if (!t) return null;
@@ -9140,10 +9147,11 @@ function buildQuest(id, skipIds) {
   if (state.level < (t.unlock || 1)) return null;
   const target = t.min + Math.floor(Math.random() * (t.max - t.min + 1));
   const baseline = readStat(t.stat);
-  const coins = Math.round(target * t.payRate);
+  const coins = Math.round(target * t.payRate * questCoinScale());
   // XP works out to ~3 × the previous coins/25 rate so quests pull
   // their weight toward leveling without flooding the coin curve.
-  const xp = Math.max(6, Math.round(coins * 3 / 25));
+  // Multiplied by a separate per-level XP scale on top.
+  const xp = Math.max(6, Math.round(coins * 3 / 25 * (questXpScale() / questCoinScale())));
   return {
     id: t.id,
     verb: t.verb, noun: t.noun, stat: t.stat,
@@ -9223,10 +9231,11 @@ function rollNewDaily(skipIds) {
   const pMul = t.flatTarget ? DAILY_MULT.pay : (DAILY_MULT.pay / DAILY_MULT.target);
   const target = Math.round(base * tMul);
   const baseline = readStat(t.stat);
-  const coins = Math.round(target * t.payRate * pMul);
+  const coins = Math.round(target * t.payRate * pMul * questCoinScale());
   // Daily XP also tripled vs the previous coins/12 baseline — dailies
-  // are now a meaningful chunk of the daily leveling budget.
-  const xp = Math.max(12, Math.round(coins * 3 / 12));
+  // are now a meaningful chunk of the daily leveling budget. Per-level
+  // XP scale layered on top via questXpScale / questCoinScale ratio.
+  const xp = Math.max(12, Math.round(coins * 3 / 12 * (questXpScale() / questCoinScale())));
   return {
     id: t.id, daily: true,
     verb: t.verb, noun: t.noun, stat: t.stat,
