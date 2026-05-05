@@ -938,6 +938,14 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   background: linear-gradient(to bottom, #FFB089, #C7503A);
   border-color: #6F1F12; box-shadow: 0 2px 0 #6F1F12;
 }
+#animalMenu .am-btn.am-slaughter:disabled,
+#animalMenu .am-btn:disabled {
+  background: linear-gradient(to bottom, #C9C0A5, #8A8270) !important;
+  border-color: #5A5340 !important;
+  box-shadow: 0 2px 0 #5A5340 !important;
+  color: #5A4030 !important;
+  cursor: not-allowed;
+}
 #animalMenu .am-close {
   /* Match the standard .am-btn proportions so Cancel reads as a real
      button instead of a hyperlink lost beneath the action stack. */
@@ -5299,11 +5307,19 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
     };
   }
 
-  // Position next to the click — clamp to the viewport.
+  // Position the popup. Honor the saved drag position if the player
+  // moved the menu before; otherwise anchor next to the click.
   menu.classList.remove('hidden');
   const w = menu.offsetWidth, h = menu.offsetHeight;
-  const x = Math.min(window.innerWidth - w - 8, Math.max(8, screenX + 12));
-  const yy = Math.min(window.innerHeight - h - 8, Math.max(8, screenY + 12));
+  const saved = state._animalMenuPos;
+  let x, yy;
+  if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+    x  = Math.max(8, Math.min(window.innerWidth  - w - 8, saved.left));
+    yy = Math.max(8, Math.min(window.innerHeight - h - 8, saved.top));
+  } else {
+    x  = Math.min(window.innerWidth  - w - 8, Math.max(8, screenX + 12));
+    yy = Math.min(window.innerHeight - h - 8, Math.max(8, screenY + 12));
+  }
   menu.style.left = x + 'px';
   menu.style.top  = yy + 'px';
 
@@ -6133,8 +6149,9 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     } : null;
   }
   // Preserve the menu's current position when this is a refresh of an
-  // already-open menu (e.g. dropdown change, bulk action) — only set
-  // the initial position when the popup is freshly opening.
+  // already-open menu (e.g. dropdown change, bulk action). If the
+  // player dragged the menu in a previous session, reuse that spot
+  // instead of anchoring at the click.
   const wasVisible = !menu.classList.contains('hidden');
   const sameMenu = wasVisible && _liveBuildingMenu &&
                    _liveBuildingMenu.id === buildingId &&
@@ -6142,8 +6159,15 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   menu.classList.remove('hidden');
   if (!sameMenu) {
     const w = menu.offsetWidth, h = menu.offsetHeight;
-    const x = Math.min(window.innerWidth - w - 8, Math.max(8, screenX + 12));
-    const yy = Math.min(window.innerHeight - h - 8, Math.max(8, screenY + 12));
+    const saved = state._animalMenuPos;
+    let x, yy;
+    if (saved && typeof saved.left === 'number' && typeof saved.top === 'number') {
+      x  = Math.max(8, Math.min(window.innerWidth  - w - 8, saved.left));
+      yy = Math.max(8, Math.min(window.innerHeight - h - 8, saved.top));
+    } else {
+      x  = Math.min(window.innerWidth  - w - 8, Math.max(8, screenX + 12));
+      yy = Math.min(window.innerHeight - h - 8, Math.max(8, screenY + 12));
+    }
     menu.style.left = x + 'px';
     menu.style.top = yy + 'px';
   }
@@ -11758,6 +11782,11 @@ function bindInput() {
       if (!dragging) return;
       dragging = false;
       try { title.releasePointerCapture(e.pointerId); } catch (_) {}
+      // Persist the dragged position so the menu opens here next time
+      // instead of snapping to the click anchor.
+      const rect = menu.getBoundingClientRect();
+      state._animalMenuPos = { left: rect.left, top: rect.top };
+      storage.save();
     };
     title.addEventListener('pointerup', stop);
     title.addEventListener('pointercancel', stop);
