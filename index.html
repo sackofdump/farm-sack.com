@@ -3243,6 +3243,19 @@ function siloTick() {
     const drain = countAnimalsPlaced() * SILO_DRAIN_PER_ANIMAL_PER_MIN * dt / 60000;
     drainSiloFeed(drain);
     state.silo.boostMs = (state.silo.boostMs || 0) + dt * SILO_AGE_BONUS;
+    // Mature-overtime slaughter bonus: while the silo has feed, every
+    // animal that's already at max age stage accrues +5¢/day toward
+    // its eventual slaughter payout. Stored on the animal so it
+    // survives barn moves / saves.
+    const matureIdx = ANIMAL_AGE_STAGES.length - 1;
+    const dayFraction = dt / DAY_MS;
+    const SLAUGHTER_OVERTIME_PER_DAY = 5;
+    for (const k in state.placed) {
+      const a = state.placed[k];
+      if (!a || !a.id || !ANIMAL_MEAT[a.id]) continue;
+      if (animalAgeIndex(a) < matureIdx) continue;
+      a.matureBonus = (a.matureBonus || 0) + dayFraction * SLAUGHTER_OVERTIME_PER_DAY;
+    }
   }
 }
 // Combined growth-speed multiplier for a plot.
@@ -5247,9 +5260,13 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
   if (meat) {
     slaughterBtn.style.display = '';
     if (animalIsAdult(animal)) {
-      const price = Math.round(meat.coins * animalAgeMul(animal)) + siloSlaughterBonus();
+      const matureBonus = Math.round(animal.matureBonus || 0);
+      const price = Math.round(meat.coins * animalAgeMul(animal)) + siloSlaughterBonus() + matureBonus;
+      const stageLbl = matureBonus > 0
+        ? `${animalAgeStage(animal)} +${matureBonus}¢ aged`
+        : animalAgeStage(animal);
       slaughterBtn.disabled = false;
-      slaughterBtn.textContent = `Slaughter for ${price}¢ (${animalAgeStage(animal)})`;
+      slaughterBtn.textContent = `Slaughter for ${price}¢ (${stageLbl})`;
     } else {
       slaughterBtn.disabled = true;
       slaughterBtn.textContent = 'Too Young To Slaughter';
@@ -5384,6 +5401,7 @@ const BUILDING_MENUS = {
       if (mode === 'age')      rows.sort(ageDescSort);
       else if (mode === 'ready')   rows.sort((a, b) => ((a.it.yieldAt || 0) - (b.it.yieldAt || 0)));
       else if (mode === 'mature')  rows.sort(ageDescSort);
+      else if (mode === 'loyalty') rows.sort((a, b) => getAnimalLoyalty(a.it) - getAnimalLoyalty(b.it));
       else rows.sort((a, b) => {
         if (a.it.id !== b.it.id) return a.it.id < b.it.id ? -1 : 1;
         return animalAgeIndex(b.it) - animalAgeIndex(a.it);
@@ -5403,6 +5421,7 @@ const BUILDING_MENUS = {
                 `<option value="age"     ${mode==='age'    ?'selected':''}>All — by age</option>` +
                 `<option value="ready"   ${mode==='ready'  ?'selected':''}>Yields ready</option>` +
                 `<option value="mature"  ${mode==='mature' ?'selected':''}>Mature / slaughterable</option>` +
+                `<option value="loyalty" ${mode==='loyalty'?'selected':''}>Loyalty (low → high)</option>` +
               '</select></div>';
       // Slaughter column only renders when the player actually owns a
       // Slaughterhouse — without one those numbers would be misleading.
@@ -5414,16 +5433,19 @@ const BUILDING_MENUS = {
       const bulkSlaughterRows = hasSlaughterhouse
         ? rows.filter(r => ANIMAL_MEAT[r.it.id] && canSlaughter(r.it.id, r.it))
         : [];
+      const bulkPetRows = rows.filter(r => getAnimalLoyalty(r.it) < 80);
       const bulkBtnStyle = (palette, dim) =>
         `border-radius:6px;padding:5px 10px;font-size:12px;font-weight:800;cursor:${dim?'default':'pointer'};` +
         `border:1.5px solid;${palette};${dim?'opacity:0.45;':''}`;
       const collectPalette = 'background:linear-gradient(to bottom,#7DC159,#4F8C2D);color:#FFF;border-color:#2A4A1A;';
       const slaughterPalette = 'background:linear-gradient(to bottom,#E27464,#A03423);color:#FFF;border-color:#6A1A12;';
+      const petPalette = 'background:linear-gradient(to bottom,#FFB1D8,#D6549A);color:#3a1024;border-color:#7E2A55;';
       let bulkRow = '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">';
       bulkRow += `<button data-barn-bulk="collect" style="${bulkBtnStyle(collectPalette, bulkCollectRows.length === 0)}" ${bulkCollectRows.length === 0 ? 'disabled' : ''}>Collect ready (${bulkCollectRows.length})</button>`;
       if (hasSlaughterhouse) {
         bulkRow += `<button data-barn-bulk="slaughter" style="${bulkBtnStyle(slaughterPalette, bulkSlaughterRows.length === 0)}" ${bulkSlaughterRows.length === 0 ? 'disabled' : ''}>Slaughter mature (${bulkSlaughterRows.length})</button>`;
       }
+      bulkRow += `<button data-barn-bulk="pet" style="${bulkBtnStyle(petPalette, bulkPetRows.length === 0)}" ${bulkPetRows.length === 0 ? 'disabled' : ''}>Pet low loyalty (${bulkPetRows.length})</button>`;
       bulkRow += '</div>';
       html += bulkRow;
       if (rows.length === 0) {
@@ -5437,7 +5459,7 @@ const BUILDING_MENUS = {
                 '<th style="text-align:left;padding:4px 6px;">Age</th>' +
                 '<th style="text-align:left;padding:4px 6px;">Next yield</th>' +
                 '<th style="text-align:right;padding:4px 6px;">Next age up</th>' +
-                (hasSlaughterhouse ? '<th style="text-align:right;padding:4px 6px;">Slaughter</th>' : '') +
+                '<th style="text-align:right;padding:4px 6px;">Slaughter</th>' +
                 '<th style="padding:4px 6px;"></th>' +
                 '</tr></thead><tbody>';
         for (const { it, ix, iy } of rows) {
@@ -5469,7 +5491,7 @@ const BUILDING_MENUS = {
                     '<td style="padding:4px 6px;">' + stage + '</td>' +
                     '<td style="padding:4px 6px;">' + yieldTimerCell + '</td>' +
                     '<td style="padding:4px 6px;text-align:right;">' + totalCell + '</td>';
-          if (hasSlaughterhouse) {
+          {
             const meat = ANIMAL_MEAT[it.id];
             let slaughterCell;
             if (!meat) {
@@ -5479,8 +5501,12 @@ const BUILDING_MENUS = {
             } else {
               const mul   = animalAgeMul(it);
               const yMul  = yieldMultiplier() * siloYieldMul() * marketSellMul();
-              const price = Math.round(meat.coins * mul * yMul) + siloSlaughterBonus();
-              slaughterCell = '<b>' + price + '¢</b>';
+              const matureBonus = Math.round(it.matureBonus || 0);
+              const price = Math.round(meat.coins * mul * yMul) + siloSlaughterBonus() + matureBonus;
+              const tag = matureBonus > 0
+                ? `<b>${price}¢</b> <span style="color:#3F8338;font-size:10px;">(+${matureBonus} aged)</span>`
+                : `<b>${price}¢</b>`;
+              slaughterCell = tag;
             }
             row += '<td style="padding:4px 6px;text-align:right;">' + slaughterCell + '</td>';
           }
@@ -5833,6 +5859,21 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           audio.play(queued > 0 ? 'click' : 'error');
           if (queued > 0) toast(`Queued ${queued} slaughter${queued === 1 ? '' : 's'}.`, false, 'good');
           else toast('No mature animals to slaughter.', true);
+        } else if (kind === 'pet') {
+          if (!state.player.queue) state.player.queue = [];
+          let queued = 0;
+          for (const r of filtered) {
+            if (getAnimalLoyalty(r.it) >= 80) continue;
+            const since = r.it.lastPettedAt ? (Date.now() - r.it.lastPettedAt) : Infinity;
+            if (since < PET_COOLDOWN_MS) continue;
+            const already = state.player.queue.some(q => q.tool === 'pet' && q.ix === r.ix && q.iy === r.iy);
+            if (already) continue;
+            state.player.queue.push({ tool: 'pet', ix: r.ix, iy: r.iy });
+            queued++;
+          }
+          audio.play(queued > 0 ? 'click' : 'error');
+          if (queued > 0) toast(`Queued ${queued} pet${queued === 1 ? '' : 's'}.`, false, 'good');
+          else toast('No animals available to pet right now.', true);
         }
         // Refresh the menu so the bulk-button counts + queued badges
         // update on the rows that were just queued.
@@ -6571,8 +6612,9 @@ function queueOneClickSlaughter(animalKey, animal) {
   }
   const ageMul = animalAgeMul(animal);
   if (!state.player.queue) state.player.queue = [];
+  const matureBonus = Math.round(animal.matureBonus || 0);
   state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey, animalId: animal.id });
-  state.player.queue.push({ tool: 'slaughterDeliver', ix: sh.ix, iy: sh.iy, animalKey, animalId: animal.id, ageMul });
+  state.player.queue.push({ tool: 'slaughterDeliver', ix: sh.ix, iy: sh.iy, animalKey, animalId: animal.id, ageMul, matureBonus });
   // Clear any prior mark — the new flow doesn't need a "marked" state.
   live.slaughterTarget = null;
   audio.play('click');
@@ -8445,8 +8487,11 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
       const ageMul   = (queuedAction && queuedAction.ageMul) || 1;
       // Silo boost is computed at delivery time — silo could have run dry
-      // between marking and walking the animal over.
-      const coins = Math.round(meat.coins * yieldMul * ageMul) + siloSlaughterBonus() + yieldFlatBonus();
+      // between marking and walking the animal over. matureBonus is
+      // captured at queue-time (queueOneClickSlaughter) since the animal
+      // record is gone from state.placed once it's picked up.
+      const matureBonus = Math.round((queuedAction && queuedAction.matureBonus) || 0);
+      const coins = Math.round(meat.coins * yieldMul * ageMul) + siloSlaughterBonus() + yieldFlatBonus() + matureBonus;
       const xp    = Math.max(1, Math.round(meat.xp * cottageXpMul() * ageMul));
       state.coins += coins;
       grantXp(xp);
