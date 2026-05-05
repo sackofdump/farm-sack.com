@@ -11150,10 +11150,13 @@ function buildUpgradesGrid(grid) {
     const lvl = p.speedLevel || 0;
     const maxed = lvl >= PLAYER_SPEED_MAX_LEVEL;
     const cost = maxed ? null : bootsCost(lvl);
+    const cur = (PLAYER_BASE_SPEED + lvl * PLAYER_SPEED_PER_LEVEL).toFixed(2);
+    const cap = (PLAYER_BASE_SPEED + PLAYER_SPEED_MAX_LEVEL * PLAYER_SPEED_PER_LEVEL).toFixed(2);
+    const sub = `+${PLAYER_SPEED_PER_LEVEL} tiles/sec per level · now ${cur} / max ${cap} tiles/sec`;
     makeUpgradeCard(grid, {
       iconKey: 'tool_move',
       name: 'Speed Boots',
-      sub: 'Walk faster between tiles',
+      sub,
       price: cost, max: maxed, level: lvl, maxLevel: PLAYER_SPEED_MAX_LEVEL,
       buy: () => { p.speedLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Speed Boots'); }
     });
