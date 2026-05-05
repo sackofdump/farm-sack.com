@@ -3960,15 +3960,12 @@ const bgm = {
     if (this.el) return;
     this.el = document.getElementById('bgmAudio');
     if (!this.el) return;
-    // Restore saved volume + playing state. The track order is always
-    // freshly shuffled at boot so each session feels different. Music
-    // defaults to muted/paused on first load — only resumes if the
-    // player explicitly hit play in a previous session.
+    // Always start muted on refresh / first load — the player has to
+    // press play each session. Volume preference is still restored.
     this.playing = false;
     try {
       const saved = JSON.parse(localStorage.getItem('farmsack_bgm') || '{}');
       if (typeof saved.volume === 'number') this.volume = saved.volume;
-      if (saved.playing === true) this.playing = true;
     } catch (e) {}
     // Splash always opens with newnewmain.mp3, then shuffles into the rest.
     this.playlist = ['newnewmain.mp3', ...bgmShuffle(BGM_TRACKS)];
