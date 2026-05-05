@@ -5313,6 +5313,7 @@ function closeAnimalMenu() {
   // (unless the player just opened the zone-edit picker, which still needs
   // to render the existing zone behind the drag preview).
   if (!live.zoneSelect) live.highlightedStaff = null;
+  if (typeof _liveBuildingMenu !== 'undefined') _liveBuildingMenu = null;
 }
 
 // Per-building popup config: title + description shown in the popup +
@@ -5681,6 +5682,10 @@ const BUILDING_MENUS = {
 // Generic in-place building popup. Re-uses the #animalMenu element so it
 // matches the egg/ride/buy-animal style. ix/iy lets actions queue a
 // walk-to from the building's anchor tile (used by the greenhouse).
+// Tracks the building menu currently on screen so the live refresh
+// loop below can re-render its desc when state changes (e.g. silo
+// feed level ticks while the menu is open). Cleared by closeAnimalMenu.
+let _liveBuildingMenu = null;
 function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   const menu = document.getElementById('animalMenu');
   const cfg = BUILDING_MENUS[buildingId];
@@ -5695,10 +5700,6 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     const descContent = typeof cfg.desc === 'function' ? cfg.desc({ ix, iy }) : (cfg.desc || '');
     desc.innerHTML = descContent;
     desc.style.display = descContent ? '' : 'none';
-    // Per-row Collect / Select buttons in the barn roster table —
-    // queue a harvest walk-over so the farmer collects that animal's
-    // yield. Wired here (not via inline onclick) so the closure has
-    // access to the menu's close path.
     desc.querySelectorAll('[data-animal-action]').forEach(btn => {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
@@ -5893,6 +5894,29 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   menu.style.left = x + 'px';
   menu.style.top = yy + 'px';
   if (closeBtn) closeBtn.onclick = closeAnimalMenu;
+  // Register for live refresh so dynamic desc functions (silo feed,
+  // coffee level, barn roster timers, etc.) update while the menu is open.
+  _liveBuildingMenu = { id: buildingId, ix, iy };
+}
+function refreshLiveBuildingMenu() {
+  if (!_liveBuildingMenu) return;
+  const menu = document.getElementById('animalMenu');
+  if (!menu || menu.classList.contains('hidden')) {
+    _liveBuildingMenu = null;
+    return;
+  }
+  const cfg = BUILDING_MENUS[_liveBuildingMenu.id];
+  if (!cfg || typeof cfg.desc !== 'function') return;
+  const desc = document.getElementById('amDesc');
+  if (!desc) return;
+  // Skip menus whose desc has interactive buttons (barn roster) — a
+  // re-render would drop the click handlers we wired at open time.
+  // The silo / coffee-stand / cottage descs are pure text, safe to
+  // re-render every tick.
+  if (desc.querySelector('[data-animal-action]')) return;
+  const descContent = cfg.desc({ ix: _liveBuildingMenu.ix, iy: _liveBuildingMenu.iy });
+  if (descContent === desc.innerHTML) return;
+  desc.innerHTML = descContent;
 }
 
 // ---- Horse riding ----
@@ -10290,10 +10314,12 @@ function buildShopGrid() {
 function buildSeedGrid(grid) {
   grid.innerHTML = '';
   grid.className = 'seed-grid';
-  // Sort by unlock level so the player's progression reads top-to-bottom.
+  // Sort by seed cost (cheapest first) so the price column reads in
+  // order. Tie-break on unlock level so locked-but-cheap seeds aren't
+  // reshuffled past unlocked ones at the same price.
   const seeds = SHOP_ITEMS.filter(i => i.cat === 'seed')
     .slice()
-    .sort((a, b) => (a.unlock || 1) - (b.unlock || 1));
+    .sort((a, b) => (a.cost || 0) - (b.cost || 0) || (a.unlock || 1) - (b.unlock || 1));
   for (const it of seeds) {
     const c = CROPS[it.id];
     const locked = state.level < (it.unlock || 1);
@@ -12572,6 +12598,7 @@ function loop(t) {
   loyaltyTick();            // animals lose 1 loyalty every 3 min unless a keeper is on duty
   staffUpkeepTick();        // deduct 50¢/day per hired staff (fires staff if you can't pay)
   tickStaff(dt);            // wander the visible staffers around the staff hall
+  refreshLiveBuildingMenu();// keep the open building popup's desc text live
   tickCoyote(dt);           // roll for / move / despawn coyote raids and the chasing dog
   tickPlacedAnimals(dt);    // drift pen animals around inside the fence
   drawAll();
