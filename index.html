@@ -5398,10 +5398,19 @@ const BUILDING_MENUS = {
         if (ai !== bi) return bi - ai;
         return (animalAgeMs(b.it) || 0) - (animalAgeMs(a.it) || 0);
       };
+      const slaughterPriceOf = (it) => {
+        const meat = ANIMAL_MEAT[it.id];
+        if (!meat || !canSlaughter(it.id, it)) return -1;
+        const mul = animalAgeMul(it);
+        const yMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+        const matureBonus = Math.round(it.matureBonus || 0);
+        return Math.round(meat.coins * mul * yMul) + siloSlaughterBonus() + matureBonus;
+      };
       if (mode === 'age')      rows.sort(ageDescSort);
       else if (mode === 'ready')   rows.sort((a, b) => ((a.it.yieldAt || 0) - (b.it.yieldAt || 0)));
       else if (mode === 'mature')  rows.sort(ageDescSort);
       else if (mode === 'loyalty') rows.sort((a, b) => getAnimalLoyalty(a.it) - getAnimalLoyalty(b.it));
+      else if (mode === 'price')   rows.sort((a, b) => slaughterPriceOf(b.it) - slaughterPriceOf(a.it));
       else rows.sort((a, b) => {
         if (a.it.id !== b.it.id) return a.it.id < b.it.id ? -1 : 1;
         return animalAgeIndex(b.it) - animalAgeIndex(a.it);
@@ -5422,6 +5431,7 @@ const BUILDING_MENUS = {
                 `<option value="ready"   ${mode==='ready'  ?'selected':''}>Yields ready</option>` +
                 `<option value="mature"  ${mode==='mature' ?'selected':''}>Mature / slaughterable</option>` +
                 `<option value="loyalty" ${mode==='loyalty'?'selected':''}>Loyalty (low → high)</option>` +
+                `<option value="price"   ${mode==='price'  ?'selected':''}>Slaughter price (high → low)</option>` +
               '</select></div>';
       // Slaughter column only renders when the player actually owns a
       // Slaughterhouse — without one those numbers would be misleading.
@@ -5635,6 +5645,22 @@ const BUILDING_MENUS = {
         : `<b>${animals}</b> feed animal${animals === 1 ? '' : 's'}` +
           ` · eats <b>${drainPerMin}</b> feed/min` +
           (depleteStr ? ` · depletes in <b>${depleteStr}</b>` : '');
+      // Mature-overtime bonus accrual visible on the silo card so the
+      // player knows what's piling up. Sums Math.round(matureBonus) for
+      // every fully-mature meat animal currently in a pen.
+      let matureCount = 0;
+      let matureTotal = 0;
+      for (const k in state.placed) {
+        const a = state.placed[k];
+        if (!a || !a.id || !ANIMAL_MEAT[a.id]) continue;
+        if (animalAgeIndex(a) < ANIMAL_AGE_STAGES.length - 1) continue;
+        matureCount++;
+        matureTotal += Math.round(a.matureBonus || 0);
+      }
+      const matureLine = matureCount === 0
+        ? `<span style="color:#7a5430;">No fully-mature animals yet — the +5¢/day slaughter bonus only ticks once they hit the Mature stage.</span>`
+        : `<b>${matureCount}</b> mature animal${matureCount === 1 ? '' : 's'} accruing` +
+          ` <b>+5¢/day</b> while feed is in the silo · banked: <b>${matureTotal}¢</b>`;
       return (
         `<div style="margin-bottom:6px;">Feed: <b>${feed} / ${cap}</b></div>` +
         `<div style="background:#3a2818;height:9px;border-radius:5px;overflow:hidden;margin:4px 0 8px;">` +
@@ -5643,8 +5669,9 @@ const BUILDING_MENUS = {
         `${animalLine}<br>` +
         `Harvest <b>Animal Feed</b> to refill (each harvest = +${SILO_FEED_PER_HARVEST}).<br>` +
         (active
-          ? `<span style="color:#1f7a3e;">Active: +<b>${siloSlaughterBonus()}¢</b> slaughter bonus · +${Math.round(SILO_AGE_BONUS * 100)}% faster age-up · +${Math.round(SILO_YIELD_SPEED_BONUS * 100)}% faster yields</span>`
-          : `<span style="color:#8a5a1f;">Idle — fill the silo to unlock the bonus.</span>`) +
+          ? `<span style="color:#1f7a3e;">Active: +<b>${siloSlaughterBonus()}¢</b> slaughter bonus · +${Math.round(SILO_AGE_BONUS * 100)}% faster age-up · +${Math.round(SILO_YIELD_SPEED_BONUS * 100)}% faster yields</span><br>`
+          : `<span style="color:#8a5a1f;">Idle — fill the silo to unlock the bonus.</span><br>`) +
+        `<span style="color:#3F8338;">Mature animals: ${matureLine}</span>` +
         `</div>`
       );
     },
