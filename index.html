@@ -5483,8 +5483,18 @@ const BUILDING_MENUS = {
       // the dropdown + bulk buttons stay anchored whether you have 0
       // or 30 visible animals.
       let html = '<div style="width:min(660px,86vw);min-height:420px;display:flex;flex-direction:column;">';
-      html += '<div style="font-size:12px;color:#5b3f1f;margin-bottom:8px;">' +
+      html += '<div style="font-size:12px;color:#5b3f1f;margin-bottom:4px;">' +
                  'Buy farm animals and stable them in the pen.</div>';
+      // Cow Dung tally — every cow in the world adds +5% crop / tree
+      // growth speed via cowFertilizerMul, capped at 10 cows / +50%.
+      {
+        const cows = cowCount();
+        const cur = cows * 5, cap = 50;
+        const bonusColor = cur >= cap ? '#3F8338' : (cur > 0 ? '#5C7A1F' : '#8a5a1f');
+        html += `<div style="font-size:11px;color:${bonusColor};margin-bottom:8px;">` +
+                `&#128004; <b>Cow Dung +${cur}%</b> growth speed · max +${cap}% (${cows}/10 cows)` +
+                `</div>`;
+      }
       // Filter dropdown — picks which slice of the roster to render.
       html += '<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:12px;color:#4a2e15;flex-wrap:wrap;">' +
               '<label for="barnRosterMode"><b>Show:</b></label>' +
@@ -5692,15 +5702,7 @@ const BUILDING_MENUS = {
       // openBuildingMenu, so no need to add it here.
       return [
         expandAction,
-        (() => {
-          const cows = cowCount();
-          const cur  = cows * 5;
-          const cap  = 10 * 5;
-          return {
-            label: `🐮 Buy Animals · Cow Dung +${cur}% / max +${cap}% (${cows}/10)`,
-            run: () => { activeShopTab = 'animal'; openShop(); },
-          };
-        })(),
+        { label: '🐮 Buy Animals', run: () => { activeShopTab = 'animal'; openShop(); } },
         {
           label: slaughterLocked
             ? `🔪 Slaughter — Lv ${slaughterUnlock}`
