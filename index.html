@@ -2448,8 +2448,8 @@ function playerSpeed() {
   return base;
 }
 function bootsCost(level) {
-  // Steep ramp so each tier feels earned: 3060, ~7.6k, ~19.1k, ~47.8k, ~119k, ~299k.
-  return Math.round(3060 * Math.pow(2.5, level));
+  // Steep ramp so each tier feels earned: 2448, 6120, 15300, ~38.3k, ~95.6k, ~239k.
+  return Math.round(2448 * Math.pow(2.5, level));
 }
 
 // ----- Yield boost (flat +1¢ per level on every harvest payout) -----
@@ -2461,7 +2461,7 @@ function yieldMultiplier() {
   return 1;
 }
 function yieldFlatBonus() { return state.player.yieldLevel || 0; }
-function yieldCost(level) { return Math.round(4590 * Math.pow(2.5, level)); }
+function yieldCost(level) { return Math.round(3672 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
 const AUTO_HARVEST_CHANCE = [0, 0.15, 0.30, 0.50, 0.75];
@@ -2469,7 +2469,7 @@ const AUTO_HARVEST_MAX_LEVEL = AUTO_HARVEST_CHANCE.length - 1;
 function autoHarvestChance() {
   return AUTO_HARVEST_CHANCE[state.player.autoHarvestLevel || 0] || 0;
 }
-function autoHarvestCost(level) { return Math.round(6120 * Math.pow(2.6, level)); }
+function autoHarvestCost(level) { return Math.round(4896 * Math.pow(2.6, level)); }
 
 // ----- Water efficiency (cost + bonus) -----
 const WATER_COSTS    = [2, 1, 0];           // coin cost per water
@@ -3219,7 +3219,7 @@ function siloTick() {
 function growSpeedMul(p) {
   return (p && p.watered ? wateredSpeedMul() : 1) * windmillGrowMul() * cowFertilizerMul();
 }
-function waterCostUpgrade(level) { return Math.round(3825 * Math.pow(2.5, level)); }
+function waterCostUpgrade(level) { return Math.round(3060 * Math.pow(2.5, level)); }
 
 // ----- Crop field expansion -----
 const CROP_FARM_MAX_DIM = 12;
