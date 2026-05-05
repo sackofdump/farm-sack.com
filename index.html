@@ -2065,7 +2065,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
       Three new buildings just opened up — together they let you hire farmhands and automate the busywork:
     </p>
     <ol style="text-align:left;color:#4A2E15;font-size:13px;line-height:1.6;padding-left:22px;">
-      <li><b>Staff Hall</b> — click it to hire a <b>Crop Farmer</b> (auto-plows, plants, waters, harvests in a zone you draw), an <b>Arborist</b> (auto-tends trees), or an <b>Animal Keeper</b> (stops loyalty decay). Wages: 500¢/day per staffer.</li>
+      <li><b>Staff Hall</b> — click it to hire a <b>Crop Farmer</b> (auto-plows, plants, waters, harvests in a zone you draw), an <b>Arborist</b> (auto-tends trees), or an <b>Animal Keeper</b> (stops loyalty decay). Wages: 50¢/day per staffer.</li>
       <li><b>Seed Container</b> — drop one inside (or within 2 tiles of) a Crop Farmer's zone, click to open the buy menu, and queue up to 200 seeds for them to plant.</li>
       <li><b>Coffee Stand</b> — harvest <b>Coffee Beans</b> to fill it. While there's coffee, every staffer moves + works <b>+50% faster</b>. Each extra stand stacks +25%, capped at +100%.</li>
     </ol>
@@ -2897,7 +2897,7 @@ const LOYALTY_DECAY_PER_TICK     = 1;
 const LOYALTY_DECAY_INTERVAL_MS  = 3 * 60 * 1000;     // 3 min per −1 loyalty
 const PET_LOYALTY_GAIN           = 20;                // +20 per pet
 const PET_COOLDOWN_MS            = DAY_MS;            // once per in-game day per animal
-const STAFF_DAILY_UPKEEP         = 500;               // coins/day per staff
+const STAFF_DAILY_UPKEEP         = 50;                // coins/day per staff
 const STAFF_ROLES = {
   animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen.', unlock: 20, max: 1 },
   crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 18, max: 3, levelStep: 3 },
@@ -12525,7 +12525,7 @@ function loop(t) {
   siloTick();               // drain feed + accrue age-up boost while the silo has feed
   coffeeStandTick();        // drain coffee while staff sip it for the speed buff
   loyaltyTick();            // animals lose 1 loyalty every 3 min unless a keeper is on duty
-  staffUpkeepTick();        // deduct 500¢/day per hired staff (fires staff if you can't pay)
+  staffUpkeepTick();        // deduct 50¢/day per hired staff (fires staff if you can't pay)
   tickStaff(dt);            // wander the visible staffers around the staff hall
   tickCoyote(dt);           // roll for / move / despawn coyote raids and the chasing dog
   tickPlacedAnimals(dt);    // drift pen animals around inside the fence
