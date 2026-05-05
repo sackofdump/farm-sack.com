@@ -1929,7 +1929,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
      nudge toward the Expand Play Area upgrade. -->
 <div id="expandHintModal" class="modal hidden">
   <div class="modal-body" style="width:auto;max-width:min(440px,92vw);padding:20px 24px;text-align:center;">
-    <h2>&#127820; Got <b>6.7k¢</b>!</h2>
+    <h2>&#127820; Got <b>5k¢</b>!</h2>
     <p style="color:#4A2E15;font-size:14px;line-height:1.5;text-align:left;">
       Time to grow the farm! Open the <b>Shop</b> &rarr; <b>Upgrades</b> tab and try <b>Expand Play Area</b> — each press adds a one-tile ring around your fence so you can plow more, plant more, and earn faster.
     </p>
@@ -2448,8 +2448,8 @@ function playerSpeed() {
   return base;
 }
 function bootsCost(level) {
-  // Steep ramp so each tier feels earned: 3600, 9k, 22.5k, ~56k, ~141k, ~352k.
-  return Math.round(3600 * Math.pow(2.5, level));
+  // Steep ramp so each tier feels earned: 3060, ~7.6k, ~19.1k, ~47.8k, ~119k, ~299k.
+  return Math.round(3060 * Math.pow(2.5, level));
 }
 
 // ----- Yield boost (flat +1¢ per level on every harvest payout) -----
@@ -2461,7 +2461,7 @@ function yieldMultiplier() {
   return 1;
 }
 function yieldFlatBonus() { return state.player.yieldLevel || 0; }
-function yieldCost(level) { return Math.round(5400 * Math.pow(2.5, level)); }
+function yieldCost(level) { return Math.round(4590 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
 const AUTO_HARVEST_CHANCE = [0, 0.15, 0.30, 0.50, 0.75];
@@ -2469,7 +2469,7 @@ const AUTO_HARVEST_MAX_LEVEL = AUTO_HARVEST_CHANCE.length - 1;
 function autoHarvestChance() {
   return AUTO_HARVEST_CHANCE[state.player.autoHarvestLevel || 0] || 0;
 }
-function autoHarvestCost(level) { return Math.round(7200 * Math.pow(2.6, level)); }
+function autoHarvestCost(level) { return Math.round(6120 * Math.pow(2.6, level)); }
 
 // ----- Water efficiency (cost + bonus) -----
 const WATER_COSTS    = [2, 1, 0];           // coin cost per water
@@ -3217,7 +3217,7 @@ function siloTick() {
 function growSpeedMul(p) {
   return (p && p.watered ? wateredSpeedMul() : 1) * windmillGrowMul() * cowFertilizerMul();
 }
-function waterCostUpgrade(level) { return Math.round(4500 * Math.pow(2.5, level)); }
+function waterCostUpgrade(level) { return Math.round(3825 * Math.pow(2.5, level)); }
 
 // ----- Crop field expansion -----
 const CROP_FARM_MAX_DIM = 12;
@@ -9744,9 +9744,9 @@ function refreshHud() {
   document.getElementById('coinTxt').textContent = formatCoins(state.coins);
   document.getElementById('lvlTxt').textContent  = state.level;
   // One-shot nudge once the player can afford a meaningful expansion
-  // (6700¢ comfortably covers the first Expand Play Area press at the
+  // (5000¢ comfortably covers the first Expand Play Area press at the
   // post-balance ring multiplier).
-  if (!state.expandHintShown && state.coins >= 6700) {
+  if (!state.expandHintShown && state.coins >= 5000) {
     state.expandHintShown = true;
     audio.play('levelup');
     queueTutorial('expandHintModal');
@@ -10525,7 +10525,7 @@ function expandAreaInfo() {
   const baseW = (defaultWorldBounds().w) || 1;
   const ringsTaken = Math.max(0, Math.round((base.w - baseW) / 2));
   const ringMul = 1 + ringsTaken * 0.5;            // +50% per ring already owned
-  const cost = Math.round(tiles * LAND_PRICE * 2.4 * ringMul);
+  const cost = Math.round(tiles * LAND_PRICE * 1.8 * ringMul);
   const maxed = (newX0 < 0 || newY0 < 0 ||
                  newX0 + newW > WORLD_W || newY0 + newH > WORLD_H);
   return { tiles, cost, maxed };
