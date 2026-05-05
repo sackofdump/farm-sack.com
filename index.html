@@ -4168,15 +4168,13 @@ function screenToTile(sx, sy) {
   // cursor — redirecting to a building anchor would make placements jump
   // off-target whenever the cursor passes over a tall sprite's body.
   if (live.placeMode) return isoTile;
-  // Otherwise prefer a placed item's anchor tile when the cursor pixel
-  // is genuinely on its sprite (pickPlacedItem alpha-tests, so this
-  // only fires on opaque pixels). Strict less-than: clicks on tiles
-  // that are visually IN FRONT of (south, higher sum) or BESIDE (same
-  // sum, east/west on iso) the sprite keep their literal value, so a
-  // grass tile next to a tree doesn't get hijacked.
+  // Otherwise prefer a placed item's anchor tile, BUT only when the iso
+  // tile under the cursor is the placed item's tile or behind it. Tiles
+  // that are visually IN FRONT of the placed item (south on the iso
+  // grid) keep their literal value — so hovering the tile below a tree
+  // doesn't snap onto the tree.
   const hit = pickPlacedItem(wx, wy);
-  if (hit && (isoTile.ix + isoTile.iy) < (hit.ix + hit.iy)) return hit;
-  if (hit && hit.ix === isoTile.ix && hit.iy === isoTile.iy) return hit;
+  if (hit && (hit.ix + hit.iy) <= (isoTile.ix + isoTile.iy)) return hit;
   return isoTile;
 }
 function pickPlacedItem(wx, wy) {
@@ -4203,6 +4201,10 @@ function pickPlacedItem(wx, wy) {
     const img = IMG[key];
     const h = img.naturalHeight * (w / img.naturalWidth);
     const c = isoCenter(it.ix, it.iy);
+    // The wy passed in (from screenToTile) has Y_BASE subtracted, while
+    // c.y (from isoCenter) still includes Y_BASE. Compare both in the
+    // same coord system by stripping Y_BASE from the tile center here.
+    const cyW = c.y - Y_BASE;
     const left = c.x - w / 2;
     const right = c.x + w / 2;
     // Trees render with biasY = -TILE_H/2 + 6 (bottom anchored just past
@@ -4211,20 +4213,20 @@ function pickPlacedItem(wx, wy) {
     // it doesn't bleed into the tile in front (south) of the building.
     const isTreeStaged = it.placed.id && it.placed.id.startsWith('tree_') && it.placed.treeStage;
     const isBuildingHere = it.placed.id && it.placed.id.startsWith('building_');
-    const bottom = c.y + (
+    const bottom = cyW + (
       isTreeStaged   ? -8 :
       isBuildingHere ?  0 :
       TILE_H / 2 + 4
     );
     const top = bottom - h;
-    // Trees: hit region runs the full sprite height (so clicks on the
-    // canopy/trunk register, not just a thin strip near the base) but
-    // stays narrow horizontally so the hitbox doesn't bleed into the
-    // tile to either side. The alpha test below rejects clicks that
-    // land on transparent leaf gaps in this column.
-    const hitTop  = isTreeStaged ? top : top;
-    const hitLeft  = isTreeStaged ? c.x - w * 0.12 : left;
-    const hitRight = isTreeStaged ? c.x + w * 0.12 : right;
+    // Trees use a tight trunk-only hitbox: narrow to ~trunk width and a
+    // short strip just above the iso center, so the canopy and the dirt
+    // in front don't steal clicks. Buildings use the full sprite bbox.
+    const hitTop = isTreeStaged
+      ? bottom - Math.min(h * 0.18, TILE_H * 0.35)
+      : top;
+    const hitLeft  = isTreeStaged ? c.x - w * 0.18 : left;
+    const hitRight = isTreeStaged ? c.x + w * 0.18 : right;
     if (wx < hitLeft || wx > hitRight || wy < hitTop || wy > bottom) continue;
     // Inside the sprite's screen bbox — sample the alpha at the cursor pixel
     // so transparent corners of the sprite don't capture clicks.
