@@ -10243,7 +10243,8 @@ function finishGroupMoveAt(destIx, destIy) {
     record: it.record,
   }));
   // Validate every target tile (still in world; tile not occupied by
-  // *another* item that isn't part of the move group).
+  // *another* item that isn't part of the move group; not on a crop
+  // plot — moving onto crops would silently overwrite them).
   const movingKeys = new Set(grp.items.map(it => it.srcKey));
   for (const t of targets) {
     if (!inWorld(t.dstIx, t.dstIy)) {
@@ -10253,6 +10254,13 @@ function finishGroupMoveAt(destIx, destIy) {
     const dstKey = tileKey(t.dstIx, t.dstIy);
     if (state.placed[dstKey] && !movingKeys.has(dstKey)) {
       toast('Destination overlaps another building.', true);
+      audio.play('error'); return;
+    }
+    // Block landing on plots — bare dirt is fine (state === 'dirt'),
+    // but anything plowed / planted / withered would be steamrolled.
+    const plot = state.plots[dstKey];
+    if (plot && plot.state && plot.state !== 'dirt') {
+      toast('Destination is on a planted crop.', true);
       audio.play('error'); return;
     }
   }
