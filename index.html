@@ -7439,6 +7439,48 @@ function drawAll() {
     }
   }
 
+  // -------- Shift+drag move-select rectangle preview --------
+  if (live.dragMode === 'moveRect' && live.moveRect) {
+    const r = live.moveRect;
+    const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
+    const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
+    let count = 0;
+    for (let iy = y0; iy <= y1; iy++) {
+      for (let ix = x0; ix <= x1; ix++) {
+        const placed = state.placed[tileKey(ix, iy)];
+        const isMovable = placed && !placed.permanent && placed.id &&
+          (placed.id.startsWith('building_') || placed.id.startsWith('tree_') ||
+           placed.id.startsWith('animal_')   || placed.id.startsWith('decor_'));
+        const c = isoCenter(ix, iy);
+        drawHoverHighlight(c.x, c.y, isMovable ? '#FFD27F' : '#5A4023');
+        if (isMovable) count++;
+      }
+    }
+    const cMid = isoCenter((x0 + x1) / 2, (y0 + y1) / 2);
+    ctx.save();
+    ctx.fillStyle = '#1F3F1F';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#FFF6D6';
+    const txt = `Move ×${count}`;
+    ctx.strokeText(txt, cMid.x, cMid.y - 18);
+    ctx.fillText(txt, cMid.x, cMid.y - 18);
+    ctx.restore();
+  }
+  // -------- Group-move ghost preview while waiting for a destination --------
+  if (live.moveGroup && live.hover) {
+    const grp = live.moveGroup;
+    const dx = live.hover.ix, dy = live.hover.iy;
+    ctx.save();
+    ctx.globalAlpha = 0.6;
+    for (const it of grp.items) {
+      const tIx = dx + it.dx, tIy = dy + it.dy;
+      const c = isoCenter(tIx, tIy);
+      drawPlacedItem(it.record.id, c.x, c.y, it.record);
+    }
+    ctx.restore();
+  }
   // -------- Shift+drag paint rectangle preview --------
   if (live.dragMode === 'paintRect' && live.paintRect) {
     const r = live.paintRect;
@@ -10141,7 +10183,49 @@ function startPlaceMode(item) {
   // Hide the action-tip banner while the place banner is up.
   refreshTools();
 }
+// Drop the staged multi-select group at the given destination tile.
+// Each item lands at (destX + dx, destY + dy) where dx/dy are its
+// offsets from the rectangle's NW corner. Aborts if any destination
+// tile is occupied / out of world bounds.
+function finishGroupMoveAt(destIx, destIy) {
+  if (!live.moveGroup) return;
+  const grp = live.moveGroup;
+  const targets = grp.items.map(it => ({
+    srcKey: it.srcKey, dstIx: destIx + it.dx, dstIy: destIy + it.dy,
+    record: it.record,
+  }));
+  // Validate every target tile (still in world; tile not occupied by
+  // *another* item that isn't part of the move group).
+  const movingKeys = new Set(grp.items.map(it => it.srcKey));
+  for (const t of targets) {
+    if (!inWorld(t.dstIx, t.dstIy)) {
+      toast('Destination would push items past the world edge.', true);
+      audio.play('error'); return;
+    }
+    const dstKey = tileKey(t.dstIx, t.dstIy);
+    if (state.placed[dstKey] && !movingKeys.has(dstKey)) {
+      toast('Destination overlaps another building.', true);
+      audio.play('error'); return;
+    }
+  }
+  // Pull all sources out first so overlapping translations don't clash.
+  for (const it of grp.items) delete state.placed[it.srcKey];
+  for (const t of targets) state.placed[tileKey(t.dstIx, t.dstIy)] = t.record;
+  audio.play('coin');
+  toast(`Moved ${grp.items.length} item${grp.items.length === 1 ? '' : 's'}.`, false, 'good');
+  live.moveGroup = null;
+  document.getElementById('placeBanner').classList.add('hidden');
+  document.getElementById('stage').classList.remove('placeMode');
+  storage.save(); refreshHud();
+}
+function cancelGroupMove() {
+  if (!live.moveGroup) return;
+  live.moveGroup = null;
+  document.getElementById('placeBanner').classList.add('hidden');
+  document.getElementById('stage').classList.remove('placeMode');
+}
 function cancelPlaceMode() {
+  if (live.moveGroup) { cancelGroupMove(); return; }
   if (!live.placeMode) return;
   // Cancelling a move-in-progress: drop the building back on its original
   // tile so right-click / Esc doesn't vaporize the player's building.
@@ -11679,6 +11763,30 @@ function bindInput() {
       if (e.preventDefault) e.preventDefault();
       return;
     }
+    // Shift+drag with the Move tool = multi-select rectangle. On
+    // release, every movable placed item in the rect enters a "group
+    // move" mode — the next click teleports them all to the destination
+    // tile, preserving their relative offsets to the rectangle origin.
+    if (e.button === 0 && e.shiftKey && state.selectedTool === 'move' && !live.moveGroup) {
+      live.dragMode = 'moveRect';
+      live.moveRect = {
+        ix0: startT.ix, iy0: startT.iy,
+        ix1: startT.ix, iy1: startT.iy,
+      };
+      stage.setPointerCapture(e.pointerId);
+      if (e.preventDefault) e.preventDefault();
+      return;
+    }
+    // While a group-move is staged, a left-click on a tile drops
+    // everything at that anchor (offsets preserved). Right-click /
+    // Esc cancels.
+    if (e.button === 0 && live.moveGroup) {
+      finishGroupMoveAt(startT.ix, startT.iy);
+      stage.setPointerCapture(e.pointerId);
+      if (e.preventDefault) e.preventDefault();
+      live.dragMode = 'idle';
+      return;
+    }
     const canActDirect = e.button === 0 && !e.shiftKey &&
                          canActOnTile(state.selectedTool, startT.ix, startT.iy);
     let actIx = startT.ix, actIy = startT.iy;
@@ -11756,6 +11864,10 @@ function bindInput() {
         const t = screenToTile(e.clientX, e.clientY);
         live.paintRect.ix1 = t.ix;
         live.paintRect.iy1 = t.iy;
+      } else if (live.dragMode === 'moveRect' && live.moveRect) {
+        const t = screenToTile(e.clientX, e.clientY);
+        live.moveRect.ix1 = t.ix;
+        live.moveRect.iy1 = t.iy;
       } else if (live.dragMode === 'zoneSelect' && live.zoneSelect && live.zoneSelect.rect) {
         const t = screenToTile(e.clientX, e.clientY);
         live.zoneSelect.rect.ix1 = t.ix;
@@ -11891,6 +12003,39 @@ function bindInput() {
     if (live.dragMode === 'buyland' && live.landRect) {
       finishBuyLandRect();
     }
+    if (live.dragMode === 'moveRect' && live.moveRect) {
+      const r = live.moveRect;
+      const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
+      const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
+      const items = [];
+      for (let iy = y0; iy <= y1; iy++) {
+        for (let ix = x0; ix <= x1; ix++) {
+          const k = tileKey(ix, iy);
+          const placed = state.placed[k];
+          if (!placed || placed.permanent) continue;
+          if (!placed.id) continue;
+          if (!(placed.id.startsWith('building_') || placed.id.startsWith('tree_') ||
+                placed.id.startsWith('animal_') || placed.id.startsWith('decor_'))) continue;
+          items.push({ srcKey: k, ix, iy, dx: ix - x0, dy: iy - y0, record: placed });
+        }
+      }
+      if (items.length === 0) {
+        toast('Nothing movable in that area.', true);
+        audio.play('error');
+      } else {
+        // Stage the group — cursor banner + next click teleports.
+        live.moveGroup = { originIx: x0, originIy: y0, items };
+        const banner = document.getElementById('placeBanner');
+        if (banner) {
+          banner.classList.remove('hidden');
+          const im = document.getElementById('placeBannerImg'); if (im) im.src = imgPath(items[0].record.id);
+          const tx = document.getElementById('placeBannerText');
+          if (tx) tx.textContent = `Moving ${items.length} item${items.length === 1 ? '' : 's'} — click a destination tile (anchor lands at the click)`;
+        }
+        document.getElementById('stage').classList.add('placeMode');
+        audio.play('click');
+      }
+    }
     if (live.dragMode === 'paintRect' && live.paintRect) {
       // Walk the bounding box and queue the tool action on every tile
       // canActOnTile says is valid. Tiles are then sorted greedy
@@ -11940,6 +12085,7 @@ function bindInput() {
     live.draggedTiles.clear();
     live.landRect = null;
     live.paintRect = null;
+    live.moveRect = null;
     lastPaintTile = null;
   }
   stage.addEventListener('pointerup',     endPointer);
