@@ -2526,6 +2526,9 @@ function yieldMultiplier() {
 // now that Bigger Baskets pays via the multiplier instead of a flat
 // per-harvest bonus.
 function yieldFlatBonus() { return 0; }
+// XP awarded per watering action — bumped to +2 once the player hits
+// level 10 so late-game water passes feel a bit more rewarding.
+function waterXpGain() { return (state.level || 1) >= 10 ? 2 : 1; }
 function yieldCost(level) { return Math.round(2497 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
@@ -3081,9 +3084,10 @@ function performArboristAction(m, task) {
     placed.plantedAt = Date.now();
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
     bumpStat('watered');
-    grantXp(1);
+    const wxp = waterXpGain();
+    grantXp(wxp);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
-    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
+    fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
     if (placed.treeStage >= 4) {
       toast('Tree fully grown!', false, 'good');
       if (TREE_FRUITS[placed.id]) placed.fruitAt = Date.now() + TREE_FRUIT_MS;
@@ -3153,9 +3157,10 @@ function performCropFarmerAction(m, task) {
     state.coins -= wc; p.watered = true;
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 8);
     bumpStat('watered');
-    grantXp(1);
+    const wxp = waterXpGain();
+    grantXp(wxp);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
-    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
+    fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
     storage.save(); refreshHud();
   } else if (task.action === 'harvest') {
     if (cropPhase(p) !== 'ready') return;
@@ -5899,6 +5904,17 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   const menu = document.getElementById('animalMenu');
   const cfg = BUILDING_MENUS[buildingId];
   if (!menu || !cfg) return;
+  // Snapshot scroll position of every overflow-scrolled child of the
+  // current desc before its content gets blown away. Restored at the
+  // end of this function so a live refresh / dropdown change / bulk
+  // action doesn't snap the roster back to the top.
+  const oldDesc = document.getElementById('amDesc');
+  const scrollSnap = [];
+  if (oldDesc) {
+    oldDesc.querySelectorAll('[style*="overflow"]').forEach(el => {
+      scrollSnap.push(el.scrollHeight > el.clientHeight + 1 ? el.scrollTop : null);
+    });
+  }
   document.getElementById('amTitle').textContent = cfg.title;
   const desc = document.getElementById('amDesc');
   const collectBtn = document.getElementById('amCollect');
@@ -5955,42 +5971,81 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         const filtered = m === 'ready'  ? visibleRows.filter(r => animalReadyToHarvest(r.it))
                        : m === 'mature' ? visibleRows.filter(r => canSlaughter(r.it.id, r.it))
                        : visibleRows;
+        // Walk a list of {ix,iy,extra...} rows in greedy nearest-
+        // neighbour order from the player's current tile so bulk
+        // actions don't ping-pong across the pen.
+        const nnSort = (list) => {
+          let cur = { ix: state.player.ix, iy: state.player.iy };
+          const out = [];
+          while (list.length > 0) {
+            let bestI = 0, bestD = Infinity;
+            for (let i = 0; i < list.length; i++) {
+              const dx = list[i].ix - cur.ix, dy = list[i].iy - cur.iy;
+              const d = dx * dx + dy * dy;
+              if (d < bestD) { bestD = d; bestI = i; }
+            }
+            const n = list.splice(bestI, 1)[0];
+            out.push(n); cur = n;
+          }
+          return out;
+        };
         if (kind === 'collect') {
           if (!state.player.queue) state.player.queue = [];
-          let queued = 0;
+          const cand = [];
           for (const r of filtered) {
             if (!animalReadyToHarvest(r.it)) continue;
-            const already = state.player.queue.some(q => q.tool === 'harvest' && q.ix === r.ix && q.iy === r.iy);
-            if (already) continue;
-            state.player.queue.push({ tool: 'harvest', ix: r.ix, iy: r.iy });
-            queued++;
+            if (state.player.queue.some(q => q.tool === 'harvest' && q.ix === r.ix && q.iy === r.iy)) continue;
+            cand.push({ ix: r.ix, iy: r.iy });
           }
+          const ordered = nnSort(cand);
+          for (const c of ordered) state.player.queue.push({ tool: 'harvest', ix: c.ix, iy: c.iy });
+          const queued = ordered.length;
           audio.play(queued > 0 ? 'click' : 'error');
           if (queued > 0) toast(`Queued ${queued} collect${queued === 1 ? '' : 's'}.`, false, 'good');
           else toast('No ready yields to collect.', true);
         } else if (kind === 'slaughter') {
-          let queued = 0;
+          const cand = [];
           for (const r of filtered) {
             if (!ANIMAL_MEAT[r.it.id] || !canSlaughter(r.it.id, r.it)) continue;
             const aKey = r.ix + ',' + r.iy;
-            const already = (state.player.queue || []).some(q =>
-              (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') && q.animalKey === aKey);
-            if (already) continue;
-            if (queueOneClickSlaughter(aKey, r.it)) queued++;
+            if ((state.player.queue || []).some(q =>
+              (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') && q.animalKey === aKey)) continue;
+            cand.push({ ix: r.ix, iy: r.iy, animal: r.it });
+          }
+          const ordered = nnSort(cand);
+          let queued = 0;
+          for (const c of ordered) {
+            const aKey = c.ix + ',' + c.iy;
+            if (queueOneClickSlaughter(aKey, c.animal)) queued++;
           }
           audio.play(queued > 0 ? 'click' : 'error');
           if (queued > 0) toast(`Queued ${queued} slaughter${queued === 1 ? '' : 's'}.`, false, 'good');
           else toast('No mature animals to slaughter.', true);
         } else if (kind === 'pet') {
           if (!state.player.queue) state.player.queue = [];
-          let queued = 0;
+          // Filter to pet-eligible animals first, then walk them in
+          // greedy nearest-neighbour order so the farmer doesn't ping-
+          // pong across the pen.
+          const candidates = [];
           for (const r of filtered) {
             if (getAnimalLoyalty(r.it) >= 80) continue;
             const since = r.it.lastPettedAt ? (Date.now() - r.it.lastPettedAt) : Infinity;
             if (since < PET_COOLDOWN_MS) continue;
-            const already = state.player.queue.some(q => q.tool === 'pet' && q.ix === r.ix && q.iy === r.iy);
-            if (already) continue;
-            state.player.queue.push({ tool: 'pet', ix: r.ix, iy: r.iy });
+            if (state.player.queue.some(q => q.tool === 'pet' && q.ix === r.ix && q.iy === r.iy)) continue;
+            candidates.push({ ix: r.ix, iy: r.iy });
+          }
+          let cur = { ix: state.player.ix, iy: state.player.iy };
+          let queued = 0;
+          while (candidates.length > 0) {
+            let bestI = 0, bestD = Infinity;
+            for (let i = 0; i < candidates.length; i++) {
+              const dx = candidates[i].ix - cur.ix, dy = candidates[i].iy - cur.iy;
+              const d = dx * dx + dy * dy;
+              if (d < bestD) { bestD = d; bestI = i; }
+            }
+            const next = candidates.splice(bestI, 1)[0];
+            state.player.queue.push({ tool: 'pet', ix: next.ix, iy: next.iy });
+            cur = next;
             queued++;
           }
           audio.play(queued > 0 ? 'click' : 'error');
@@ -6234,6 +6289,15 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     menu.style.top = yy + 'px';
   }
   if (closeBtn) closeBtn.onclick = closeAnimalMenu;
+  // Restore the scroll position we captured at the top so a refresh
+  // doesn't bounce the player back to the top of the roster.
+  if (scrollSnap.length) {
+    const newScrollers = desc.querySelectorAll('[style*="overflow"]');
+    newScrollers.forEach((el, i) => {
+      const snap = scrollSnap[i];
+      if (snap != null) el.scrollTop = snap;
+    });
+  }
   // Register for live refresh so dynamic desc functions (silo feed,
   // coffee level, barn roster timers, etc.) update while the menu is open.
   _liveBuildingMenu = { id: buildingId, ix, iy };
@@ -6260,36 +6324,17 @@ function refreshLiveBuildingMenu() {
   if (isBarn) {
     const now = Date.now();
     if (now - _liveBuildingMenuLastTick < 250) return;
-    // Skip refresh while the player is actively interacting with a
-    // form control inside the menu — keeps the dropdown open / focus
-    // intact between ticks.
+    // Skip refresh while the player is actively interacting with the
+    // menu — focused select/input, recent pointer activity, or pointer
+    // is currently down inside the menu. openBuildingMenu's own
+    // scroll-preservation handles the rest.
     const focused = document.activeElement;
-    if (focused && menu.contains(focused) && /select|input|textarea/i.test(focused.tagName)) return;
-    // Snapshot every scrollable child's scrollTop so the live re-open
-    // doesn't snap the roster back to the top mid-scroll.
-    const scrollers = desc.querySelectorAll('[style*="overflow"]');
-    const scrollSnap = [];
-    scrollers.forEach(el => {
-      if (el.scrollHeight > el.clientHeight + 1) {
-        scrollSnap.push({ top: el.scrollTop });
-      } else {
-        scrollSnap.push(null);
-      }
-    });
+    if (focused && menu.contains(focused) && /select|input|textarea|option/i.test(focused.tagName)) return;
+    if (live._barnLastInteract && now - live._barnLastInteract < 1500) return;
+    if (live.pointerDown && live._pointerInMenu) return;
     _liveBuildingMenuLastTick = now;
     const m = _liveBuildingMenu;
     openBuildingMenu(m.id, 0, 0, m.ix, m.iy);
-    // Restore scroll position on the matching child of the freshly-
-    // rendered desc (in document order — the row builder produces
-    // the same HTML shape every refresh).
-    const newDesc = document.getElementById('amDesc');
-    if (newDesc) {
-      const newScrollers = newDesc.querySelectorAll('[style*="overflow"]');
-      newScrollers.forEach((el, i) => {
-        const snap = scrollSnap[i];
-        if (snap) el.scrollTop = snap.top;
-      });
-    }
     return;
   }
   const descContent = cfg.desc({ ix: _liveBuildingMenu.ix, iy: _liveBuildingMenu.iy });
@@ -8976,9 +9021,10 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         placed.watered = false;            // reset for the next stage's sapling window (none for stage 2+)
         audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
         bumpStat('watered');
-        grantXp(1);
+        const wxp = waterXpGain();
+        grantXp(wxp);
         if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
-        fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
+        fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
         if (placed.treeStage >= 4) {
           toast('Tree fully grown!', false, 'good');
           if (TREE_FRUITS[placed.id]) placed.fruitAt = Date.now() + TREE_FRUIT_MS;
@@ -8993,10 +9039,11 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         placed.watered = true;
         audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
         bumpStat('watered');
-        grantXp(1);
+        const wxp = waterXpGain();
+        grantXp(wxp);
         if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
         fxFloat(ix, iy, '+' + Math.round((wateredSpeedMul()-1)*100) + '% growth', 1, '#6CFFB4');
-        fxFloat(ix, iy, '+1 XP', 2, '#6CFFB4');
+        fxFloat(ix, iy, '+' + wxp + ' XP', 2, '#6CFFB4');
         storage.save(); refreshHud();
         return 'ok';
       }
@@ -9160,9 +9207,10 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     state.coins -= wc; p.watered = true;
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
     bumpStat('watered');
-    grantXp(1);
+    const wxp = waterXpGain();
+    grantXp(wxp);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
-    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
+    fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
   } else if (tool === 'spray') {
     // Admin-only: jump the crop to the next growth stage threshold.
     // 0..0.33 → 0.34, 0.33..0.66 → 0.67, 0.66..1 → ready (1.0).
@@ -12094,6 +12142,23 @@ function bindInput() {
   stage.addEventListener('pointerleave', () => {
     if (!live.pointerDown) { live.hover = null; hideTooltip(); }
   });
+
+  // Pause live refresh while the user is interacting with the popup
+  // (mouse over it, scrolling its rosters, holding a button, etc.) so
+  // a dropdown stays open and a scroll gesture doesn't get yanked.
+  (function setupAnimalMenuInteractWatch() {
+    const menu = document.getElementById('animalMenu');
+    if (!menu) return;
+    const bump = () => { live._barnLastInteract = Date.now(); };
+    menu.addEventListener('pointermove', bump);
+    menu.addEventListener('pointerdown', () => { live._pointerInMenu = true; bump(); });
+    menu.addEventListener('pointerup',   () => { live._pointerInMenu = false; bump(); });
+    menu.addEventListener('pointerleave',() => { live._pointerInMenu = false; });
+    menu.addEventListener('wheel',       bump, { passive: true });
+    menu.addEventListener('scroll',      bump, { passive: true, capture: true });
+    menu.addEventListener('click',       bump);
+    menu.addEventListener('keydown',     bump);
+  })();
 
   // Top-right red ✕ on the popup — same effect as Cancel, just always
   // visible at the corner.
