@@ -5416,17 +5416,29 @@ const BUILDING_MENUS = {
       };
       const slaughterPriceOf = (it) => {
         const meat = ANIMAL_MEAT[it.id];
-        if (!meat || !canSlaughter(it.id, it)) return -1;
-        const mul = animalAgeMul(it);
+        if (!meat) return -1;
         const yMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+        // Use a peek-ahead Adult mul (1.5) for not-yet-Adult animals so
+        // they still rank by potential value rather than collapsing to
+        // the same -1 sentinel; canSlaughter still gates the +bonus.
+        const mul = canSlaughter(it.id, it) ? animalAgeMul(it) : 1.5;
         const matureBonus = Math.round(it.matureBonus || 0);
-        return Math.round(meat.coins * mul * yMul) + siloSlaughterBonus() + matureBonus;
+        const bonus = canSlaughter(it.id, it) ? (siloSlaughterBonus() + matureBonus) : 0;
+        return Math.round(meat.coins * mul * yMul) + bonus;
       };
       if (mode === 'age')      rows.sort(ageDescSort);
       else if (mode === 'ready')   rows.sort((a, b) => ((a.it.yieldAt || 0) - (b.it.yieldAt || 0)));
       else if (mode === 'mature')  rows.sort(ageDescSort);
       else if (mode === 'loyalty') rows.sort((a, b) => getAnimalLoyalty(a.it) - getAnimalLoyalty(b.it));
-      else if (mode === 'price')   rows.sort((a, b) => slaughterPriceOf(b.it) - slaughterPriceOf(a.it));
+      else if (mode === 'price')   rows.sort((a, b) => {
+        const diff = slaughterPriceOf(b.it) - slaughterPriceOf(a.it);
+        if (diff !== 0) return diff;
+        // Tie-break: older animals (by age ms) first, then species, so
+        // ties don't render in random tile-iteration order.
+        const am = animalAgeMs(a.it) || 0, bm = animalAgeMs(b.it) || 0;
+        if (am !== bm) return bm - am;
+        return a.it.id < b.it.id ? -1 : a.it.id > b.it.id ? 1 : 0;
+      });
       else if (mode === 'nextage') rows.sort((a, b) => animalNextAgeMs(a.it) - animalNextAgeMs(b.it));
       else rows.sort((a, b) => {
         if (a.it.id !== b.it.id) return a.it.id < b.it.id ? -1 : 1;
