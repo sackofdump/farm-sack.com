@@ -3304,7 +3304,7 @@ function siloTick() {
 function growSpeedMul(p) {
   return (p && p.watered ? wateredSpeedMul() : 1) * windmillGrowMul() * cowFertilizerMul();
 }
-function waterCostUpgrade(level) { return Math.round(2081 * Math.pow(2.5, level)); }
+function waterCostUpgrade(level) { return Math.round(3840 * Math.pow(2.5, level)); }
 
 // ----- Crop field expansion -----
 const CROP_FARM_MAX_DIM = 12;
