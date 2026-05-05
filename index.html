@@ -4636,7 +4636,7 @@ function drawChicken(placed, cx, cy, time) {
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
   if (placed && typeof placed._facingX === 'number') {
-    facingLeft = placed._facingX < 0;
+    facingLeft = placed._facingX > 0;
   } else {
     facingLeft = ((seed | 0) & 1) === 0;
   }
@@ -4685,7 +4685,7 @@ function drawHorse(placed, cx, cy, time) {
   );
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   // Pen horses just idle when not wandering — never break into a gallop
   // unless someone wires that up later (e.g. on player mount).
@@ -4767,7 +4767,7 @@ function drawLivestock(id, placed, cx, cy, time) {
   );
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   const stateName = moving ? 'walk' : 'idle';
   const fps = moving ? 5 : 2.5;
@@ -4802,7 +4802,7 @@ function drawCow(placed, cx, cy, time) {
   );
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   const stateName = moving ? 'walk' : 'idle';
   const fps = moving ? 5 : 2.5;
