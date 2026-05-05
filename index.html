@@ -4503,6 +4503,10 @@ const camera = {
     state.camX = cx - c.x * state.zoom;
     state.camY = cy - c.y * state.zoom;
     if (typeof bumpStat === 'function') bumpStat('rotations');
+    // Persist the rotation immediately so a refresh / next load
+    // restores the same view direction even if the player didn't
+    // touch anything else after rotating.
+    if (typeof storage !== 'undefined' && typeof storage.save === 'function') storage.save();
   },
   centerOnTile(ix, iy) {
     const c = isoCenter(ix, iy);
