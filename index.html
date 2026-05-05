@@ -3017,7 +3017,9 @@ function performArboristAction(m, task) {
     placed.plantedAt = Date.now();
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
     bumpStat('watered');
+    grantXp(1);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
+    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
     if (placed.treeStage >= 4) {
       toast('Tree fully grown!', false, 'good');
       if (TREE_FRUITS[placed.id]) placed.fruitAt = Date.now() + TREE_FRUIT_MS;
@@ -8466,7 +8468,9 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         placed.watered = false;            // reset for the next stage's sapling window (none for stage 2+)
         audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
         bumpStat('watered');
+        grantXp(1);
         if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
+        fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
         if (placed.treeStage >= 4) {
           toast('Tree fully grown!', false, 'good');
           if (TREE_FRUITS[placed.id]) placed.fruitAt = Date.now() + TREE_FRUIT_MS;
@@ -8481,8 +8485,10 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
         placed.watered = true;
         audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
         bumpStat('watered');
+        grantXp(1);
         if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
         fxFloat(ix, iy, '+' + Math.round((wateredSpeedMul()-1)*100) + '% growth', 1, '#6CFFB4');
+        fxFloat(ix, iy, '+1 XP', 2, '#6CFFB4');
         storage.save(); refreshHud();
         return 'ok';
       }
