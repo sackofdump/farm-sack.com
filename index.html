@@ -8662,29 +8662,28 @@ function tickPlayer(dtMs) {
     return;
   }
 
-  // Drop any leading queued targets that are no longer actable. If the
-  // failure is caused by being out of coins for a plant/auto-plant action,
-  // wipe the entire queue and notify the user — the farmer stops walking
-  // instead of continuing to wander to dead targets.
-  let stoppedForCoins = false;
+  // Drop any leading queued targets that are no longer actable. We
+  // used to wipe the entire queue when a plant/auto-plant ran out of
+  // coins — that was overly destructive (it killed pending harvests
+  // / tree picks too). Now we just shift the unaffordable plant off
+  // and keep walking the rest of the queue. A single toast surfaces
+  // so the player still notices the wallet is empty.
+  let warnedNoCoins = false;
   while (p.queue.length > 0) {
     const next = p.queue[0];
     if (withQueuedSeed(next, () => canActOnTile(next.tool, next.ix, next.iy))) break;
-    // Was this a plant action stopped by lack of coins?
     const k = tileKey(next.ix, next.iy);
     const plot = state.plots[k];
     const wantsPlant =
       next.tool === 'plant' ||
       (next.tool === 'auto' && plot && plot.state === 'plowed');
     const c = CROPS[next.seed || state.selectedSeed];
-    if (wantsPlant && c && state.coins < c.cost) stoppedForCoins = true;
+    if (!warnedNoCoins && wantsPlant && c && state.coins < c.cost) {
+      toast('Out of coins for planting — skipping plant actions.', true);
+      audio.play('error');
+      warnedNoCoins = true;
+    }
     p.queue.shift();
-  }
-  if (stoppedForCoins) {
-    p.queue.length = 0;
-    toast('Out of coins! Farmer stopped.', true);
-    audio.play('error');
-    return;
   }
   if (p.queue.length === 0) return;
 
