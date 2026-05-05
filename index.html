@@ -1186,6 +1186,34 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   box-shadow: 0 4px 12px rgba(0,0,0,0.4);
 }
 #placeBanner.hidden { display: none; }
+#actionTipBanner {
+  position: fixed;
+  top: 80px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: rgba(20,12,4,0.85);
+  color: #FFF8D6;
+  padding: 5px 14px;
+  border-radius: 999px;
+  border: 2px solid var(--coin);
+  font-weight: 700;
+  font-size: 12px;
+  z-index: 28;
+  display: flex; align-items: center; gap: 8px;
+  box-shadow: 0 3px 8px rgba(0,0,0,0.35);
+  pointer-events: none;
+}
+#actionTipBanner.hidden { display: none; }
+#actionTipBanner kbd {
+  background: linear-gradient(to bottom, #FFEAA8, var(--coin));
+  border: 1.5px solid var(--wood-3);
+  color: var(--ink);
+  border-radius: 5px;
+  padding: 1px 6px;
+  font-size: 11px;
+  font-weight: 800;
+  font-family: inherit;
+}
 #placeBanner img.itemImg { width: 28px; height: 28px; object-fit: contain; }
 #placeBanner button {
   background: linear-gradient(to bottom, #FFEAA8, var(--coin));
@@ -1844,6 +1872,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   <button class="iconBtn sidebarBtn" id="centerBtn"  title="Center on farm (Space)">&#127968;</button>
 </div>
 
+<div id="actionTipBanner" class="hidden"><span id="actionTipText"></span></div>
 <div id="placeBanner" class="hidden">
   <img class="itemImg" id="placeBannerImg">
   <span id="placeBannerText"></span>
@@ -10087,6 +10116,8 @@ function startPlaceMode(item) {
   document.getElementById('placeBannerImg').src = imgPath(item.id);
   const where = item.cat === 'animal' ? 'in the Animal Pen' : 'on grass outside the fences';
   document.getElementById('placeBannerText').textContent = `Placing ${item.name} (${item.cost}¢) — click a tile ${where}`;
+  // Hide the action-tip banner while the place banner is up.
+  refreshTools();
 }
 function cancelPlaceMode() {
   if (!live.placeMode) return;
@@ -10100,6 +10131,9 @@ function cancelPlaceMode() {
   live.placeMode = null;
   document.getElementById('stage').classList.remove('placeMode');
   document.getElementById('placeBanner').classList.add('hidden');
+  // Re-evaluate the action-tip banner — it was suppressed while the
+  // place banner owned the top of the screen.
+  refreshTools();
 }
 
 // ============================================================
@@ -10470,6 +10504,20 @@ function refreshTools() {
   document.querySelectorAll('.tool').forEach(b => b.classList.toggle('active', b.dataset.tool === state.selectedTool));
   const badge = document.getElementById('toolWaterBadge');
   if (badge) badge.textContent = waterCost() + '¢';
+  // Show a "Shift+drag = paint rectangle" hint while an action tool
+  // that supports rect-paint is active. Hidden in place mode (the
+  // placeBanner already owns the top of the screen there).
+  const tipBanner = document.getElementById('actionTipBanner');
+  const tipText   = document.getElementById('actionTipText');
+  if (tipBanner && tipText) {
+    const RECT_TOOLS = { plow:'Plow', plant:'Plant', water:'Water', harvest:'Harvest', sell:'Sell', auto:'Auto' };
+    const tool = state.selectedTool;
+    const show = !live.placeMode && tool && RECT_TOOLS[tool];
+    tipBanner.classList.toggle('hidden', !show);
+    if (show) {
+      tipText.innerHTML = `<b>${RECT_TOOLS[tool]}</b> · drag to paint a row · hold <kbd>Shift</kbd> + drag to paint a rectangle`;
+    }
+  }
 }
 // Seed-strip page: 'normal' (vanilla CROPS) or 'mutation' (discovered ones).
 let seedStripPage = 'normal';
