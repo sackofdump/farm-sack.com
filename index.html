@@ -5419,15 +5419,23 @@ const BUILDING_MENUS = {
           // the sprite. Plus a red "Slaughter" button when the player has
           // a slaughterhouse and the animal is mature enough — quick
           // one-click slaughter without picking the tool from the toolbar.
-          const btnLabel = canCollect ? 'Collect' : 'Select';
+          const queue = (state.player && state.player.queue) || [];
+          const collectQueued = canCollect && queue.some(q => q.tool === 'harvest' && q.ix === ix && q.iy === iy);
+          const slaughterQueued = queue.some(q =>
+            (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') &&
+            q.animalKey === ix + ',' + iy
+          );
+          let btnLabel = canCollect ? 'Collect' : 'Select';
+          if (collectQueued) btnLabel = 'Queued (cancel)';
           const btnStyle = canCollect
             ? 'background:linear-gradient(to bottom,#7DC159,#4F8C2D);color:#FFF;border-color:#2A4A1A;'
             : 'background:linear-gradient(to bottom,#E5C77A,#B0863A);color:#3a2410;border-color:#5C3F1A;';
           const action = canCollect ? 'collect' : 'select';
           const meatHere = ANIMAL_MEAT[it.id];
-          const showSlaughterBtn = hasSlaughterhouse && meatHere && canSlaughter(it.id, it);
+          const showSlaughterBtn = hasSlaughterhouse && meatHere && (canSlaughter(it.id, it) || slaughterQueued);
+          const slaughterLabel = slaughterQueued ? 'Queued (cancel)' : 'Slaughter';
           const slaughterBtnHtml = showSlaughterBtn
-            ? `<button data-animal-action="slaughter" data-animal-tile="${ix},${iy}" style="margin-left:4px;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid #6A1A12;background:linear-gradient(to bottom,#E27464,#A03423);color:#FFF;">Slaughter</button>`
+            ? `<button data-animal-action="slaughter" data-animal-tile="${ix},${iy}" style="margin-left:4px;border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid #6A1A12;background:linear-gradient(to bottom,#E27464,#A03423);color:#FFF;">${slaughterLabel}</button>`
             : '';
           row += `<td style="padding:4px 6px;text-align:right;white-space:nowrap;">` +
                  `<button data-animal-action="${action}" data-animal-tile="${ix},${iy}" style="border-radius:6px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;border:1.5px solid;${btnStyle}">${btnLabel}</button>` +
@@ -5699,28 +5707,48 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         const animalKey = aix + ',' + aiy;
         if (action === 'collect') {
           // Queue a harvest walk-over and keep the menu open so the
-          // player can chain collects across the whole pen. Mark this
-          // button as queued so it's obvious it took.
+          // player can chain collects across the whole pen. Click the
+          // already-queued button again to remove it from the queue.
           if (!state.player.queue) state.player.queue = [];
-          const already = state.player.queue.some(q => q.tool === 'harvest' && q.ix === aix && q.iy === aiy);
-          if (!already) state.player.queue.push({ tool: 'harvest', ix: aix, iy: aiy });
-          audio.play('click');
-          btn.textContent = 'Queued';
-          btn.disabled = true;
-          btn.style.opacity = '0.65';
-          btn.style.cursor = 'default';
+          const idx = state.player.queue.findIndex(q => q.tool === 'harvest' && q.ix === aix && q.iy === aiy);
+          if (idx >= 0) {
+            state.player.queue.splice(idx, 1);
+            audio.play('click');
+            btn.textContent = 'Collect';
+            btn.style.opacity = '';
+            btn.style.cursor = 'pointer';
+          } else {
+            state.player.queue.push({ tool: 'harvest', ix: aix, iy: aiy });
+            audio.play('click');
+            btn.textContent = 'Queued (cancel)';
+            btn.style.opacity = '0.85';
+            btn.style.cursor = 'pointer';
+          }
         } else if (action === 'slaughter') {
           // Quick slaughter: route through the same one-click flow used
           // by the toolbar's Slaughter mode so the farmer fetches the
           // animal and delivers it to the nearest slaughterhouse. Menu
-          // stays open so the player can chain rows.
+          // stays open so the player can chain rows. Click again to
+          // cancel — pulls every queue entry tied to this animalKey.
           const animal = state.placed[animalKey];
-          if (animal && ANIMAL_MEAT[animal.id] && canSlaughter(animal.id, animal)) {
+          const queue = state.player.queue || [];
+          const queuedIdx = queue.findIndex(q =>
+            (q.tool === 'pickupAnimal' && q.animalKey === animalKey) ||
+            (q.tool === 'slaughterDeliver' && q.animalKey === animalKey)
+          );
+          if (queuedIdx >= 0) {
+            state.player.queue = queue.filter(q =>
+              !((q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') && q.animalKey === animalKey)
+            );
+            audio.play('click');
+            btn.textContent = 'Slaughter';
+            btn.style.opacity = '';
+            btn.style.cursor = 'pointer';
+          } else if (animal && ANIMAL_MEAT[animal.id] && canSlaughter(animal.id, animal)) {
             queueOneClickSlaughter(animalKey, animal);
-            btn.textContent = 'Queued';
-            btn.disabled = true;
-            btn.style.opacity = '0.65';
-            btn.style.cursor = 'default';
+            btn.textContent = 'Queued (cancel)';
+            btn.style.opacity = '0.85';
+            btn.style.cursor = 'pointer';
           } else {
             toast('Animal isn\'t ready to slaughter.', true);
             audio.play('error');
@@ -6372,7 +6400,7 @@ function queueOneClickSlaughter(animalKey, animal) {
   const ageMul = animalAgeMul(animal);
   if (!state.player.queue) state.player.queue = [];
   state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey, animalId: animal.id });
-  state.player.queue.push({ tool: 'slaughterDeliver', ix: sh.ix, iy: sh.iy, animalId: animal.id, ageMul });
+  state.player.queue.push({ tool: 'slaughterDeliver', ix: sh.ix, iy: sh.iy, animalKey, animalId: animal.id, ageMul });
   // Clear any prior mark — the new flow doesn't need a "marked" state.
   live.slaughterTarget = null;
   audio.play('click');
