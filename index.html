@@ -5450,12 +5450,24 @@ const BUILDING_MENUS = {
       const collectPalette = 'background:linear-gradient(to bottom,#7DC159,#4F8C2D);color:#FFF;border-color:#2A4A1A;';
       const slaughterPalette = 'background:linear-gradient(to bottom,#E27464,#A03423);color:#FFF;border-color:#6A1A12;';
       const petPalette = 'background:linear-gradient(to bottom,#FFB1D8,#D6549A);color:#3a1024;border-color:#7E2A55;';
-      let bulkRow = '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;">';
+      // Count any queued action on a tile in the visible roster so the
+      // "Cancel all" button knows whether there's anything to clear.
+      const visibleKeys = new Set(rows.map(r => r.ix + ',' + r.iy));
+      const queuedNow = ((state.player && state.player.queue) || []).filter(q => {
+        if (q.tool === 'harvest' || q.tool === 'pet') return visibleKeys.has(q.ix + ',' + q.iy);
+        if (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') return q.animalKey && visibleKeys.has(q.animalKey);
+        return false;
+      }).length;
+      const cancelPalette = 'background:linear-gradient(to bottom,#E5C77A,#B0863A);color:#3a2410;border-color:#5C3F1A;';
+      let bulkRow = '<div style="display:flex;gap:6px;margin-bottom:6px;flex-wrap:wrap;align-items:center;">';
       bulkRow += `<button data-barn-bulk="collect" style="${bulkBtnStyle(collectPalette, bulkCollectRows.length === 0)}" ${bulkCollectRows.length === 0 ? 'disabled' : ''}>Collect ready (${bulkCollectRows.length})</button>`;
       if (hasSlaughterhouse) {
         bulkRow += `<button data-barn-bulk="slaughter" style="${bulkBtnStyle(slaughterPalette, bulkSlaughterRows.length === 0)}" ${bulkSlaughterRows.length === 0 ? 'disabled' : ''}>Slaughter mature (${bulkSlaughterRows.length})</button>`;
       }
       bulkRow += `<button data-barn-bulk="pet" style="${bulkBtnStyle(petPalette, bulkPetRows.length === 0)}" ${bulkPetRows.length === 0 ? 'disabled' : ''}>Pet low loyalty (${bulkPetRows.length})</button>`;
+      // Right-aligned cancel-all so the player can wipe everything they
+      // just bulk-queued for the visible roster (collects, slaughters, pets).
+      bulkRow += `<button data-barn-bulk="cancelall" style="margin-left:auto;${bulkBtnStyle(cancelPalette, queuedNow === 0)}" ${queuedNow === 0 ? 'disabled' : ''}>Cancel all (${queuedNow})</button>`;
       bulkRow += '</div>';
       html += bulkRow;
       if (rows.length === 0) {
@@ -5906,6 +5918,27 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           audio.play(queued > 0 ? 'click' : 'error');
           if (queued > 0) toast(`Queued ${queued} pet${queued === 1 ? '' : 's'}.`, false, 'good');
           else toast('No animals available to pet right now.', true);
+        } else if (kind === 'cancelall') {
+          // Wipe every queued action whose tile is in the currently-
+          // displayed roster (so the dropdown filter scopes the cancel
+          // to whatever subset the player is looking at).
+          const queue = state.player.queue || [];
+          const visibleKeys = new Set(visibleRows.map(r => r.ix + ',' + r.iy));
+          let removed = 0;
+          state.player.queue = queue.filter(q => {
+            const k = (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver')
+              ? q.animalKey
+              : (q.ix != null && q.iy != null ? q.ix + ',' + q.iy : null);
+            const hit = !!k && visibleKeys.has(k) && (
+              q.tool === 'harvest' || q.tool === 'pet' ||
+              q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver'
+            );
+            if (hit) removed++;
+            return !hit;
+          });
+          audio.play(removed > 0 ? 'click' : 'error');
+          if (removed > 0) toast(`Cancelled ${removed} queued action${removed === 1 ? '' : 's'}.`, false, 'good');
+          else toast('Nothing queued to cancel.', true);
         }
         // Refresh the menu so the bulk-button counts + queued badges
         // update on the rows that were just queued.
