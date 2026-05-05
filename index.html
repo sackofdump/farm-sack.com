@@ -2971,10 +2971,17 @@ const PET_LOYALTY_GAIN           = 20;                // +20 per pet
 const PET_COOLDOWN_MS            = DAY_MS;            // once per in-game day per animal
 const STAFF_DAILY_UPKEEP         = 50;                // coins/day per staff
 const STAFF_ROLES = {
-  animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen.', unlock: 20, max: 1 },
+  animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen they live in. Need one per pen.', unlock: 20, max: 1 },
   crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 18, max: 3, levelStep: 3 },
   arborist:      { name: 'Arborist',      desc: 'Auto-waters trees and harvests their fruit.',     unlock: 19, max: 1 },
 };
+// Some roles cap dynamically — animal keeper lets you hire one per
+// barn pen so big multi-pen farms can keep every pen happy.
+function maxHires(role) {
+  const r = STAFF_ROLES[role]; if (!r) return 1;
+  if (role === 'animal_keeper') return Math.max(1, getAllBarnPens().length);
+  return r.max || 1;
+}
 // Required level to hire the Nth member of a role (0-indexed): a base
 // unlock plus an optional per-extra-slot ramp.
 function nextHireLevel(role) {
@@ -2984,7 +2991,7 @@ function nextHireLevel(role) {
 }
 function canHireMore(role) {
   const r = STAFF_ROLES[role]; if (!r) return false;
-  if (staffCount(role) >= (r.max || 1)) return false;
+  if (staffCount(role) >= maxHires(role)) return false;
   return state.level >= nextHireLevel(role);
 }
 // Crop farmer pacing — slow trickle so they're a steady help, not a
@@ -3238,12 +3245,25 @@ function loyaltyTick() {
   // Snap forward in whole-tick increments so the cadence stays steady.
   const ticks = Math.floor(elapsed / LOYALTY_DECAY_INTERVAL_MS);
   state.staff.lastLoyaltyAt += ticks * LOYALTY_DECAY_INTERVAL_MS;
-  // While an Animal Keeper is on staff, loyalty doesn't decay.
-  if (hasAnimalKeeper()) return;
+  // Loyalty decay is paused per-pen: a pen needs at least one
+  // Animal Keeper standing inside it to retain the bonus. Animals
+  // outside any pen / in unkept pens still decay.
+  const keptPenIds = new Set();
+  if (state.staff && Array.isArray(state.staff.members)) {
+    for (const m of state.staff.members) {
+      if (m.role !== 'animal_keeper') continue;
+      const pen = findBarnPenAt(Math.round(m.ix), Math.round(m.iy));
+      if (pen) keptPenIds.add(pen.barnIx + ',' + pen.barnIy);
+    }
+  }
   for (const k in state.placed) {
     const p = state.placed[k];
     if (!p || !p.id || !p.id.startsWith('animal_')) continue;
     if (typeof p.loyalty !== 'number') p.loyalty = LOYALTY_MAX;
+    const [aix, aiy] = k.split(',').map(Number);
+    const pen = findBarnPenAt(aix, aiy);
+    const kept = pen && keptPenIds.has(pen.barnIx + ',' + pen.barnIy);
+    if (kept) continue;
     p.loyalty = Math.max(0, p.loyalty - LOYALTY_DECAY_PER_TICK * ticks);
   }
 }
@@ -5809,9 +5829,16 @@ const BUILDING_MENUS = {
         `</div>` +
         `<ul style="text-align:left;font-size:12px;color:#4A2E15;line-height:1.5;padding-left:22px;margin:6px 0 8px;">${roster}</ul>` +
         `<div style="font-size:12px;color:#5b3f1f;">Wages: <b>${STAFF_DAILY_UPKEEP}¢/day</b> per staffer (auto-deducted; staff quit if you can't pay).</div>` +
-        (keepers > 0
-          ? `<div style="font-size:12px;color:#1f7a3e;margin-top:6px;">Animal Keeper on duty — loyalty isn't decaying.</div>`
-          : `<div style="font-size:12px;color:#8a5a1f;margin-top:6px;">No keeper — loyalty drops 1 every 3 min. Pet animals to top them up.</div>`) +
+        (() => {
+          const pens = getAllBarnPens().length;
+          if (pens === 0) {
+            return `<div style="font-size:12px;color:#8a5a1f;margin-top:6px;">No barn pens yet — Animal Keepers live inside a pen.</div>`;
+          }
+          if (keepers >= pens) {
+            return `<div style="font-size:12px;color:#1f7a3e;margin-top:6px;">Animal Keepers on duty in every pen (${keepers}/${pens}) — loyalty isn't decaying.</div>`;
+          }
+          return `<div style="font-size:12px;color:#8a5a1f;margin-top:6px;">${keepers}/${pens} pens have a keeper — others lose 1 loyalty every 3 min. Hire a keeper per pen to lock the bonus.</div>`;
+        })() +
         `<div style="font-size:11px;color:#7a5430;margin-top:6px;">Crop Farmers plant from a <b>Seed Container</b> placed inside their zone.</div>`
       );
     },
@@ -5819,7 +5846,7 @@ const BUILDING_MENUS = {
       const mkHireAction = (role, emoji, displayName) => {
         const r = STAFF_ROLES[role];
         const have = staffCount(role);
-        const max  = r.max || 1;
+        const max  = maxHires(role);
         const atMax = have >= max;
         const reqLevel = nextHireLevel(role);
         const levelLocked = !atMax && state.level < reqLevel;
@@ -7947,10 +7974,21 @@ function hireStaff(role, opts) {
   if (!state.staff) state.staff = { members: [], lastUpkeepAt: Date.now(), lastLoyaltyAt: Date.now(), nextStaffId: 1 };
   opts = opts || {};
   let spawn = null;
-  // Animal keepers live inside the barn pen — they should never leave it.
-  if (role === 'animal_keeper' && state.barnPen) {
-    const p = state.barnPen;
-    spawn = { ix: p.x0 + Math.floor(p.w / 2), iy: p.y0 + Math.floor(p.h / 2) };
+  // Animal keepers live inside a barn pen — pick the first pen that
+  // doesn't already have a keeper so multi-pen farms can staff each
+  // pen separately. Falls back to the legacy state.barnPen if no pens
+  // exist yet (shouldn't happen but defensive).
+  if (role === 'animal_keeper') {
+    const pens = getAllBarnPens();
+    const keptIds = new Set();
+    for (const m of state.staff.members) {
+      if (m.role !== 'animal_keeper') continue;
+      const inPen = findBarnPenAt(Math.round(m.ix), Math.round(m.iy));
+      if (inPen) keptIds.add(inPen.barnIx + ',' + inPen.barnIy);
+    }
+    const target = pens.find(p => !keptIds.has(p.barnIx + ',' + p.barnIy)) ||
+                   pens[0] || state.barnPen;
+    if (target) spawn = { ix: target.x0 + Math.floor(target.w / 2), iy: target.y0 + Math.floor(target.h / 2) };
   }
   // Crop farmers spawn at the centre of their zone (or first tile in it).
   if (!spawn && role === 'crop_farmer' && opts.zone && opts.zone.length) {
