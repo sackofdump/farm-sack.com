@@ -2452,15 +2452,16 @@ function bootsCost(level) {
   return Math.round(1664 * Math.pow(2.5, level));
 }
 
-// ----- Yield boost (flat +1¢ per level on every harvest payout) -----
+// ----- Yield boost (Bigger Baskets) — +5% per level multiplier -----
 const YIELD_MAX_LEVEL = 5;
+const YIELD_PER_LEVEL = 0.05;
 function yieldMultiplier() {
-  // Bigger Baskets is now a flat per-harvest bonus (yieldFlatBonus),
-  // not a multiplier — keep the multiplier hook returning 1 so every
-  // existing call site still produces the un-scaled coin amount.
-  return 1;
+  return 1 + (state.player.yieldLevel || 0) * YIELD_PER_LEVEL;
 }
-function yieldFlatBonus() { return (state.player.yieldLevel || 0) * 8; }
+// Held over for harvest call sites that still add it; intentionally 0
+// now that Bigger Baskets pays via the multiplier instead of a flat
+// per-harvest bonus.
+function yieldFlatBonus() { return 0; }
 function yieldCost(level) { return Math.round(2497 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
@@ -10407,7 +10408,7 @@ function buildUpgradesGrid(grid) {
     makeUpgradeCard(grid, {
       iconKey: 'tool_harvest',
       name: 'Bigger Baskets',
-      sub: `+8¢ per harvest per level (current: +${lvl * 8}¢)`,
+      sub: `+5% harvest yield per level (current: +${lvl * 5}%)`,
       price: cost, max: maxed, level: lvl, maxLevel: YIELD_MAX_LEVEL,
       buy: () => { p.yieldLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Bigger Baskets'); }
     });
