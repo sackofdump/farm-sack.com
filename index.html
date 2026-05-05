@@ -901,8 +901,24 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   font-family: "Fredoka", "Quicksand", sans-serif;
   cursor: grab;
   user-select: none;
+  padding: 0 28px;
 }
 #animalMenu .am-title:active { cursor: grabbing; }
+#animalMenu .am-close-x {
+  position: absolute;
+  top: 6px; right: 8px;
+  width: 26px; height: 26px;
+  padding: 0; line-height: 22px;
+  font-size: 18px; font-weight: 900;
+  color: #FFF; font-family: inherit;
+  background: linear-gradient(to bottom, #E27464, #A03423);
+  border: 2px solid #6A1A12; border-radius: 50%;
+  box-shadow: 0 2px 0 #6A1A12;
+  cursor: pointer;
+  z-index: 1;
+}
+#animalMenu .am-close-x:hover  { filter: brightness(1.08); }
+#animalMenu .am-close-x:active { transform: translateY(1px); box-shadow: 0 1px 0 #6A1A12; }
 #animalMenu .am-btn {
   padding: 8px 12px;
   border: 2px solid #2A4A1A; border-radius: 8px;
@@ -2344,6 +2360,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   </div>
 </div>
 <div id="animalMenu" class="hidden">
+  <button class="am-close-x" id="amCloseX" title="Close" aria-label="Close">×</button>
   <div class="am-title" id="amTitle"></div>
   <div class="am-desc" id="amDesc" style="display:none;font-size:12px;font-weight:600;color:#4A2E15;line-height:1.35;text-align:center;padding:6px 8px 4px;"></div>
   <button class="am-btn am-collect" id="amCollect"></button>
@@ -11591,6 +11608,16 @@ function bindInput() {
   stage.addEventListener('pointerleave', () => {
     if (!live.pointerDown) { live.hover = null; hideTooltip(); }
   });
+
+  // Top-right red ✕ on the popup — same effect as Cancel, just always
+  // visible at the corner.
+  (function setupAnimalMenuCloseX() {
+    const closeX = document.getElementById('amCloseX');
+    if (closeX) closeX.addEventListener('click', (e) => {
+      e.stopPropagation();
+      closeAnimalMenu();
+    });
+  })();
 
   // Drag the building / animal popup by its title bar so the player
   // can move it out of the way of whatever they're working on.
