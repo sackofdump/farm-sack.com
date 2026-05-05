@@ -10256,10 +10256,11 @@ function finishGroupMoveAt(destIx, destIy) {
       toast('Destination overlaps another building.', true);
       audio.play('error'); return;
     }
-    // Block landing on plots — bare dirt is fine (state === 'dirt'),
-    // but anything plowed / planted / withered would be steamrolled.
+    // Block landing only on plots that are actively occupied — a
+    // planted (or withered) crop. Bare dirt and plowed-but-empty
+    // soil are both OK to drop on.
     const plot = state.plots[dstKey];
-    if (plot && plot.state && plot.state !== 'dirt') {
+    if (plot && (plot.state === 'planted' || plot.state === 'withered')) {
       toast('Destination is on a planted crop.', true);
       audio.play('error'); return;
     }
