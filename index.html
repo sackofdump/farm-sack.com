@@ -10445,12 +10445,12 @@ function buildShopGrid() {
 function buildSeedGrid(grid) {
   grid.innerHTML = '';
   grid.className = 'seed-grid';
-  // Sort by seed cost (cheapest first) so the price column reads in
-  // order. Tie-break on unlock level so locked-but-cheap seeds aren't
-  // reshuffled past unlocked ones at the same price.
+  // Sort by unlock level first so the player's progression reads
+  // top-to-bottom, then by cost ascending within each level so the
+  // price column stays orderly inside a tier.
   const seeds = SHOP_ITEMS.filter(i => i.cat === 'seed')
     .slice()
-    .sort((a, b) => (a.cost || 0) - (b.cost || 0) || (a.unlock || 1) - (b.unlock || 1));
+    .sort((a, b) => (a.unlock || 1) - (b.unlock || 1) || (a.cost || 0) - (b.cost || 0));
   for (const it of seeds) {
     const c = CROPS[it.id];
     const locked = state.level < (it.unlock || 1);
