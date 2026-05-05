@@ -3097,7 +3097,7 @@ function performCropFarmerAction(m, task) {
     if (c.feed) {
       if (!state.silo) state.silo = { feed: 0, lastTickAt: Date.now(), boostMs: 0 };
       const added = addSiloFeed(c.feedYield || SILO_FEED_PER_HARVEST);
-      const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul()));
+      const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul())) + 2;
       grantXp(xpGain);
       fxBurst(ix, iy, '#F5C84B', 10);
       // Round the float — the silo drains in fractional amounts, so a
@@ -3108,7 +3108,7 @@ function performCropFarmerAction(m, task) {
     } else {
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
       const sellAmount = Math.round(c.sell * yieldMul) + yieldFlatBonus();
-      const xpGain = Math.max(1, Math.round((sellAmount / 10) * cottageXpMul()));
+      const xpGain = Math.max(1, Math.round((sellAmount / 10) * cottageXpMul())) + 2;
       state.coins += sellAmount;
       grantXp(xpGain);
       fxBurst(ix, iy, '#FFE066', 10);
@@ -8685,7 +8685,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       const cap = siloCapacity();
       const yieldQty = c.feedYield || SILO_FEED_PER_HARVEST;
       const added = addSiloFeed(yieldQty);
-      const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul()));
+      const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul())) + 2;
       fxBurst(ix, iy, '#F5C84B', 14);
       if (cap === 0) fxFloat(ix, iy, 'No silo!', 0, '#FF9966');
       else if (added > 0) fxFloat(ix, iy, '+' + Math.max(1, Math.round(added)) + ' feed', 0, '#F5C84B');
@@ -8704,7 +8704,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       const yieldQty = c.coffeeYield || COFFEE_PER_HARVEST;
       state.coffeeStand.coffee = Math.min(cap, state.coffeeStand.coffee + yieldQty);
       const added = Math.round(state.coffeeStand.coffee - before);
-      const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul()));
+      const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul())) + 2;
       fxBurst(ix, iy, '#7A4A23', 14);
       if (cap === 0) fxFloat(ix, iy, 'No coffee stand!', 0, '#FF9966');
       else if (added > 0) fxFloat(ix, iy, '+' + added + ' coffee', 0, '#C2884A');
@@ -8722,7 +8722,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       const sellAmount = Math.round(c.sell * yieldMul) + yieldFlatBonus();
       // XP is roughly 1/10 of sell value (was 1/5) — overall XP rate halved
       // so levelling feels more deliberate.
-      const xpGain     = Math.max(1, Math.round((sellAmount / 10) * cottageXpMul()));
+      const xpGain     = Math.max(1, Math.round((sellAmount / 10) * cottageXpMul())) + 2;
       state.coins += sellAmount;
       fxBurst(ix, iy, '#FFE066', 14);
       fxFloat(ix, iy, '+' + sellAmount + '¢');
