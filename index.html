@@ -11217,13 +11217,25 @@ function bindInput() {
       const isBuildingPlace = live.placeMode && (shopItem(live.placeMode.id) || {}).cat === 'building';
       // Hover snap: prefer a placed item under or SE of the cursor when
       // the literal tile is empty / non-actionable; falls back to the
-      // literal tile.
+      // literal tile. Crops render visually tall, so also probe SE for
+      // an actionable plot tile (mature wheat / corn the player is
+      // hovering the leaf-tops of) before giving up.
       let snapT = t;
       if (!live.placeMode && !live.zoneSelect &&
           !state.placed[tileKey(t.ix, t.iy)] &&
           !canActOnTile(state.selectedTool, t.ix, t.iy)) {
         const hit = probeFor(it => true);
-        if (hit) snapT = { ix: hit.ix, iy: hit.iy };
+        if (hit) {
+          snapT = { ix: hit.ix, iy: hit.iy };
+        } else {
+          for (const [dx, dy] of smallProbes) {
+            const px = t.ix + dx, py = t.iy + dy;
+            if (canActOnTile(state.selectedTool, px, py)) {
+              snapT = { ix: px, iy: py };
+              break;
+            }
+          }
+        }
       }
       // inBounds is computed against the SNAPPED tile so a placed building
       // sitting in the meadow (outside the active worldBounds) still
