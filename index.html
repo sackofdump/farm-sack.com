@@ -5569,17 +5569,24 @@ const BUILDING_MENUS = {
             : '<span style="color:#7a5430;">' + formatTimeMS(Math.ceil(animalNextAgeMs(it) / 1000)) + '</span>';
           // Yield-timer column. ANIMAL_YIELDS lists species that produce
           // a passive yield (eggs / milk / wool / etc.). Show "Ready!"
-          // when collectable, otherwise the countdown to the next drop.
+          // when collectable, otherwise the countdown to the next drop —
+          // tagged with the live coin value so the player can see what
+          // each pickup is worth (current multipliers + flat bonus).
           const y = ANIMAL_YIELDS[it.id];
           let yieldTimerCell, canCollect = false;
           if (!y) {
             yieldTimerCell = '<span style="color:#7a7060;">—</span>';
-          } else if (animalReadyToHarvest(it)) {
-            yieldTimerCell = `<span style="color:#2D6E33;font-weight:800;">Ready!</span>`;
-            canCollect = true;
           } else {
-            const remain = Math.max(0, Math.ceil(((it.yieldAt || 0) - Date.now()) / 1000));
-            yieldTimerCell = `<span style="color:#7a5430;">${formatTimeMS(remain)}</span>`;
+            const yMul  = yieldMultiplier() * siloYieldMul() * marketSellMul();
+            const value = Math.round(y.coins * yMul) + yieldFlatBonus();
+            const valTag = `<span style="color:#7a5430;font-weight:700;"> · ${value}¢</span>`;
+            if (animalReadyToHarvest(it)) {
+              yieldTimerCell = `<span style="color:#2D6E33;font-weight:800;">Ready!</span>${valTag}`;
+              canCollect = true;
+            } else {
+              const remain = Math.max(0, Math.ceil(((it.yieldAt || 0) - Date.now()) / 1000));
+              yieldTimerCell = `<span style="color:#7a5430;">${formatTimeMS(remain)}</span>${valTag}`;
+            }
           }
           const loyVal = Math.round(getAnimalLoyalty(it));
           const loyColor = loyVal >= 70 ? '#3F8338' : loyVal >= 30 ? '#A87A20' : '#A03A30';
