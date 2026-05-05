@@ -5357,7 +5357,7 @@ const BUILDING_MENUS = {
                 '<th style="text-align:left;padding:4px 6px;">Animal</th>' +
                 '<th style="text-align:left;padding:4px 6px;">Age</th>' +
                 '<th style="text-align:left;padding:4px 6px;">Next yield</th>' +
-                '<th style="text-align:right;padding:4px 6px;">Total</th>' +
+                '<th style="text-align:right;padding:4px 6px;">Next age up</th>' +
                 (hasSlaughterhouse ? '<th style="text-align:right;padding:4px 6px;">Slaughter</th>' : '') +
                 '<th style="padding:4px 6px;"></th>' +
                 '</tr></thead><tbody>';
@@ -5365,11 +5365,12 @@ const BUILDING_MENUS = {
           const item = shopItem(it.id);
           const name = item ? item.name : it.id;
           const stage = animalAgeStage(it);
-          const totalYields = it.totalYields || 0;
-          const totalCoins  = it.totalYieldCoins || 0;
-          const totalCell = totalYields > 0
-            ? totalYields + ' <span style="color:#7a5430;">(' + totalCoins + '¢)</span>'
-            : '<span style="color:#7a5430;">0</span>';
+          // Next-age column: time remaining until the animal hits its
+          // next age stage; "Mature" once the animal can't age further.
+          const ageIdx = animalAgeIndex(it);
+          const totalCell = ageIdx >= ANIMAL_AGE_STAGES.length - 1
+            ? '<span style="color:#7a5430;">Mature</span>'
+            : '<span style="color:#7a5430;">' + formatTimeMS(Math.ceil(animalNextAgeMs(it) / 1000)) + '</span>';
           // Yield-timer column. ANIMAL_YIELDS lists species that produce
           // a passive yield (eggs / milk / wool / etc.). Show "Ready!"
           // when collectable, otherwise the countdown to the next drop.
