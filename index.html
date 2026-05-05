@@ -6265,9 +6265,31 @@ function refreshLiveBuildingMenu() {
     // intact between ticks.
     const focused = document.activeElement;
     if (focused && menu.contains(focused) && /select|input|textarea/i.test(focused.tagName)) return;
+    // Snapshot every scrollable child's scrollTop so the live re-open
+    // doesn't snap the roster back to the top mid-scroll.
+    const scrollers = desc.querySelectorAll('[style*="overflow"]');
+    const scrollSnap = [];
+    scrollers.forEach(el => {
+      if (el.scrollHeight > el.clientHeight + 1) {
+        scrollSnap.push({ top: el.scrollTop });
+      } else {
+        scrollSnap.push(null);
+      }
+    });
     _liveBuildingMenuLastTick = now;
     const m = _liveBuildingMenu;
     openBuildingMenu(m.id, 0, 0, m.ix, m.iy);
+    // Restore scroll position on the matching child of the freshly-
+    // rendered desc (in document order — the row builder produces
+    // the same HTML shape every refresh).
+    const newDesc = document.getElementById('amDesc');
+    if (newDesc) {
+      const newScrollers = newDesc.querySelectorAll('[style*="overflow"]');
+      newScrollers.forEach((el, i) => {
+        const snap = scrollSnap[i];
+        if (snap) el.scrollTop = snap.top;
+      });
+    }
     return;
   }
   const descContent = cfg.desc({ ix: _liveBuildingMenu.ix, iy: _liveBuildingMenu.iy });
