@@ -5685,7 +5685,15 @@ const BUILDING_MENUS = {
       // openBuildingMenu, so no need to add it here.
       return [
         expandAction,
-        { label: '🐮 Buy Animals', run: () => { activeShopTab = 'animal'; openShop(); } },
+        (() => {
+          const cows = cowCount();
+          const cur  = cows * 5;
+          const cap  = 10 * 5;
+          return {
+            label: `🐮 Buy Animals · Cow Dung +${cur}% / max +${cap}% (${cows}/10)`,
+            run: () => { activeShopTab = 'animal'; openShop(); },
+          };
+        })(),
         {
           label: slaughterLocked
             ? `🔪 Slaughter — Lv ${slaughterUnlock}`
