@@ -5467,6 +5467,7 @@ const BUILDING_MENUS = {
         html += '<thead><tr style="background:rgba(74,46,21,0.18);">' +
                 '<th style="text-align:left;padding:4px 6px;">Animal</th>' +
                 '<th style="text-align:left;padding:4px 6px;">Age</th>' +
+                '<th style="text-align:right;padding:4px 6px;">Loyalty</th>' +
                 '<th style="text-align:left;padding:4px 6px;">Next yield</th>' +
                 '<th style="text-align:right;padding:4px 6px;">Next age up</th>' +
                 '<th style="text-align:right;padding:4px 6px;">Slaughter</th>' +
@@ -5496,9 +5497,13 @@ const BUILDING_MENUS = {
             const remain = Math.max(0, Math.ceil(((it.yieldAt || 0) - Date.now()) / 1000));
             yieldTimerCell = `<span style="color:#7a5430;">${formatTimeMS(remain)}</span>`;
           }
+          const loyVal = Math.round(getAnimalLoyalty(it));
+          const loyColor = loyVal >= 70 ? '#3F8338' : loyVal >= 30 ? '#A87A20' : '#A03A30';
+          const loyCell = `<span style="color:${loyColor};font-weight:800;">♥ ${loyVal}</span>`;
           let row = '<tr style="border-top:1px solid rgba(106,74,34,0.18);">' +
                     '<td style="padding:4px 6px;">' + name + '</td>' +
                     '<td style="padding:4px 6px;">' + stage + '</td>' +
+                    '<td style="padding:4px 6px;text-align:right;">' + loyCell + '</td>' +
                     '<td style="padding:4px 6px;">' + yieldTimerCell + '</td>' +
                     '<td style="padding:4px 6px;text-align:right;">' + totalCell + '</td>';
           {
