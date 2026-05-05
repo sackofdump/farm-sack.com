@@ -3028,8 +3028,8 @@ function performArboristAction(m, task) {
     if (!f) return;
     const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
     const coins = Math.round(f.coins * yieldMul) + yieldFlatBonus();
-    // Flat +5 XP per tree harvest, scaled only by Cottage XP boost.
-    const xp    = Math.max(1, Math.round(5 * cottageXpMul()));
+    // Flat +8 XP per tree harvest, scaled only by Cottage XP boost.
+    const xp    = Math.max(1, Math.round(8 * cottageXpMul()));
     state.coins += coins;
     grantXp(xp);
     audio.play('harvest');
