@@ -2460,7 +2460,7 @@ function yieldMultiplier() {
   // existing call site still produces the un-scaled coin amount.
   return 1;
 }
-function yieldFlatBonus() { return (state.player.yieldLevel || 0) * 3; }
+function yieldFlatBonus() { return (state.player.yieldLevel || 0) * 8; }
 function yieldCost(level) { return Math.round(2497 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
@@ -10407,7 +10407,7 @@ function buildUpgradesGrid(grid) {
     makeUpgradeCard(grid, {
       iconKey: 'tool_harvest',
       name: 'Bigger Baskets',
-      sub: `+3¢ per harvest per level (current: +${lvl * 3}¢)`,
+      sub: `+8¢ per harvest per level (current: +${lvl * 8}¢)`,
       price: cost, max: maxed, level: lvl, maxLevel: YIELD_MAX_LEVEL,
       buy: () => { p.yieldLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Bigger Baskets'); }
     });
