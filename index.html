@@ -3086,7 +3086,9 @@ function performCropFarmerAction(m, task) {
     state.coins -= wc; p.watered = true;
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 8);
     bumpStat('watered');
+    grantXp(1);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
+    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
     storage.save(); refreshHud();
   } else if (task.action === 'harvest') {
     if (cropPhase(p) !== 'ready') return;
@@ -8640,7 +8642,9 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     state.coins -= wc; p.watered = true;
     audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
     bumpStat('watered');
+    grantXp(1);
     if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
+    fxFloat(ix, iy, '+1 XP', 1, '#6CFFB4');
   } else if (tool === 'spray') {
     // Admin-only: jump the crop to the next growth stage threshold.
     // 0..0.33 → 0.34, 0.33..0.66 → 0.67, 0.66..1 → ready (1.0).
