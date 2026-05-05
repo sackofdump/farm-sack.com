@@ -7372,6 +7372,33 @@ function drawAll() {
     }
   }
 
+  // -------- Shift+drag paint rectangle preview --------
+  if (live.dragMode === 'paintRect' && live.paintRect) {
+    const r = live.paintRect;
+    const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
+    const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
+    let valid = 0;
+    for (let iy = y0; iy <= y1; iy++) {
+      for (let ix = x0; ix <= x1; ix++) {
+        const ok = canActOnTile(r.tool, ix, iy);
+        const c = isoCenter(ix, iy);
+        drawHoverHighlight(c.x, c.y, ok ? '#FFE066' : '#FF7B6B');
+        if (ok) valid++;
+      }
+    }
+    const cMid = isoCenter((x0 + x1) / 2, (y0 + y1) / 2);
+    ctx.save();
+    ctx.fillStyle = '#1F3F1F';
+    ctx.font = 'bold 14px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = '#FFF6D6';
+    const txt = `${r.tool} ×${valid}`;
+    ctx.strokeText(txt, cMid.x, cMid.y - 18);
+    ctx.fillText(txt, cMid.x, cMid.y - 18);
+    ctx.restore();
+  }
+
   // -------- Buy-land drag rectangle preview --------
   if (live.dragMode === 'buyland' && live.landRect) {
     const tiles = landRectTiles(live.landRect);
@@ -11551,6 +11578,21 @@ function bindInput() {
     // an SE probe so a click on the visible top of a tall crop (which
     // iso-maps to the tile NW of the crop) still hits the crop. Same
     // cure for clicks on the upper body of a placed sprite.
+    // Shift+drag with an action tool = rectangle paint. Player clicks
+    // one corner, drags to the other; on release every tile in the
+    // bounding box that canActOnTile handles gets queued.
+    const RECT_TOOLS = new Set(['plow', 'plant', 'water', 'harvest', 'sell', 'auto']);
+    if (e.button === 0 && e.shiftKey && state.selectedTool && RECT_TOOLS.has(state.selectedTool)) {
+      live.dragMode = 'paintRect';
+      live.paintRect = {
+        tool: state.selectedTool,
+        ix0: startT.ix, iy0: startT.iy,
+        ix1: startT.ix, iy1: startT.iy,
+      };
+      stage.setPointerCapture(e.pointerId);
+      if (e.preventDefault) e.preventDefault();
+      return;
+    }
     const canActDirect = e.button === 0 && !e.shiftKey &&
                          canActOnTile(state.selectedTool, startT.ix, startT.iy);
     let actIx = startT.ix, actIy = startT.iy;
@@ -11624,6 +11666,10 @@ function bindInput() {
         const t = screenToTile(e.clientX, e.clientY);
         live.landRect.ix1 = t.ix;
         live.landRect.iy1 = t.iy;
+      } else if (live.dragMode === 'paintRect' && live.paintRect) {
+        const t = screenToTile(e.clientX, e.clientY);
+        live.paintRect.ix1 = t.ix;
+        live.paintRect.iy1 = t.iy;
       } else if (live.dragMode === 'zoneSelect' && live.zoneSelect && live.zoneSelect.rect) {
         const t = screenToTile(e.clientX, e.clientY);
         live.zoneSelect.rect.ix1 = t.ix;
@@ -11759,6 +11805,28 @@ function bindInput() {
     if (live.dragMode === 'buyland' && live.landRect) {
       finishBuyLandRect();
     }
+    if (live.dragMode === 'paintRect' && live.paintRect) {
+      // Walk the bounding box and queue the tool action on every tile
+      // canActOnTile says is valid. paintTile dedupes via draggedTiles
+      // and queueAction's check, so re-dragging over the same area is
+      // safe (just adds nothing new).
+      const r = live.paintRect;
+      const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
+      const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
+      const prevTool = state.selectedTool;
+      state.selectedTool = r.tool;          // ensure paintTile sees the right tool
+      let queued = 0;
+      for (let iy = y0; iy <= y1; iy++) {
+        for (let ix = x0; ix <= x1; ix++) {
+          if (!canActOnTile(r.tool, ix, iy)) continue;
+          paintTile(ix, iy, true);
+          queued++;
+        }
+      }
+      state.selectedTool = prevTool;
+      audio.play(queued > 0 ? 'click' : 'error');
+      if (queued > 0) toast(`Queued ${queued} ${r.tool} action${queued === 1 ? '' : 's'}.`, false, 'good');
+    }
     // Zone select: keep the rect on the live state so the player can
     // hit Confirm — only the dragging flag flips off here.
     if (live.dragMode === 'zoneSelect' && live.zoneSelect) {
@@ -11767,6 +11835,7 @@ function bindInput() {
     live.dragMode = 'idle';
     live.draggedTiles.clear();
     live.landRect = null;
+    live.paintRect = null;
     lastPaintTile = null;
   }
   stage.addEventListener('pointerup',     endPointer);
