@@ -11801,6 +11801,18 @@ function bindInput() {
       return;
     }
 
+    // Group move drop: if we're staging a Shift+drag multi-select,
+    // any left-click teleports the group to the clicked tile. Has to
+    // run before the Move-tool branch below — otherwise that branch
+    // clears the queue + queues a walk and the move never fires.
+    if (e.button === 0 && live.moveGroup) {
+      finishGroupMoveAt(startT.ix, startT.iy);
+      stage.setPointerCapture(e.pointerId);
+      if (e.preventDefault) e.preventDefault();
+      live.dragMode = 'idle';
+      return;
+    }
+
     // Move tool: a single click walks the farmer to the chosen tile —
     // no drag-paint queueing of multiple stops. Clear any pending walk
     // first so only the latest click matters.
@@ -11862,16 +11874,6 @@ function bindInput() {
       };
       stage.setPointerCapture(e.pointerId);
       if (e.preventDefault) e.preventDefault();
-      return;
-    }
-    // While a group-move is staged, a left-click on a tile drops
-    // everything at that anchor (offsets preserved). Right-click /
-    // Esc cancels.
-    if (e.button === 0 && live.moveGroup) {
-      finishGroupMoveAt(startT.ix, startT.iy);
-      stage.setPointerCapture(e.pointerId);
-      if (e.preventDefault) e.preventDefault();
-      live.dragMode = 'idle';
       return;
     }
     const canActDirect = e.button === 0 && !e.shiftKey &&
