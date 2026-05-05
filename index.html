@@ -2460,7 +2460,7 @@ function yieldMultiplier() {
   // existing call site still produces the un-scaled coin amount.
   return 1;
 }
-function yieldFlatBonus() { return state.player.yieldLevel || 0; }
+function yieldFlatBonus() { return (state.player.yieldLevel || 0) * 3; }
 function yieldCost(level) { return Math.round(3672 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
@@ -10344,8 +10344,11 @@ function buildUpgradesGrid(grid) {
   grid.className = 'upgrade-list';
   const p = state.player;
 
-  // ----- Speed Boots -----
-  {
+  // Upgrade cards rendered in ascending order of level-0 base cost so
+  // the cheapest, most accessible upgrade lands at the top of the list.
+  // Each block builds one card and is appended in that order below.
+
+  const speedCard = () => {
     const lvl = p.speedLevel || 0;
     const maxed = lvl >= PLAYER_SPEED_MAX_LEVEL;
     const cost = maxed ? null : bootsCost(lvl);
@@ -10356,24 +10359,9 @@ function buildUpgradesGrid(grid) {
       price: cost, max: maxed, level: lvl, maxLevel: PLAYER_SPEED_MAX_LEVEL,
       buy: () => { p.speedLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Speed Boots'); }
     });
-  }
+  };
 
-  // ----- Yield Boost -----
-  {
-    const lvl = p.yieldLevel || 0;
-    const maxed = lvl >= YIELD_MAX_LEVEL;
-    const cost = maxed ? null : yieldCost(lvl);
-    makeUpgradeCard(grid, {
-      iconKey: 'tool_harvest',
-      name: 'Bigger Baskets',
-      sub: `+1¢ per harvest per level (current: +${lvl}¢)`,
-      price: cost, max: maxed, level: lvl, maxLevel: YIELD_MAX_LEVEL,
-      buy: () => { p.yieldLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Bigger Baskets'); }
-    });
-  }
-
-  // ----- Water efficiency -----
-  {
+  const waterCard = () => {
     const lvl = p.waterLevel || 0;
     const maxed = lvl >= WATER_MAX_LEVEL;
     const cost = maxed ? null : waterCostUpgrade(lvl);
@@ -10391,14 +10379,12 @@ function buildUpgradesGrid(grid) {
       price: cost, max: maxed, level: lvl, maxLevel: WATER_MAX_LEVEL,
       buy: () => { p.waterLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Water Efficiency'); }
     });
-  }
+  };
 
-  // ----- Expand Play Area -----
-  // Grows worldBounds by one ring on every side. The new ring becomes
-  // farmable dirt (added to farmExpansion), and the fence redraws to
-  // enclose it. Each press costs ~half the per-tile Buy Land price × the
-  // ring tile count, so it's a bulk discount over buying tile-by-tile.
-  {
+  const expandCard = () => {
+    // Grows worldBounds by one ring on every side. The new ring becomes
+    // farmable dirt (added to farmExpansion), and the fence redraws to
+    // enclose it.
     const exp = expandAreaInfo();
     const b = state.worldBounds || defaultWorldBounds();
     makeUpgradeCard(grid, {
@@ -10409,7 +10395,27 @@ function buildUpgradesGrid(grid) {
       levelText: exp.maxed ? 'MAX' : `${b.w}×${b.h}`,
       buy: () => { applyExpandArea(); afterUpgrade(grid, 'Play Area'); }
     });
-  }
+  };
+
+  const yieldCard = () => {
+    const lvl = p.yieldLevel || 0;
+    const maxed = lvl >= YIELD_MAX_LEVEL;
+    const cost = maxed ? null : yieldCost(lvl);
+    makeUpgradeCard(grid, {
+      iconKey: 'tool_harvest',
+      name: 'Bigger Baskets',
+      sub: `+3¢ per harvest per level (current: +${lvl * 3}¢)`,
+      price: cost, max: maxed, level: lvl, maxLevel: YIELD_MAX_LEVEL,
+      buy: () => { p.yieldLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Bigger Baskets'); }
+    });
+  };
+
+  // Order: Speed Boots (2.4k) → Water Efficiency (3.1k) → Expand Play
+  // Area (~3.2k first ring) → Bigger Baskets (3.7k).
+  speedCard();
+  waterCard();
+  expandCard();
+  yieldCard();
   // Expand Animal Pen lives on each barn's click menu now (multi-pen
   // farms had no way to pick *which* pen to grow from a single
   // upgrades-panel button). See the barn's BUILDING_MENUS entry for
