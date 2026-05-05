@@ -11807,21 +11807,39 @@ function bindInput() {
     }
     if (live.dragMode === 'paintRect' && live.paintRect) {
       // Walk the bounding box and queue the tool action on every tile
-      // canActOnTile says is valid. paintTile dedupes via draggedTiles
-      // and queueAction's check, so re-dragging over the same area is
-      // safe (just adds nothing new).
+      // canActOnTile says is valid. Tiles are then sorted greedy
+      // nearest-neighbour from the player's current position so the
+      // farmer doesn't ping-pong across the rectangle row-by-row.
       const r = live.paintRect;
       const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
       const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
-      const prevTool = state.selectedTool;
-      state.selectedTool = r.tool;          // ensure paintTile sees the right tool
-      let queued = 0;
+      const candidates = [];
       for (let iy = y0; iy <= y1; iy++) {
         for (let ix = x0; ix <= x1; ix++) {
-          if (!canActOnTile(r.tool, ix, iy)) continue;
-          paintTile(ix, iy, true);
-          queued++;
+          if (canActOnTile(r.tool, ix, iy)) candidates.push({ ix, iy });
         }
+      }
+      // Greedy nearest-neighbour ordering from the player's tile.
+      let cur = { ix: state.player.ix, iy: state.player.iy };
+      const ordered = [];
+      while (candidates.length > 0) {
+        let bestI = 0, bestD = Infinity;
+        for (let i = 0; i < candidates.length; i++) {
+          const dx = candidates[i].ix - cur.ix;
+          const dy = candidates[i].iy - cur.iy;
+          const d = dx * dx + dy * dy;
+          if (d < bestD) { bestD = d; bestI = i; }
+        }
+        const next = candidates.splice(bestI, 1)[0];
+        ordered.push(next);
+        cur = next;
+      }
+      const prevTool = state.selectedTool;
+      state.selectedTool = r.tool;
+      let queued = 0;
+      for (const t of ordered) {
+        paintTile(t.ix, t.iy, true);
+        queued++;
       }
       state.selectedTool = prevTool;
       audio.play(queued > 0 ? 'click' : 'error');
