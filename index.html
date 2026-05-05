@@ -6209,6 +6209,7 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   // coffee level, barn roster timers, etc.) update while the menu is open.
   _liveBuildingMenu = { id: buildingId, ix, iy };
 }
+let _liveBuildingMenuLastTick = 0;
 function refreshLiveBuildingMenu() {
   if (!_liveBuildingMenu) return;
   const menu = document.getElementById('animalMenu');
@@ -6220,11 +6221,26 @@ function refreshLiveBuildingMenu() {
   if (!cfg || typeof cfg.desc !== 'function') return;
   const desc = document.getElementById('amDesc');
   if (!desc) return;
-  // Skip menus whose desc has interactive buttons (barn roster) — a
-  // re-render would drop the click handlers we wired at open time.
-  // The silo / coffee-stand / cottage descs are pure text, safe to
-  // re-render every tick.
-  if (desc.querySelector('[data-animal-action]')) return;
+  // Barn menu has interactive buttons (rows + dropdown + bulk). Doing
+  // a full re-open here lets us refresh the timers + counts without
+  // dropping click handlers; the sameMenu check inside openBuildingMenu
+  // preserves the dragged position. Rate-limited to ~1 refresh / sec
+  // so we're not thrashing the DOM at 60fps while a user is mid-drag
+  // or mid-typing in the dropdown.
+  const isBarn = desc.querySelector('[data-animal-action]');
+  if (isBarn) {
+    const now = Date.now();
+    if (now - _liveBuildingMenuLastTick < 1000) return;
+    // Skip refresh while the player is actively interacting with a
+    // form control inside the menu — keeps the dropdown open / focus
+    // intact between ticks.
+    const focused = document.activeElement;
+    if (focused && menu.contains(focused) && /select|input|textarea/i.test(focused.tagName)) return;
+    _liveBuildingMenuLastTick = now;
+    const m = _liveBuildingMenu;
+    openBuildingMenu(m.id, 0, 0, m.ix, m.iy);
+    return;
+  }
   const descContent = cfg.desc({ ix: _liveBuildingMenu.ix, iy: _liveBuildingMenu.iy });
   if (descContent === desc.innerHTML) return;
   desc.innerHTML = descContent;
