@@ -5987,10 +5987,19 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
                        : m === 'mature' ? visibleRows.filter(r => canSlaughter(r.it.id, r.it))
                        : visibleRows;
         // Walk a list of {ix,iy,extra...} rows in greedy nearest-
-        // neighbour order from the player's current tile so bulk
-        // actions don't ping-pong across the pen.
+        // neighbour order. Starting point = the tail of any existing
+        // queue (so newly-bulked actions stitch onto the end of the
+        // farmer's current walk), or the player's tile when the queue
+        // is empty. Stops the farmer from ping-ponging between an
+        // older bulk and a fresh one.
+        const queueTail = (state.player && state.player.queue && state.player.queue.length)
+          ? state.player.queue[state.player.queue.length - 1]
+          : null;
+        const nnStart = queueTail && queueTail.ix != null && queueTail.iy != null
+          ? { ix: queueTail.ix, iy: queueTail.iy }
+          : { ix: state.player.ix, iy: state.player.iy };
         const nnSort = (list) => {
-          let cur = { ix: state.player.ix, iy: state.player.iy };
+          let cur = { ix: nnStart.ix, iy: nnStart.iy };
           const out = [];
           while (list.length > 0) {
             let bestI = 0, bestD = Infinity;
@@ -6049,7 +6058,14 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
             if (state.player.queue.some(q => q.tool === 'pet' && q.ix === r.ix && q.iy === r.iy)) continue;
             candidates.push({ ix: r.ix, iy: r.iy });
           }
-          let cur = { ix: state.player.ix, iy: state.player.iy };
+          // Stitch onto the existing queue's path — start NN from the
+          // last queued tile if there is one, else from the player.
+          const petTail = state.player.queue.length
+            ? state.player.queue[state.player.queue.length - 1]
+            : null;
+          let cur = (petTail && petTail.ix != null && petTail.iy != null)
+            ? { ix: petTail.ix, iy: petTail.iy }
+            : { ix: state.player.ix, iy: state.player.iy };
           let queued = 0;
           while (candidates.length > 0) {
             let bestI = 0, bestD = Infinity;
@@ -12121,8 +12137,16 @@ function bindInput() {
           if (canActOnTile(r.tool, ix, iy)) candidates.push({ ix, iy });
         }
       }
-      // Greedy nearest-neighbour ordering from the player's tile.
-      let cur = { ix: state.player.ix, iy: state.player.iy };
+      // Greedy nearest-neighbour ordering. Stitch onto the player's
+      // existing queue if it has tiles in it (so a second drag picks
+      // up where the first left off instead of bouncing back to the
+      // player).
+      const rectTail = state.player.queue.length
+        ? state.player.queue[state.player.queue.length - 1]
+        : null;
+      let cur = (rectTail && rectTail.ix != null && rectTail.iy != null)
+        ? { ix: rectTail.ix, iy: rectTail.iy }
+        : { ix: state.player.ix, iy: state.player.iy };
       const ordered = [];
       while (candidates.length > 0) {
         let bestI = 0, bestD = Infinity;
