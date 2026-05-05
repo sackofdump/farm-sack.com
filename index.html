@@ -2966,7 +2966,12 @@ function tickCoyote(dtMs) {
       const ddx = c.ix - d.ix;
       const ddy = c.iy - d.iy;
       const dist = Math.hypot(ddx, ddy);
-      if (Math.abs(ddx) > 0.01) d.facing = ddx >= 0 ? 1 : -1;
+      // Screen-space facing — iso +ix is "down-right", not pure right.
+      {
+        const [rx, ry] = rotApply(ddx, ddy, state.rotation || 0);
+        const sVx = rx - ry;
+        if (Math.abs(sVx) > 0.01) d.facing = sVx >= 0 ? 1 : -1;
+      }
       if (dist < DOG_SCARE_DIST && !c.fleeing) {
         c.fleeing = true;
         toast('Your dog scared off the coyote!', false, 'good', 4000);
@@ -2981,7 +2986,11 @@ function tickCoyote(dtMs) {
       const ddx = d.homeIx - d.ix;
       const ddy = d.homeIy - d.iy;
       const dist = Math.hypot(ddx, ddy);
-      if (Math.abs(ddx) > 0.01) d.facing = ddx >= 0 ? 1 : -1;
+      {
+        const [rx, ry] = rotApply(ddx, ddy, state.rotation || 0);
+        const sVx = rx - ry;
+        if (Math.abs(sVx) > 0.01) d.facing = sVx >= 0 ? 1 : -1;
+      }
       if (dist < 0.1) {
         state.dogChase = null;
       } else {
@@ -4727,8 +4736,8 @@ function drawDog(placed, cx, cy, time) {
   )));
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
-  else if (placed && placed.facing != null) facingLeft = placed.facing < 0;
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
+  else if (placed && placed.facing != null) facingLeft = placed.facing > 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   const stateName = placed && placed._chasing ? 'run' : (moving ? 'walk' : 'idle');
   const fps = stateName === 'run' ? 12 : (stateName === 'walk' ? 6 : 3);
