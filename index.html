@@ -6224,13 +6224,13 @@ function refreshLiveBuildingMenu() {
   // Barn menu has interactive buttons (rows + dropdown + bulk). Doing
   // a full re-open here lets us refresh the timers + counts without
   // dropping click handlers; the sameMenu check inside openBuildingMenu
-  // preserves the dragged position. Rate-limited to ~1 refresh / sec
-  // so we're not thrashing the DOM at 60fps while a user is mid-drag
-  // or mid-typing in the dropdown.
+  // preserves the dragged position. Throttled to ~4 refreshes / sec
+  // (250ms) so countdown timers tick smoothly without thrashing the
+  // DOM at 60fps.
   const isBarn = desc.querySelector('[data-animal-action]');
   if (isBarn) {
     const now = Date.now();
-    if (now - _liveBuildingMenuLastTick < 1000) return;
+    if (now - _liveBuildingMenuLastTick < 250) return;
     // Skip refresh while the player is actively interacting with a
     // form control inside the menu — keeps the dropdown open / focus
     // intact between ticks.
