@@ -5427,6 +5427,7 @@ const BUILDING_MENUS = {
       else if (mode === 'mature')  rows.sort(ageDescSort);
       else if (mode === 'loyalty') rows.sort((a, b) => getAnimalLoyalty(a.it) - getAnimalLoyalty(b.it));
       else if (mode === 'price')   rows.sort((a, b) => slaughterPriceOf(b.it) - slaughterPriceOf(a.it));
+      else if (mode === 'nextage') rows.sort((a, b) => animalNextAgeMs(a.it) - animalNextAgeMs(b.it));
       else rows.sort((a, b) => {
         if (a.it.id !== b.it.id) return a.it.id < b.it.id ? -1 : 1;
         return animalAgeIndex(b.it) - animalAgeIndex(a.it);
@@ -5492,13 +5493,22 @@ const BUILDING_MENUS = {
         html += `<div style="font-size:12px;color:#4a2e15;margin-bottom:4px;"><b>Pen roster (${rows.length}/${allRows.length})</b></div>`;
         html += '<div style="max-height:min(60vh,520px);overflow-y:auto;font-size:11px;color:#3b2a1a;border:2px solid #b58d4f;border-radius:8px;background:rgba(255,255,255,0.30);">';
         html += '<table style="width:100%;border-collapse:collapse;">';
+        // Clickable column headers — set state._barnRosterMode + reopen.
+        // Active sort column gets an arrow + amber background so the
+        // player can see which header drives the current order.
+        const sortBy = (key, label, align) => {
+          const active = mode === key;
+          const arrow = active ? ' ▼' : '';
+          const bg = active ? 'background:rgba(255,210,90,0.32);' : '';
+          return `<th data-barn-sort="${key}" style="text-align:${align};padding:4px 6px;cursor:pointer;user-select:none;${bg}" title="Sort by ${label.toLowerCase()}">${label}${arrow}</th>`;
+        };
         html += '<thead><tr style="background:rgba(74,46,21,0.18);">' +
-                '<th style="text-align:left;padding:4px 6px;">Animal</th>' +
-                '<th style="text-align:left;padding:4px 6px;">Age</th>' +
-                '<th style="text-align:right;padding:4px 6px;">Loyalty</th>' +
-                '<th style="text-align:left;padding:4px 6px;">Next yield</th>' +
-                '<th style="text-align:right;padding:4px 6px;">Next age up</th>' +
-                '<th style="text-align:right;padding:4px 6px;">Slaughter</th>' +
+                sortBy('species', 'Animal',     'left')  +
+                sortBy('age',     'Age',        'left')  +
+                sortBy('loyalty', 'Loyalty',    'right') +
+                sortBy('ready',   'Next yield', 'left')  +
+                sortBy('nextage', 'Next age up','right') +
+                sortBy('price',   'Slaughter',  'right') +
                 '<th style="padding:4px 6px;"></th>' +
                 '</tr></thead><tbody>';
         for (const { it, ix, iy } of rows) {
@@ -5868,6 +5878,17 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
       });
     }
+    // Click any column header to sort by that column. Same effect as
+    // changing the dropdown — re-opens the menu so the row builder
+    // re-renders with the new mode.
+    desc.querySelectorAll('[data-barn-sort]').forEach(th => {
+      th.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        state._barnRosterMode = th.getAttribute('data-barn-sort');
+        audio.play('click');
+        setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+      });
+    });
     // Bulk-action buttons — Collect ready / Slaughter mature, scoped
     // to the currently-displayed roster (so a filter narrows the bulk
     // target the same way it narrows the visible rows).
