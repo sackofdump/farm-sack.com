@@ -2889,7 +2889,14 @@ function tickCoyote(dtMs) {
     const dist = Math.hypot(ddx, ddy);
     const speed = COYOTE_SPEED_TILES_S * (c.fleeing ? COYOTE_FLEE_SPEED_MUL : 1);
     const step = speed * dt;
-    if (Math.abs(ddx) > 0.01) c.facing = ddx >= 0 ? 1 : -1;
+    // Sprite facing follows SCREEN x velocity (rotated tile delta) so
+    // a pure +iy move flips the coyote correctly under iso instead of
+    // reading +ix as "right" when it's actually down-right.
+    {
+      const [rx, ry] = rotApply(ddx, ddy, state.rotation || 0);
+      const screenVx = rx - ry;
+      if (Math.abs(screenVx) > 0.01) c.facing = screenVx >= 0 ? 1 : -1;
+    }
     if (c.fleeing && (c.ix < -1 || c.ix > WORLD_W || c.iy < -1 || c.iy > WORLD_H || dist < step)) {
       state.coyote = null;
     } else if (!c.fleeing && dist < 0.4) {
@@ -2898,8 +2905,11 @@ function tickCoyote(dtMs) {
       applyCoyoteDamage(c.target);
       c.fleeing = true;
       const sx = c.spawnIx ?? c.ix;
-      const adx = sx - c.target.ix;
-      if (Math.abs(adx) > 0.01) c.facing = adx >= 0 ? 1 : -1;
+      const sy = c.spawnIy ?? c.iy;
+      const adx = sx - c.target.ix, ady = sy - c.target.iy;
+      const [rx2, ry2] = rotApply(adx, ady, state.rotation || 0);
+      const sVx = rx2 - ry2;
+      if (Math.abs(sVx) > 0.01) c.facing = sVx >= 0 ? 1 : -1;
     } else if (dist > 0) {
       c.ix += (ddx / dist) * step;
       c.iy += (ddy / dist) * step;
@@ -4605,7 +4615,7 @@ function drawChicken(placed, cx, cy, time) {
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
   if (placed && typeof placed._facingX === 'number') {
-    facingLeft = placed._facingX > 0;
+    facingLeft = placed._facingX < 0;
   } else {
     facingLeft = ((seed | 0) & 1) === 0;
   }
@@ -4654,7 +4664,7 @@ function drawHorse(placed, cx, cy, time) {
   );
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   // Pen horses just idle when not wandering — never break into a gallop
   // unless someone wires that up later (e.g. on player mount).
@@ -4696,7 +4706,7 @@ function drawDog(placed, cx, cy, time) {
   )));
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
   else if (placed && placed.facing != null) facingLeft = placed.facing < 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   const stateName = placed && placed._chasing ? 'run' : (moving ? 'walk' : 'idle');
@@ -4736,7 +4746,7 @@ function drawLivestock(id, placed, cx, cy, time) {
   );
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   const stateName = moving ? 'walk' : 'idle';
   const fps = moving ? 5 : 2.5;
@@ -4771,7 +4781,7 @@ function drawCow(placed, cx, cy, time) {
   );
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   const stateName = moving ? 'walk' : 'idle';
   const fps = moving ? 5 : 2.5;
@@ -5557,7 +5567,7 @@ const BUILDING_MENUS = {
       const visibleKeys = new Set(rows.map(r => r.ix + ',' + r.iy));
       const queuedNow = ((state.player && state.player.queue) || []).filter(q => {
         if (q.tool === 'harvest' || q.tool === 'pet') return visibleKeys.has(q.ix + ',' + q.iy);
-        if (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') return q.animalKey && visibleKeys.has(q.animalKey);
+        if (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver' || q.tool === 'slaughterAtTile') return q.animalKey && visibleKeys.has(q.animalKey);
         return false;
       }).length;
       const cancelPalette = 'background:linear-gradient(to bottom,#E5C77A,#B0863A);color:#3a2410;border-color:#5C3F1A;';
@@ -5665,7 +5675,7 @@ const BUILDING_MENUS = {
           const queue = (state.player && state.player.queue) || [];
           const collectQueued = canCollect && queue.some(q => q.tool === 'harvest' && q.ix === ix && q.iy === iy);
           const slaughterQueued = queue.some(q =>
-            (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') &&
+            (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver' || q.tool === 'slaughterAtTile') &&
             q.animalKey === ix + ',' + iy
           );
           let btnLabel = canCollect ? 'Collect' : 'Select';
@@ -6071,7 +6081,7 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
             if (!ANIMAL_MEAT[r.it.id] || !canSlaughter(r.it.id, r.it)) continue;
             const aKey = r.ix + ',' + r.iy;
             if ((state.player.queue || []).some(q =>
-              (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') && q.animalKey === aKey)) continue;
+              (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver' || q.tool === 'slaughterAtTile') && q.animalKey === aKey)) continue;
             cand.push({ ix: r.ix, iy: r.iy, animal: r.it });
           }
           const ordered = nnSort(cand);
@@ -6128,12 +6138,12 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           const visibleKeys = new Set(visibleRows.map(r => r.ix + ',' + r.iy));
           let removed = 0;
           state.player.queue = queue.filter(q => {
-            const k = (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver')
+            const k = (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver' || q.tool === 'slaughterAtTile')
               ? q.animalKey
               : (q.ix != null && q.iy != null ? q.ix + ',' + q.iy : null);
             const hit = !!k && visibleKeys.has(k) && (
               q.tool === 'harvest' || q.tool === 'pet' ||
-              q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver'
+              q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver' || q.tool === 'slaughterAtTile'
             );
             if (hit) removed++;
             return !hit;
@@ -6182,11 +6192,12 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           const queue = state.player.queue || [];
           const queuedIdx = queue.findIndex(q =>
             (q.tool === 'pickupAnimal' && q.animalKey === animalKey) ||
-            (q.tool === 'slaughterDeliver' && q.animalKey === animalKey)
+            (q.tool === 'slaughterDeliver' && q.animalKey === animalKey) ||
+            (q.tool === 'slaughterAtTile' && q.animalKey === animalKey)
           );
           if (queuedIdx >= 0) {
             state.player.queue = queue.filter(q =>
-              !((q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver') && q.animalKey === animalKey)
+              !((q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver' || q.tool === 'slaughterAtTile') && q.animalKey === animalKey)
             );
             audio.play('click');
             btn.textContent = 'Slaughter';
@@ -6916,8 +6927,14 @@ function queueOneClickSlaughter(animalKey, animal) {
   const ageMul = animalAgeMul(animal);
   if (!state.player.queue) state.player.queue = [];
   const matureBonus = Math.round(animal.matureBonus || 0);
-  state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey, animalId: animal.id });
-  state.player.queue.push({ tool: 'slaughterDeliver', ix: sh.ix, iy: sh.iy, animalKey, animalId: animal.id, ageMul, matureBonus });
+  // Single-step slaughter: walk to the animal's tile and process there.
+  // The slaughterhouse only needs to exist (gate above) — the farmer
+  // doesn't have to schlep the carcass over to it.
+  state.player.queue.push({
+    tool: 'slaughterAtTile',
+    ix: ax, iy: ay,
+    animalKey, animalId: animal.id, ageMul, matureBonus,
+  });
   // Clear any prior mark — the new flow doesn't need a "marked" state.
   live.slaughterTarget = null;
   audio.play('click');
@@ -7807,7 +7824,7 @@ function canActOnTile(tool, ix, iy) {
   // Slaughter pickup / deliver — both are unconditional walks; the
   // queue entry carries the animal info so we don't depend on live state.
   if (tool === 'mount') return true;   // walk-to is always valid
-  if (tool === 'pickupAnimal' || tool === 'slaughterDeliver' || tool === 'pet' || tool === 'enterSeedContainer') {
+  if (tool === 'pickupAnimal' || tool === 'slaughterDeliver' || tool === 'slaughterAtTile' || tool === 'pet' || tool === 'enterSeedContainer') {
     return ix >= 0 && iy >= 0 && ix < WORLD_W && iy < WORLD_H;
   }
   // Walk-to-greenhouse: queue is created when player clicks the
@@ -8849,6 +8866,8 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     return 'ok';
   }
   if (tool === 'pickupAnimal') {
+    // Legacy two-step queue entry (pre-v2 saves). Just collapse it
+    // into the slaughterAtTile path so old queues don't soft-lock.
     if (queuedAction && queuedAction.animalKey) {
       const animal = state.placed[queuedAction.animalKey];
       if (animal) {
@@ -8860,18 +8879,41 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     storage.save(); refreshHud();
     return 'ok';
   }
-  // --- Deliver to the slaughterhouse. Pays out coins + XP for the
-  // animal whose id was snapshotted at queue time.
+  // --- Slaughter at the animal's tile. Single-step replacement for
+  // the old pickupAnimal + slaughterDeliver pair: removes the animal,
+  // pays out coins + XP, fxbursts in place.
+  if (tool === 'slaughterAtTile') {
+    const aid = queuedAction && queuedAction.animalId;
+    const meat = aid && ANIMAL_MEAT[aid];
+    const animalKey = (queuedAction && queuedAction.animalKey) || tileKey(ix, iy);
+    if (meat && state.placed[animalKey]) {
+      const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+      const ageMul   = (queuedAction && queuedAction.ageMul) || 1;
+      const matureBonus = Math.round((queuedAction && queuedAction.matureBonus) || 0);
+      const coins = Math.round(meat.coins * yieldMul * ageMul) + siloSlaughterBonus() + yieldFlatBonus() + matureBonus;
+      const xp    = Math.max(1, Math.round(meat.xp * cottageXpMul() * ageMul));
+      delete state.placed[animalKey];
+      state.coins += coins;
+      grantXp(xp);
+      fxBurst(ix, iy, '#FFE066', 14);
+      fxFloat(ix, iy, '+' + coins + '¢');
+      fxFloat(ix, iy, '+' + xp + ' XP', 1, '#6CFFB4');
+      toast(`Sold ${meat.name} for ${coins}¢ (+${xp} XP).`, false, 'good', 4000);
+      bumpStat('slaughtered');
+      bumpStat('slaughteredByAnimal.' + aid);
+      audio.play('coin');
+    }
+    storage.save(); refreshHud();
+    return 'ok';
+  }
+  // Legacy slaughterDeliver entries — still supported so old saves'
+  // queued deliveries finish out instead of being stuck.
   if (tool === 'slaughterDeliver') {
     const aid = queuedAction && queuedAction.animalId;
     const meat = aid && ANIMAL_MEAT[aid];
     if (meat) {
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
       const ageMul   = (queuedAction && queuedAction.ageMul) || 1;
-      // Silo boost is computed at delivery time — silo could have run dry
-      // between marking and walking the animal over. matureBonus is
-      // captured at queue-time (queueOneClickSlaughter) since the animal
-      // record is gone from state.placed once it's picked up.
       const matureBonus = Math.round((queuedAction && queuedAction.matureBonus) || 0);
       const coins = Math.round(meat.coins * yieldMul * ageMul) + siloSlaughterBonus() + yieldFlatBonus() + matureBonus;
       const xp    = Math.max(1, Math.round(meat.xp * cottageXpMul() * ageMul));
@@ -11666,19 +11708,15 @@ function bindInput() {
               return;
             }
           }
-          // Click on the slaughterhouse — queue a walk-pickup-deliver
-          // sequence so the farmer fetches the marked animal and trundles
-          // it to the slaughterhouse before the meat coins land.
+          // Click on the slaughterhouse — queues the new single-step
+          // slaughterAtTile flow that walks the farmer to the marked
+          // animal and processes there (no schlep to the slaughterhouse).
           if (placedHere.id === 'building_slaughterhouse' && live.slaughterTarget) {
             const aKey = live.slaughterTarget;
             const animal = state.placed[aKey];
             live.slaughterTarget = null;
             if (animal && ANIMAL_MEAT[animal.id]) {
-              const [ax, ay] = aKey.split(',').map(Number);
-              const ageMul = animalAgeMul(animal);
-              state.player.queue.push({ tool: 'pickupAnimal', ix: ax, iy: ay, animalKey: aKey, animalId: animal.id });
-              state.player.queue.push({ tool: 'slaughterDeliver', ix: startT.ix, iy: startT.iy, animalId: animal.id, ageMul });
-              audio.play('click');
+              queueOneClickSlaughter(aKey, animal);
             } else {
               toast('Pick an animal first.', true); audio.play('error');
             }
