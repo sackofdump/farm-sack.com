@@ -3119,6 +3119,13 @@ function loyaltyTick() {
   const now = Date.now();
   if (!state.staff.lastLoyaltyAt) state.staff.lastLoyaltyAt = now;
   const elapsed = now - state.staff.lastLoyaltyAt;
+  // Pause offline: if the elapsed gap is bigger than a couple ticks,
+  // treat it as a closed-tab gap and resync without applying decay —
+  // matches the silo / coffee-stand offline-pause behaviour.
+  if (elapsed > LOYALTY_DECAY_INTERVAL_MS * 2) {
+    state.staff.lastLoyaltyAt = now;
+    return;
+  }
   if (elapsed < LOYALTY_DECAY_INTERVAL_MS) return;
   // Snap forward in whole-tick increments so the cadence stays steady.
   const ticks = Math.floor(elapsed / LOYALTY_DECAY_INTERVAL_MS);
