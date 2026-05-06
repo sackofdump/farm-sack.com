@@ -3308,7 +3308,10 @@ const BUILDING_MAXED_AT = {
   building_market_stall: () => buildingCount('building_market_stall') >= 5,
   building_windmill:     () => buildingCount('building_windmill')     >= 5,
   building_silo:         () => buildingCount('building_silo')         >= 5,
-  building_coffee_stand: () => buildingCount('building_coffee_stand') >= 3,
+  // Coffee Stand intentionally absent — its bonus only applies while
+  // the network has coffee, so flagging it MAXED at 3 stands was
+  // misleading whenever the stands were empty. The active/idle line
+  // in its hover + click-menu carries the actual buff status instead.
 };
 function buildingIsMaxed(id) {
   const fn = BUILDING_MAXED_AT[id];
@@ -14908,12 +14911,12 @@ function buildTooltipHTML(ix, iy) {
             const total = Math.floor(coffeeStored());
             const cap = coffeeStandCapacity();
             const active = total > 0 && cap > 0;
-            const maxed = buildingIsMaxed('building_coffee_stand');
             return `<span style="color:#7A3F00">+${Math.round(COFFEE_SPEED_BONUS*100)}% staff speed</span> while it has coffee.` +
-                   (maxed ? _maxedTag : '') +
                    `<br>This stand: <b>${own} / ${COFFEE_CAPACITY_PER}</b>` +
                    `<br>Network: <b>${total} / ${cap}</b>` +
-                   (active ? ' · <span style="color:#1f7a3e;">active</span>' : '');
+                   (active
+                     ? `<br><span style="color:#7A3F00;font-weight:700;">Active: +${Math.round(coffeeBonusFraction() * 100)}% staff speed</span>`
+                     : `<br><span style="color:#8a5a1f">Idle — fill a stand to caffeinate the staff.</span>`);
           },
           building_greenhouse:   () => `Click to open — <b>mutate seeds</b> into rare hybrids for XP + coins.`,
         };
