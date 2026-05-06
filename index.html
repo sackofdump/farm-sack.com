@@ -1757,6 +1757,8 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>New <b>My Farmer</b> button on the topbar (right of the FarmSack logo) — opens a profile modal with your current stats (with prestige bonus) and lets you rename / swap gender.</li>
+        <li>Reset Farm now also: scales the starting farm lot by your prestige bonus (+25% = 8×8, +100% = 12×12), folds your bonus into the watered-grow base (50% becomes 75% at +25%, upgrades stack normally), bulk-paint farmer routes from the click-start corner, water grants 2 XP at every level, tree fruit yields scale with tree tier (60¢ → 360¢), reset path also clears the dismount banner.</li>
         <li>HUD chip shows your current <b>Prestige %</b> bonus (visible once you've banked any). Hover for "+N% to coins / XP / movement / growth · M resets".</li>
         <li>Settings → <b>Wipe save</b> now preserves your prestige bonus across the wipe + reload.</li>
         <li>Layout edit mode <b>snaps to default</b> when you drag a panel within ~28 px of its original spot — small nudges no longer leave a 1cm gap.</li>
@@ -1945,6 +1947,13 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
     <img src="assets/named/logo.png" class="brandIcon" alt="FarmSack">
     <span id="brandName">FarmSack</span>
   </button>
+  <!-- Farmer profile shortcut — sits right of the FarmSack logo. Opens a
+       modal showing current stats (with prestige bonuses) and lets the
+       player rename / swap gender. -->
+  <button class="brand brand-clickable" id="farmerProfileBtn" title="My Farmer" style="padding:4px 10px;display:inline-flex;align-items:center;gap:6px;">
+    <span id="farmerProfileEmoji" style="font-size:24px;line-height:1;">&#128104;&#8205;&#127806;</span>
+    <span id="farmerProfileName" style="font-weight:800;color:#3B2A1A;">Farmer</span>
+  </button>
   <div class="stats">
     <div class="chip" title="Coins"><span class="iconDot coin"></span><span id="coinTxt">0</span></div>
     <div class="chip" title="Level / XP">
@@ -2103,6 +2112,30 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
 <!-- One-shot popup that fires the first time the player places a greenhouse. -->
 <!-- One-shot popup that fires the first time the player banks 6.7k¢ —
      nudge toward the Expand Play Area upgrade. -->
+<!-- Farmer profile — name + gender editor and a stats readout that
+     surfaces prestige + active multipliers in one place. Triggered
+     from the topbar "My Farmer" button next to the FarmSack logo. -->
+<div id="farmerProfileModal" class="modal hidden">
+  <div class="modal-body" style="width:auto;max-width:min(440px,92vw);padding:18px 22px;">
+    <h2 style="text-align:center;margin-bottom:6px;">My Farmer</h2>
+    <label style="display:block;font-size:12px;font-weight:800;color:#6A4A22;margin-bottom:4px;">Name</label>
+    <input type="text" id="farmerProfileNameInput" maxlength="20" style="width:100%;box-sizing:border-box;padding:8px 11px;border:2px solid var(--wood-3);border-radius:8px;background:#FFF8E1;font-weight:700;color:#3a2410;">
+    <label style="display:block;font-size:12px;font-weight:800;color:#6A4A22;margin:10px 0 4px;">Gender</label>
+    <div class="splashGender" id="farmerProfileGender" style="display:flex;gap:8px;">
+      <button type="button" class="splashGenderBtn" data-gender="boy">&#128104;&#8205;&#127806; Boy</button>
+      <button type="button" class="splashGenderBtn" data-gender="girl">&#128105;&#8205;&#127806; Girl</button>
+    </div>
+    <div style="margin-top:14px;padding:10px 12px;background:#FFF8E1;border:2px solid var(--wood-3);border-radius:10px;">
+      <div style="font-weight:800;color:#6A4A22;margin-bottom:4px;font-size:12px;">Current stats</div>
+      <div id="farmerProfileStats" style="font-size:12px;color:#3a2410;line-height:1.55;"></div>
+    </div>
+    <div class="modal-foot" style="justify-content:flex-end;gap:8px;margin-top:14px;">
+      <button class="splashBtn" id="farmerProfileCancel" style="width:auto;padding:7px 14px;font-size:13px;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border-color:var(--wood-3);box-shadow:0 3px 0 var(--wood-3);">Cancel</button>
+      <button class="splashBtn primary" id="farmerProfileSave" style="width:auto;padding:7px 14px;font-size:13px;">Save</button>
+    </div>
+  </div>
+</div>
+
 <!-- Reset Farm prestige modals. The Lv20 reveal pops once on hitting Lv20
      (and is also injected into the starting tutorial as one of the late
      steps). The confirm modal previews the bonus before the wipe. -->
@@ -2723,6 +2756,67 @@ function prestigeBonusFromCoins(coins) {
   return Math.max(0, Math.floor(coins / 1000000)) * PRESTIGE_BONUS_PER_M;
 }
 function canResetFarm() { return (state.level || 1) >= PRESTIGE_UNLOCK_LEVEL; }
+function refreshFarmerProfileChip() {
+  const emoji = document.getElementById('farmerProfileEmoji');
+  const nm    = document.getElementById('farmerProfileName');
+  if (!emoji || !nm) return;
+  const g = (state.farmer && state.farmer.gender) === 'girl' ? '\u{1F469}‍\u{1F33E}' : '\u{1F468}‍\u{1F33E}';
+  emoji.textContent = g;
+  nm.textContent = (state.farmer && state.farmer.name) || 'Farmer';
+}
+function openFarmerProfileModal() {
+  const modal = document.getElementById('farmerProfileModal');
+  if (!modal) return;
+  const nameInput = document.getElementById('farmerProfileNameInput');
+  const genderRow = document.getElementById('farmerProfileGender');
+  if (!nameInput || !genderRow) return;
+  if (!state.farmer) state.farmer = { name: '', gender: 'boy' };
+  nameInput.value = state.farmer.name || '';
+  let chosenGender = state.farmer.gender || 'boy';
+  const chips = genderRow.querySelectorAll('.splashGenderBtn');
+  chips.forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-gender') === chosenGender);
+    b.onclick = () => {
+      chosenGender = b.getAttribute('data-gender');
+      chips.forEach(c => c.classList.toggle('active', c === b));
+    };
+  });
+  // Stats readout — show the live numbers including prestige scaling
+  // so the player can see the bonus actually being applied.
+  const stats = document.getElementById('farmerProfileStats');
+  if (stats) {
+    const presBonus = (state.prestige && state.prestige.totalBonus) || 0;
+    const presCnt   = (state.prestige && state.prestige.count) || 0;
+    const speedTiles = playerSpeed();
+    const yieldPct = Math.round((yieldMultiplier() - 1) * 100);
+    const xpPct    = Math.round((cottageXpMul() - 1) * 100);
+    const growPct  = Math.round((growSpeedMul() - 1) * 100);
+    const sellPct  = Math.round((marketSellMul() - 1) * 100);
+    const presLine = presBonus > 0
+      ? `<div>&#127775; <b>Prestige:</b> +${Math.round(presBonus * 100)}% all gains + speeds · ${presCnt} reset${presCnt === 1 ? '' : 's'}</div>`
+      : `<div style="color:#7a5430;">No prestige yet — reset at Lv ${PRESTIGE_UNLOCK_LEVEL} for a permanent bonus.</div>`;
+    stats.innerHTML =
+      `<div>&#129489;‍&#127806; <b>Lv ${state.level || 1}</b> · ${formatCoins(state.coins || 0)}¢</div>` +
+      `<div>&#128099; Walk speed: <b>${speedTiles.toFixed(2)}</b> tiles/sec</div>` +
+      `<div>&#127806; Bigger Baskets yield: <b>+${yieldPct}%</b></div>` +
+      `<div>&#128715; Cottage XP: <b>+${xpPct}%</b></div>` +
+      `<div>&#127794; Grow speed: <b>+${growPct}%</b></div>` +
+      `<div>&#128722; Sell prices: <b>+${sellPct}%</b></div>` +
+      presLine;
+  }
+  document.getElementById('farmerProfileCancel').onclick = () => modal.classList.add('hidden');
+  document.getElementById('farmerProfileSave').onclick = () => {
+    const trimmed = (nameInput.value || '').trim().slice(0, 20);
+    state.farmer.name = trimmed || state.farmer.name || 'Farmer';
+    state.farmer.gender = chosenGender;
+    modal.classList.add('hidden');
+    storage.save();
+    refreshFarmerProfileChip();
+    toast(`Updated ${state.farmer.name}.`, false, 'good');
+  };
+  modal.classList.remove('hidden');
+  setTimeout(() => { try { nameInput.focus(); nameInput.select(); } catch (e) {} }, 0);
+}
 
 // ----- Keybind rebinding -----
 // Player-facing list of every toolbar action that can be re-keyed.
@@ -2981,16 +3075,20 @@ function resetFarm() {
   state.coffeeStand = { coffee: 0, lastTickAt: 0 };
   state.staff = { members: [], lastUpkeepAt: 0, lastLoyaltyAt: 0, nextStaffId: 1 };
   state.greenhouse = { tier: 1, book: state.greenhouse?.book || {}, activeRuns: [] };
-  state.cropFarmW = 6;
-  state.cropFarmH = 6;
+  // Scale the starting farm lot by the new prestige bonus so each
+  // reset gives a slightly bigger fenced area to start on. +25%
+  // bonus → round(6 × 1.25) = 8 tiles per side; +100% → 12. Floor
+  // at the original 6×6 in case totalBonus is somehow negative.
+  const presBonusForLot = (state.prestige.totalBonus || 0);
+  const startSize = Math.max(6, Math.round(6 * (1 + presBonusForLot)));
+  state.cropFarmW = startSize;
+  state.cropFarmH = startSize;
   // CROP_FARM is a `const` BINDING but the object is mutable —
-  // applyExpandArea / Expand-Field bumped its w/h over time. Without
-  // resetting it back to 6×6, defaultWorldBounds() would still return
-  // the giant pre-prestige rect, which is why crop farmers + the
-  // player kept "farming" tiles way outside the freshly-fenced
-  // 6×6 spawn area after a reset.
-  CROP_FARM.w = 6;
-  CROP_FARM.h = 6;
+  // applyExpandArea / Expand-Field bumped its w/h over time. Reset it
+  // alongside the state fields so defaultWorldBounds() returns the
+  // freshly-sized rect on the new run.
+  CROP_FARM.w = startSize;
+  CROP_FARM.h = startSize;
   state.player = {
     ix: CROP_FARM.x0 - 1, iy: CROP_FARM.y0 + CROP_FARM.h,
     queue: [], facing: 1, busy: 0, pending: null,
@@ -3012,6 +3110,10 @@ function resetFarm() {
   storage.save();
   if (typeof refreshHud === 'function') refreshHud();
   if (typeof buildToolbar === 'function') buildToolbar();
+  // Dismount banner stays visible from the previous run if we don't
+  // explicitly hide it — refreshDismountBanner reads state.player.mounted
+  // and applies inline style so call it after the player wipe.
+  if (typeof refreshDismountBanner === 'function') refreshDismountBanner();
   if (typeof camera !== 'undefined' && camera.centerOnFarm) camera.centerOnFarm();
   toast(`Farm reset! Permanent bonus is now +${Math.round(state.prestige.totalBonus * 100)}%.`, false, 'good', 6000);
   audio.play('levelup');
@@ -3022,7 +3124,7 @@ function resetFarm() {
 function yieldFlatBonus() { return 0; }
 // XP awarded per watering action — bumped to +2 once the player hits
 // level 10 so late-game water passes feel a bit more rewarding.
-function waterXpGain() { return (state.level || 1) >= 10 ? 2 : 1; }
+function waterXpGain() { return 2; }
 function yieldCost(level) { return Math.round(2497 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
@@ -3081,7 +3183,14 @@ const WATER_COSTS    = [2, 1, 0, 0];               // coin cost per water
 const WATER_SPEED_M  = [1.50, 1.75, 2.00, 2.25];   // multiplier when watered (+50/75/100/125%)
 const WATER_MAX_LEVEL = WATER_COSTS.length - 1;
 function waterCost()       { return WATER_COSTS[state.player.waterLevel || 0] ?? 2; }
-function wateredSpeedMul() { return WATER_SPEED_M[state.player.waterLevel || 0] ?? 1.5; }
+function wateredSpeedMul() {
+  // Prestige bonus folds into the WATERED base — at +25% prestige the
+  // level-0 +50% bonus reads as +75%, and each Water Efficiency
+  // upgrade keeps adding its normal +25% increment on top.
+  const base = WATER_SPEED_M[state.player.waterLevel || 0] ?? 1.5;
+  const presBonus = (state.prestige && state.prestige.totalBonus) || 0;
+  return base + presBonus;
+}
 // Building bonus counters. Each placed building of a given kind stacks
 // its +5% bonus, capped at +25% (5 copies).
 // Memoised: hot path called many times per frame (cottageXpMul,
@@ -4214,14 +4323,14 @@ const SHOP_ITEMS = [
   { cat: 'seed', id: 'feed_corn',  name: 'Animal Feed',cost: 30,  sub: '9m 26s · fills the silo (XP only)', unlock: 9  },
   { cat: 'seed', id: 'coffee',     name: 'Coffee Beans', cost: 35, sub: '14m 09s · brews coffee that speeds up workers', unlock: 15 },
   // ---- Trees (yield fruit from the mature stage) ----
-  { cat: 'tree', id: 'tree_oak',         name: 'Oak Tree',     cost: 80,  sub: 'Yields walnuts',     unlock: 1  },
-  { cat: 'tree', id: 'tree_pine_dark',   name: 'Pine Tree',    cost: 120, sub: 'Yields pine nuts',   unlock: 4  },
-  { cat: 'tree', id: 'tree_apple',       name: 'Apple Tree',   cost: 220, sub: 'Yields apples',      unlock: 6  },
-  { cat: 'tree', id: 'tree_maple',       name: 'Maple Tree',   cost: 320, sub: 'Yields maple syrup', unlock: 7  },
-  { cat: 'tree', id: 'tree_orange',      name: 'Orange Tree',  cost: 260, sub: 'Yields oranges',     unlock: 8  },
-  { cat: 'tree', id: 'tree_pine_yellow', name: 'Golden Pine',  cost: 180, sub: 'Yields pine nuts',   unlock: 9  },
-  { cat: 'tree', id: 'tree_cherry',      name: 'Cherry Tree',  cost: 400, sub: 'Yields cherries',    unlock: 10 },
-  { cat: 'tree', id: 'tree_pine_snow',   name: 'Snow Pine',    cost: 240, sub: 'Yields pine nuts',   unlock: 12 },
+  { cat: 'tree', id: 'tree_oak',         name: 'Oak Tree',     cost: 80,  sub: 'Yields walnuts · 60¢/harvest',       unlock: 1  },
+  { cat: 'tree', id: 'tree_pine_dark',   name: 'Pine Tree',    cost: 120, sub: 'Yields pine nuts · 110¢/harvest',    unlock: 4  },
+  { cat: 'tree', id: 'tree_apple',       name: 'Apple Tree',   cost: 220, sub: 'Yields apples · 160¢/harvest',       unlock: 6  },
+  { cat: 'tree', id: 'tree_maple',       name: 'Maple Tree',   cost: 320, sub: 'Yields maple syrup · 190¢/harvest',  unlock: 7  },
+  { cat: 'tree', id: 'tree_orange',      name: 'Orange Tree',  cost: 260, sub: 'Yields oranges · 220¢/harvest',      unlock: 8  },
+  { cat: 'tree', id: 'tree_pine_yellow', name: 'Golden Pine',  cost: 180, sub: 'Yields pine nuts · 260¢/harvest',    unlock: 9  },
+  { cat: 'tree', id: 'tree_cherry',      name: 'Cherry Tree',  cost: 400, sub: 'Yields cherries · 300¢/harvest',     unlock: 10 },
+  { cat: 'tree', id: 'tree_pine_snow',   name: 'Snow Pine',    cost: 240, sub: 'Yields pine nuts · 360¢/harvest',    unlock: 12 },
   // ---- Decor (cosmetic; all trickle in later) ----
   { cat: 'decor', id: 'tree_stump',         name: 'Tree Stump',    cost: 30,  sub: 'Rustic accent',      unlock: 5  },
   { cat: 'decor', id: 'decor_bush',         name: 'Bush',          cost: 25,  sub: 'Decorative',         unlock: 4  },
@@ -7425,14 +7534,16 @@ function refreshDismountBanner() {
   }
 }
 const TREE_FRUITS = {
-  tree_oak:         { name: 'walnuts',     coins: 50, xp: 1 },
-  tree_maple:       { name: 'maple syrup', coins: 50, xp: 1 },
-  tree_apple:       { name: 'apples',    coins: 50, xp: 1 },
-  tree_orange:      { name: 'oranges',   coins: 50, xp: 1 },
-  tree_cherry:      { name: 'cherries',  coins: 50, xp: 1 },
-  tree_pine_dark:   { name: 'pine nuts', coins: 50, xp: 1 },
-  tree_pine_yellow: { name: 'pine nuts', coins: 50, xp: 1 },
-  tree_pine_snow:   { name: 'pine nuts', coins: 50, xp: 1 },
+  // Coins scale with the tree's unlock level so higher-tier trees
+  // genuinely pay more — oak (Lv 1) → snow pine (Lv 12) ≈ 6× yield.
+  tree_oak:         { name: 'walnuts',     coins: 60,  xp: 1 },
+  tree_pine_dark:   { name: 'pine nuts',   coins: 110, xp: 1 },
+  tree_apple:       { name: 'apples',      coins: 160, xp: 1 },
+  tree_maple:       { name: 'maple syrup', coins: 190, xp: 1 },
+  tree_orange:      { name: 'oranges',     coins: 220, xp: 1 },
+  tree_pine_yellow: { name: 'pine nuts',   coins: 260, xp: 1 },
+  tree_cherry:      { name: 'cherries',    coins: 300, xp: 1 },
+  tree_pine_snow:   { name: 'pine nuts',   coins: 360, xp: 1 },
   // tree_stump intentionally absent — stumps are pure decor, no harvest.
 };
 function treeReadyToHarvest(placed) {
@@ -11942,6 +12053,7 @@ function refreshHud() {
     }
   }
   refreshQuestsPanel();
+  refreshFarmerProfileChip();
 }
 const TOOLS = [
   { id: 'plow',      label: 'Plow',      asset: 'tool_plow'    },
@@ -13864,13 +13976,17 @@ function bindInput() {
             if (isPlaceableTile(ix, iy)) candidates.push({ ix, iy });
           }
         }
-        // Same greedy nearest-neighbour ordering as the paintRect path.
+        // Greedy nearest-neighbour ordering anchored to the drag's
+        // start tile (r.ix0, r.iy0) — the farmer heads to the corner
+        // the player initially clicked, then chains through the rest.
         const treeTail = state.player.queue.length
           ? state.player.queue[state.player.queue.length - 1]
           : null;
-        let cur = (treeTail && treeTail.ix != null && treeTail.iy != null)
-          ? { ix: treeTail.ix, iy: treeTail.iy }
-          : { ix: state.player.ix, iy: state.player.iy };
+        let cur = (typeof r.ix0 === 'number' && typeof r.iy0 === 'number')
+          ? { ix: r.ix0, iy: r.iy0 }
+          : (treeTail && treeTail.ix != null && treeTail.iy != null
+              ? { ix: treeTail.ix, iy: treeTail.iy }
+              : { ix: state.player.ix, iy: state.player.iy });
         const ordered = [];
         while (candidates.length > 0) {
           let bestI = 0, bestD = Infinity;
@@ -13926,16 +14042,19 @@ function bindInput() {
           if (canActOnTile(r.tool, ix, iy)) candidates.push({ ix, iy });
         }
       }
-      // Greedy nearest-neighbour ordering. Stitch onto the player's
-      // existing queue if it has tiles in it (so a second drag picks
-      // up where the first left off instead of bouncing back to the
-      // player).
+      // Greedy nearest-neighbour ordering, anchored to the click that
+      // started the drag (r.ix0, r.iy0). The farmer walks toward
+      // wherever the player initially clicked, then chains through
+      // the rest of the rect by proximity. Falls back to the queue
+      // tail / player position only when no start corner is set.
       const rectTail = state.player.queue.length
         ? state.player.queue[state.player.queue.length - 1]
         : null;
-      let cur = (rectTail && rectTail.ix != null && rectTail.iy != null)
-        ? { ix: rectTail.ix, iy: rectTail.iy }
-        : { ix: state.player.ix, iy: state.player.iy };
+      let cur = (typeof r.ix0 === 'number' && typeof r.iy0 === 'number')
+        ? { ix: r.ix0, iy: r.iy0 }
+        : (rectTail && rectTail.ix != null && rectTail.iy != null
+            ? { ix: rectTail.ix, iy: rectTail.iy }
+            : { ix: state.player.ix, iy: state.player.iy });
       const ordered = [];
       while (candidates.length > 0) {
         let bestI = 0, bestD = Infinity;
@@ -15767,6 +15886,9 @@ async function startGame() {
   document.getElementById('shopBtn').onclick      = () => { openShop(); audio.play('click'); };
   // Top-left brand label opens the player's farm inventory.
   document.getElementById('brandLabel').onclick = () => { openInventory(); audio.play('click'); };
+  // Farmer profile button → modal with name/gender editor + live stats.
+  const fpBtn = document.getElementById('farmerProfileBtn');
+  if (fpBtn) fpBtn.onclick = () => { openFarmerProfileModal(); audio.play('click'); };
   document.getElementById('achBtn').onclick       = openAchModal;
   // Admin floating panel — visible only when admin mode is on. Coyote
   // spawn button mirrors window.spawnCoyote() for click-only access.
@@ -15915,7 +16037,7 @@ async function startGame() {
     'barnTutorialModal', 'greenhouseTutorialModal', 'slaughterhouseTutorialModal',
     'greenhouseUnlockTutorialModal', 'staffComboTutorialModal', 'dogTutorialModal',
     'siloTutorialModal', 'expandHintModal', 'seedContainerReminderModal',
-    'resetFarmIntroModal', 'resetFarmConfirmModal',
+    'resetFarmIntroModal', 'resetFarmConfirmModal', 'farmerProfileModal',
     'levelUpModal', 'mutationDiscoveryModal', 'barnPenChoiceModal',
   ]);
   document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => {
