@@ -16755,10 +16755,14 @@ const cloud = {
       const p = state.placed[k];
       if (p && p.id && p.id.startsWith('animal_')) animals++;
     }
-    // Two-phase upsert: try with the prestige columns first, fall
-    // back to a column subset if the table schema doesn't have them
-    // yet. Prevents an "unknown column" error from rejecting the
-    // whole row push and leaving the leaderboard stale.
+    // Layered upsert. The base row only references columns from the
+    // original schema (supabase_leaderboard.sql). Optional columns
+    // (staff_harvested, prestige_count, prestige_bonus_pct) were added
+    // in later commits and may or may not exist on a given user's
+    // Supabase table — try the full row first, then peel each optional
+    // group off whenever the server complains about a missing column.
+    // Without this, a single missing column rejected the whole row and
+    // the leaderboard quietly froze for that player.
     const baseRow = {
       user_id: this.user.id,
       farmer_name: (state.farmer && state.farmer.name) || meta.farmer_name || 'Anonymous',
@@ -16772,19 +16776,28 @@ const cloud = {
       trees_placed: s.treesPlaced || 0,
       animals_owned:      animals,
       animals_slaughtered: s.slaughtered || 0,
-      staff_harvested: s.staffHarvested || 0,
       daily_streak: state.dailyStreak || 0,
       quests_done:  state.questsCompleted || 0,
       dailies_done: state.dailiesCompleted || 0,
       updated_at: new Date().toISOString(),
     };
-    const fullRow = Object.assign({}, baseRow, {
+    const withStaff = Object.assign({}, baseRow, {
+      staff_harvested: s.staffHarvested || 0,
+    });
+    const fullRow = Object.assign({}, withStaff, {
       prestige_count:     (state.prestige && state.prestige.count)      || 0,
       prestige_bonus_pct: Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100),
     });
+    const isMissingColumn = (err) => err && /does not exist|schema cache|could not find the/i.test(err.message || '');
     let { error } = await sb.from('leaderboard').upsert(fullRow, { onConflict: 'user_id' });
-    if (error && /column .* (prestige|does not exist)/i.test(error.message || '')) {
-      // Schema doesn't have the prestige columns yet — retry without.
+    if (isMissingColumn(error)) {
+      // Drop the prestige columns and retry — older tables predate the
+      // prestige system and only know about staff_harvested + base.
+      ({ error } = await sb.from('leaderboard').upsert(withStaff, { onConflict: 'user_id' }));
+    }
+    if (isMissingColumn(error)) {
+      // Drop staff_harvested too — earliest tables only have the
+      // original schema columns.
       ({ error } = await sb.from('leaderboard').upsert(baseRow, { onConflict: 'user_id' }));
     }
     if (error) console.warn('cloud.pushLeaderboard:', error);

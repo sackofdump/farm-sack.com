@@ -25,7 +25,10 @@ create table if not exists public.leaderboard (
 -- Migration for existing tables:
 alter table public.leaderboard
   add column if not exists animals_owned       int not null default 0,
-  add column if not exists animals_slaughtered int not null default 0;
+  add column if not exists animals_slaughtered int not null default 0,
+  add column if not exists staff_harvested     int not null default 0,
+  add column if not exists prestige_count      int not null default 0,
+  add column if not exists prestige_bonus_pct  int not null default 0;
 
 -- Indexes for the two sort orders the leaderboard uses.
 create index if not exists leaderboard_level_coins_idx
