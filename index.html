@@ -11439,10 +11439,14 @@ function checkAchievements() {
     if (state.achievements[a.id]) continue;
     if (!a.check(state.stats)) continue;
     state.achievements[a.id] = Date.now();
-    state.coins += a.reward.coins;
+    // Prestige bonus folds into achievement / quest / daily coin rewards
+    // too — XP already routes through grantXp which applies prestigeMul,
+    // coins didn't until now.
+    const _achCoins = Math.round((a.reward.coins || 0) * prestigeMul());
+    state.coins += _achCoins;
     grantXp(a.reward.xp);
     audio.play('levelup');
-    toast(`🏆 ${a.name} — +${a.reward.coins}¢ +${a.reward.xp} XP`, false, 'good');
+    toast(`🏆 ${a.name} — +${_achCoins}¢ +${a.reward.xp} XP`, false, 'good');
     any = true;
   }
   if (any) refreshHud();
@@ -11623,7 +11627,9 @@ function checkDailies() {
         }
       }
       const mul = dailyStreakMultiplier();
-      const coins = Math.round(d.reward.coins * mul);
+      // Daily coin reward stacks streak × prestige (XP only stacks
+      // streak — grantXp adds prestige downstream).
+      const coins = Math.round(d.reward.coins * mul * prestigeMul());
       const xp    = Math.max(1, Math.round(d.reward.xp    * mul));
       state.coins += coins;
       grantXp(xp);
@@ -11917,11 +11923,12 @@ function checkQuests() {
   for (let i = 0; i < state.quests.length; i++) {
     const q = state.quests[i];
     if (questProgress(q) >= q.target) {
-      state.coins += q.reward.coins;
+      const _qCoins = Math.round((q.reward.coins || 0) * prestigeMul());
+      state.coins += _qCoins;
       grantXp(q.reward.xp);
       state.questsCompleted = (state.questsCompleted || 0) + 1;
       audio.play('coin'); audio.play('levelup');
-      toast(`✓ Quest done — +${q.reward.coins}¢ +${q.reward.xp} XP`, false, 'good');
+      toast(`✓ Quest done — +${_qCoins}¢ +${q.reward.xp} XP`, false, 'good');
       const skip = state.quests.filter((_, j) => j !== i).map(x => x.id);
       state.quests[i] = rollNewQuest(skip) || state.quests[i];
       any = true;
