@@ -4472,7 +4472,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_barn',         name: 'Big Red Barn', cost: 3300, sub: 'Opens the animal pen — unlocks livestock', unlock: 8  },
   { cat: 'building', id: 'building_market_stall', name: 'Market Stall', cost: 2700, sub: '+5% sell prices (cap +25%)',     unlock: 8  },
   { cat: 'building', id: 'building_windmill',     name: 'Windmill',     cost: 5250, sub: '+5% crop growth speed (cap +25%)', unlock: 10 },
-  { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% harvest yield (cap +25%) · stores Animal Feed for animal bonuses', unlock: 9  },
+  { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% crops & animal yield (cap +25%) · stores Animal Feed for animal bonuses', unlock: 9  },
   { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1800, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 15 },
   { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile up to 1,000 seeds for your crop farmer to plant', unlock: 15 },
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
@@ -14629,7 +14629,7 @@ function buildTooltipHTML(ix, iy) {
             const total = Math.floor(siloFeed());
             const cap = siloCapacity();
             const active = total > 0 && cap > 0;
-            return `<span style="color:#2D6E33">+${Math.round((siloYieldMul()-1)*100)}% harvest yield</span>` +
+            return `<span style="color:#2D6E33">+${Math.round((siloYieldMul()-1)*100)}% crops &amp; animal yield</span>` +
                    `<br>This silo: <b>${own} / ${SILO_CAPACITY_PER}</b>` +
                    `<br>Network: <b>${total} / ${cap}</b>` +
                    (active
