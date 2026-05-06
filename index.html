@@ -3221,8 +3221,8 @@ function horseStaffSpeedMul() {
 function staffSpeedCost(level) { return Math.round(12500 * Math.pow(2.5, level)); }
 
 // ----- Water efficiency (cost + bonus) -----
-const WATER_COSTS    = [2, 1, 0, 0];               // coin cost per water
-const WATER_SPEED_M  = [1.50, 1.75, 2.00, 2.25];   // multiplier when watered (+50/75/100/125%)
+const WATER_COSTS    = [2, 1, 0, 0, 0];                  // coin cost per water
+const WATER_SPEED_M  = [1.50, 1.75, 2.00, 2.25, 2.50];   // multiplier when watered (+50/75/100/125/150%)
 const WATER_MAX_LEVEL = WATER_COSTS.length - 1;
 function waterCost()       { return WATER_COSTS[state.player.waterLevel || 0] ?? 2; }
 function wateredSpeedMul() {
