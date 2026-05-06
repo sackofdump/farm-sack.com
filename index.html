@@ -1737,7 +1737,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
-        <li>Crop Farmers no longer ping-pong: a ready harvest tile is only picked up when 8+ ready tiles cluster within Chebyshev radius 3 of it. Lone ready crops sit until the patch around them ripens.</li>
+        <li>Crop Farmer harvest is unconditional priority again — the cluster-min gate from the prior build was too aggressive and stopped them from harvesting smaller patches. Existing nearest-tile scoring handles ordering.</li>
         <li>Crop Farmers' silo + coffee skip is now hysteresis-style: once the network tops out they pause, then resume harvesting once it's drained ≥99 (silo) or ≥49 (coffee) free units, and farm it back to full before pausing again.</li>
         <li>Each placed horse now gives <b>+5% staff speed</b>, capped at <b>+25%</b> (5 horses). Stacks multiplicatively with the Speedy Hands upgrade.</li>
         <li>Crop Farmer's per-staffer menu now has <b>Plow / Plant / Water / Harvest</b> task checkboxes — uncheck one to make that staffer skip it. All on by default.</li>
@@ -3252,33 +3252,6 @@ function findCropFarmerTask(m) {
     else if (cofRoom >= 49)  state.coffeeStand.coffeeSkip = false;
   }
   const skipCoffeeHarvest = cofCap > 0 && !!state.coffeeStand && state.coffeeStand.coffeeSkip;
-  // Anti-ping-pong: only count a harvest tile as actionable if there
-  // are at least HARVEST_CLUSTER_MIN ready tiles within a small radius
-  // (Chebyshev). Lone ready crops scattered across the zone make the
-  // farmer dart back and forth; gating on cluster size keeps them
-  // hammering one patch at a time.
-  const HARVEST_CLUSTER_MIN    = 8;
-  const HARVEST_CLUSTER_RADIUS = 3;
-  const readyHarvestKeys = new Set();
-  for (const k of zone) {
-    const p = state.plots[k];
-    if (!p || p.state !== 'planted') continue;
-    if (state.placed[k]) continue;
-    if (cropPhase(p) !== 'ready') continue;
-    const c = CROPS[p.crop];
-    if (skipFeedHarvest && c && c.feed) continue;
-    if (skipCoffeeHarvest && c && c.coffee) continue;
-    readyHarvestKeys.add(k);
-  }
-  const harvestClusterAt = (ix, iy) => {
-    let n = 0;
-    for (let dy = -HARVEST_CLUSTER_RADIUS; dy <= HARVEST_CLUSTER_RADIUS; dy++) {
-      for (let dx = -HARVEST_CLUSTER_RADIUS; dx <= HARVEST_CLUSTER_RADIUS; dx++) {
-        if (readyHarvestKeys.has(`${ix + dx},${iy + dy}`)) n++;
-      }
-    }
-    return n;
-  };
   let best = null, bestScore = -Infinity;
   for (const k of zone) {
     if (claimed.has(k)) continue;
@@ -3298,9 +3271,6 @@ function findCropFarmerTask(m) {
           // Treat as not actionable this scan.
         } else if (skipCoffeeHarvest && c && c.coffee) {
           // Same — coffee stand near full, leave the bean for later.
-        } else if (harvestClusterAt(ix, iy) < HARVEST_CLUSTER_MIN) {
-          // Cluster too small — leave it for later so the farmer
-          // doesn't ping-pong across the zone for one stray ready tile.
         } else {
           action = 'harvest'; priority = 4;
         }
