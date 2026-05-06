@@ -1737,7 +1737,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
-        <li>Crop Farmer harvest is unconditional priority again — the cluster-min gate from the prior build was too aggressive and stopped them from harvesting smaller patches. Existing nearest-tile scoring handles ordering.</li>
+        <li>Crop Farmer no longer crosses the whole map for one water tile — distance now outweighs the priority gap among water/plant/plow (e.g., a plow at the farmer's feet beats a water 30 tiles away). Harvest still always wins regardless of distance.</li>
         <li>Crop Farmers' silo + coffee skip is now hysteresis-style: once the network tops out they pause, then resume harvesting once it's drained ≥99 (silo) or ≥49 (coffee) free units, and farm it back to full before pausing again.</li>
         <li>Each placed horse now gives <b>+5% staff speed</b>, capped at <b>+25%</b> (5 horses). Stacks multiplicatively with the Speedy Hands upgrade.</li>
         <li>Crop Farmer's per-staffer menu now has <b>Plow / Plant / Water / Harvest</b> task checkboxes — uncheck one to make that staffer skip it. All on by default.</li>
@@ -3259,6 +3259,14 @@ function findCropFarmerTask(m) {
     if (!inCropFarm(ix, iy)) continue;
     if (state.placed[k]) continue;     // tile occupied by a tree/decor/etc.
     const p = state.plots[k];
+    // Priority numbers below are tuned so HARVEST always wins over
+    // anything else regardless of distance, but for water/plant/plow
+    // the gap is small (10) so distance dominates past ~10 tiles.
+    // Old values were 4/3/2/1 with priority * 1000 — that made the
+    // farmer cross the whole map for a single water rather than
+    // plowing the dirt at their feet. Now the order water > plant
+    // > plow only matters when candidates are within a few tiles of
+    // each other.
     let action = null, priority = 0;
     if (p && p.state === 'planted') {
       const ph = cropPhase(p);
@@ -3272,20 +3280,20 @@ function findCropFarmerTask(m) {
         } else if (skipCoffeeHarvest && c && c.coffee) {
           // Same — coffee stand near full, leave the bean for later.
         } else {
-          action = 'harvest'; priority = 4;
+          action = 'harvest'; priority = 10000;   // unreachable from below
         }
       }
-      else if (ph === 'growing' && !p.watered && flags.water && state.coins >= waterCost()) { action = 'water'; priority = 3; }
+      else if (ph === 'growing' && !p.watered && flags.water && state.coins >= waterCost()) { action = 'water'; priority = 130; }
     } else if (p && p.state === 'plowed') {
       // Only plant when there's a seed source AND planting is enabled.
-      if (seedSource && flags.plant) { action = 'plant'; priority = 2; }
+      if (seedSource && flags.plant) { action = 'plant'; priority = 120; }
     } else if (flags.plow) {
       // No plot record yet, or stale 'dirt' — needs plowing.
-      action = 'plow'; priority = 1;
+      action = 'plow'; priority = 110;
     }
     if (!action) continue;
     const dist = Math.hypot(ix - m.ix, iy - m.iy);
-    const score = priority * 1000 - dist;
+    const score = priority - dist;
     if (score > bestScore) { bestScore = score; best = { ix, iy, key: k, action }; }
   }
   return best;
