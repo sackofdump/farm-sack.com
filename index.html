@@ -1757,6 +1757,8 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Animals can now be placed in <b>bulk</b> too — shift+drag a rect with an animal staged from the shop and the bounding box fills with one click (skips occupied tiles + tiles outside the pen, stops when you run out of coins).</li>
+        <li>Reset Farm now re-rolls the Quest + Daily slates immediately, so the panel doesn't sit empty after a prestige.</li>
         <li>Prestige bonus now affects <b>everything</b>: yields + XP (already), plus player walk speed, staff speed, and crop / tree growth speed. One number, applied at every gain or speed call site.</li>
         <li>Reset Farm bug fix: the in-memory CROP_FARM rect kept its expanded width/height after a reset, so the new run kept "farming" outside the freshly-fenced 6×6 spawn area. Reset path now snaps it back to 6×6.</li>
         <li>Silo menu gets the same per-silo / per-stand layout the coffee stand uses + a green "active" / amber "idle" pill on the network header.</li>
@@ -2976,6 +2978,11 @@ function resetFarm() {
   state.dailies = [];
   state.dailyResetAt = 0;
   state.dailiesCompleted = 0;
+  // Re-roll the quest + daily slates immediately so the panel
+  // shows the fresh starter quests + a new daily set, rather than
+  // an empty board.
+  if (typeof ensureQuestSlate === 'function') ensureQuestSlate();
+  if (typeof maybeRotateDailies === 'function') maybeRotateDailies();
   // Center the camera on the new farm so the player isn't dropped
   // into a corner of the meadow.
   state.camX = 0; state.camY = 0;
@@ -8613,9 +8620,14 @@ function drawAll() {
     ctx.textAlign = 'center';
     ctx.lineWidth = 4;
     ctx.strokeStyle = '#FFF6D6';
-    const txt = isTreeRect
-      ? `plant ${live.placeMode && live.placeMode.name || 'tree'} ×${valid}`
-      : `${r.tool} ×${valid}`;
+    let txt;
+    if (isTreeRect) {
+      const isAnimal = live.placeMode && live.placeMode.id && live.placeMode.id.startsWith('animal_');
+      const verb = isAnimal ? 'place' : 'plant';
+      txt = `${verb} ${(live.placeMode && live.placeMode.name) || 'item'} ×${valid}`;
+    } else {
+      txt = `${r.tool} ×${valid}`;
+    }
     ctx.strokeText(txt, cMid.x, cMid.y - 18);
     ctx.fillText(txt, cMid.x, cMid.y - 18);
     ctx.restore();
@@ -13255,15 +13267,16 @@ function bindInput() {
     }
     // -------- Place mode click --------
     if (live.placeMode) {
-      // Shift+drag a rect while a tree is staged = bulk-plant the
-      // bounding box. Has to live INSIDE the placeMode branch because
-      // the branch returns before any other shift-drag handler runs.
-      if (e.button === 0 && e.shiftKey &&
-          live.placeMode.id && live.placeMode.id.startsWith('tree_') &&
-          !live.placeMode.moving) {
+      // Shift+drag a rect while a tree OR an animal is staged =
+      // bulk-place across the bounding box. Same machinery for both;
+      // isPlaceableTile already routes animals to in-pen tiles only.
+      const bulkOk = live.placeMode.id && !live.placeMode.moving &&
+                     (live.placeMode.id.startsWith('tree_') ||
+                      live.placeMode.id.startsWith('animal_'));
+      if (e.button === 0 && e.shiftKey && bulkOk) {
         live.dragMode = 'paintRect';
         live.paintRect = {
-          tool: 'placeTree',
+          tool: 'placeTree',          // legacy tag — handled by the bulk-place path regardless of category
           ix0: startT.ix, iy0: startT.iy,
           ix1: startT.ix, iy1: startT.iy,
         };
@@ -13787,11 +13800,13 @@ function bindInput() {
       const r = live.paintRect;
       const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
       const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
-      // Tree placement rect uses isPlaceableTile + affordability
-      // instead of the canActOnTile path. Bail to the tree branch so
-      // the tool dispatch below stays clean.
-      if (r.tool === 'placeTree' && live.placeMode &&
-          live.placeMode.id && live.placeMode.id.startsWith('tree_')) {
+      // Bulk-place rect (trees + animals) uses isPlaceableTile +
+      // affordability instead of the canActOnTile path. Tagged
+      // 'placeTree' for legacy reasons; the branch handles animals
+      // too since the validity gate is identical.
+      const bulkPlace = r.tool === 'placeTree' && live.placeMode && live.placeMode.id &&
+                        (live.placeMode.id.startsWith('tree_') || live.placeMode.id.startsWith('animal_'));
+      if (bulkPlace) {
         const candidates = [];
         for (let iy = y0; iy <= y1; iy++) {
           for (let ix = x0; ix <= x1; ix++) {
@@ -13818,14 +13833,15 @@ function bindInput() {
           ordered.push(next);
           cur = next;
         }
-        // Affordability gate — count the cost of any trees already
-        // queued from previous drags in this placeMode session, then
-        // stop adding once a fresh tree would exceed the wallet.
+        // Affordability gate — count the cost of any trees / animals
+        // already queued from previous drags in this placeMode session,
+        // then stop adding once a fresh placement would exceed the
+        // wallet.
         const cost = live.placeMode.cost || 0;
         let queuedCost = 0;
         for (const q of state.player.queue) {
-          if (q.tool === 'placeHere' && q.placeData &&
-              q.placeData.id && q.placeData.id.startsWith('tree_') && !q.placeData.moving) {
+          if (q.tool === 'placeHere' && q.placeData && q.placeData.id && !q.placeData.moving &&
+              (q.placeData.id.startsWith('tree_') || q.placeData.id.startsWith('animal_'))) {
             queuedCost += q.placeData.cost || 0;
           }
         }
@@ -13844,8 +13860,8 @@ function bindInput() {
           queued++;
         }
         audio.play(queued > 0 ? 'click' : 'error');
-        if (queued > 0) toast(`Queued ${queued} ${live.placeMode.name || 'tree'}${queued === 1 ? '' : 's'}.`, false, 'good');
-        else toast('Nothing to plant in that rect (or out of coins).', true);
+        if (queued > 0) toast(`Queued ${queued} ${live.placeMode.name || 'item'}${queued === 1 ? '' : 's'}.`, false, 'good');
+        else toast('Nothing to place in that rect (or out of coins).', true);
         // Drop out of paintRect cleanup — the tail clears live.paintRect etc.
         live.dragMode = 'idle';
         live.draggedTiles.clear();
