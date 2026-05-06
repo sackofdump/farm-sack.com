@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Coffee Stand capacity 200 → 500 per stand.</li>
         <li>Mutation greenhouse no longer collapses your open dropdown when a worker action fires — auto-rerender pauses while the modal has focus or recent pointer activity.</li>
         <li>Mutation slot costs <b>10×</b> across the board (Magic dust 1.5k → 15k, Enriched soil 600 → 6k, etc.) — top-tier brews are now a real investment.</li>
         <li>Greenhouse tier upgrades cost 4× more (T2 12k → 48k, T3 35k → 140k, T4 90k → 360k).</li>
@@ -2803,7 +2804,7 @@ function countAnimalsPlaced() {
 // ----- Coffee stand -----
 // Each Coffee Stand adds capacity for harvested Coffee Beans. While the
 // stand has coffee, every hired staff member moves + works faster.
-const COFFEE_CAPACITY_PER             = 200;
+const COFFEE_CAPACITY_PER             = 500;
 const COFFEE_PER_HARVEST              = 8;
 const COFFEE_DRAIN_PER_STAFF_PER_MIN  = 0.5;
 const COFFEE_SPEED_BONUS              = 0.5;     // base +50% from the first stand
