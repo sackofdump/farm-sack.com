@@ -7195,6 +7195,15 @@ const BUILDING_MENUS = {
       const drainLine = drainPerMin > 0
         ? `<b>${staffN}</b> staff · sips <b>${drainPerMin}</b>/min` + (depleteStr ? ` · empties in <b>${depleteStr}</b>` : '')
         : `No staff hired — coffee isn't being consumed.`;
+      // MAXED chip rides the Active line — only paints while the buff is
+      // actually applied (network has coffee) AND the per-stand stack has
+      // hit the +100% cap. Idle stands or sub-cap counts stay un-flagged.
+      const fr = coffeeBonusFraction();
+      const atCap = fr >= COFFEE_SPEED_BONUS_MAX - 1e-6;
+      const activeLine = atCap
+        ? `<span style="color:#7A3F00;">Active: +${Math.round(fr * 100)}% staff speed (movement + cooldowns)</span>` +
+          ` <span style="color:#3F8338;font-weight:700;">MAXED</span>`
+        : `<span style="color:#7A3F00;">Active: +${Math.round(fr * 100)}% staff speed (movement + cooldowns)</span>`;
       return (
         thisLine +
         `<div style="margin-bottom:6px;">Network: <b>${stored} / ${cap}</b></div>` +
@@ -7204,7 +7213,7 @@ const BUILDING_MENUS = {
         `${drainLine}<br>` +
         `Harvest <b>Coffee Beans</b> to refill (each harvest = +${COFFEE_PER_HARVEST}). Excess cascades into the next stand.<br>` +
         (active
-          ? `<span style="color:#7A3F00;">Active: +${Math.round(coffeeBonusFraction() * 100)}% staff speed (movement + cooldowns)</span>`
+          ? activeLine
           : `<span style="color:#8a5a1f;">Idle — fill a stand to caffeinate the staff.</span>`) +
         `</div>`
       );
@@ -14917,11 +14926,19 @@ function buildTooltipHTML(ix, iy) {
             const total = Math.floor(coffeeStored());
             const cap = coffeeStandCapacity();
             const active = total > 0 && cap > 0;
+            // MAXED rides on the Active line so it only shows while the
+            // buff is actually doing work — the bonus is capped at
+            // +100% and only applies while the network has coffee.
+            const fr = coffeeBonusFraction();
+            const atCap = fr >= COFFEE_SPEED_BONUS_MAX - 1e-6;
+            const activeLine = atCap
+              ? `<br><span style="color:#7A3F00;font-weight:700;">Active: +${Math.round(fr * 100)}% staff speed</span>${_maxedTag}`
+              : `<br><span style="color:#7A3F00;font-weight:700;">Active: +${Math.round(fr * 100)}% staff speed</span>`;
             return `<span style="color:#7A3F00">+${Math.round(COFFEE_SPEED_BONUS*100)}% staff speed</span> while it has coffee.` +
                    `<br>This stand: <b>${own} / ${COFFEE_CAPACITY_PER}</b>` +
                    `<br>Network: <b>${total} / ${cap}</b>` +
                    (active
-                     ? `<br><span style="color:#7A3F00;font-weight:700;">Active: +${Math.round(coffeeBonusFraction() * 100)}% staff speed</span>`
+                     ? activeLine
                      : `<br><span style="color:#8a5a1f">Idle — fill a stand to caffeinate the staff.</span>`);
           },
           building_greenhouse:   () => `Click to open — <b>mutate seeds</b> into rare hybrids for XP + coins.`,
