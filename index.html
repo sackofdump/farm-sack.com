@@ -10987,6 +10987,11 @@ function grantXp(amount) {
     audio.play('levelup');
     toast(`Level up! Now level ${state.level}.`, false, 'good');
     refreshSeedStrip();
+    // Rebuild the toolbar so any unlock-gated buttons (Barn at 8,
+    // Staff Hall at 15, Greenhouse at 12, Horse at 15, Reset at 20)
+    // flip from grayed to active the moment the player crosses the
+    // threshold instead of waiting for the next page reload.
+    if (typeof buildToolbar === 'function') buildToolbar();
     // Defer the unlock modal so it doesn't yank the player out of an
     // active action / drag-paint / place-mode flow.
     queueLevelUpUnlocks(state.level);
