@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li><b>Speedy Hands</b> upgrade (unlocks at Lv 15) — three tiers stacking +50% / +75% / +100% staff move + work speed on top of the new baseline.</li>
         <li>Staff move + work +50% faster across the board.</li>
         <li>Arborist tree harvests now pay the same +5 XP the player gets manually (was +1).</li>
         <li>Coyote sprite no longer faces backwards while fleeing the dog.</li>
@@ -2546,6 +2547,21 @@ function autoHarvestChance() {
   return AUTO_HARVEST_CHANCE[state.player.autoHarvestLevel || 0] || 0;
 }
 function autoHarvestCost(level) { return Math.round(3329 * Math.pow(2.6, level)); }
+
+// ----- Staff speed boost (Speedy Hands) +50/75/100% staff move + work -----
+// Multiplies staff move speed and divides their action cooldown so each
+// tier feels like a real bump, not just faster wandering. Unlocks once
+// the Staff Hall does, at player level 15.
+const STAFF_SPEED_M = [1.0, 1.5, 1.75, 2.0];
+const STAFF_SPEED_MAX_LEVEL = STAFF_SPEED_M.length - 1;
+const STAFF_SPEED_UNLOCK = 15;
+function staffSpeedMul() {
+  const lvl = Math.min(STAFF_SPEED_MAX_LEVEL, (state.player && state.player.staffSpeedLevel) || 0);
+  return STAFF_SPEED_M[lvl] || 1;
+}
+// Steep ramp so each tier costs noticeably more than the last:
+// 12.5k → 31k → 78k for the +50% / +75% / +100% tiers.
+function staffSpeedCost(level) { return Math.round(12500 * Math.pow(2.5, level)); }
 
 // ----- Water efficiency (cost + bonus) -----
 const WATER_COSTS    = [2, 1, 0, 0];               // coin cost per water
@@ -3850,6 +3866,7 @@ const state = {
     yieldLevel: 0,        // % bonus on harvest sell
     autoHarvestLevel: 0,  // chance/sec to instantly harvest a ripe tile
     waterLevel: 0,        // cheaper / better watering
+    staffSpeedLevel: 0,   // staff move + work speed multiplier (Speedy Hands)
   },
   // Farm dimensions (mutable via Expand Field upgrade). Restored on load.
   cropFarmW: 6, cropFarmH: 6,
@@ -8615,7 +8632,7 @@ function tickStaff(dtMs) {
     // Animal keepers amble around the pen — half-speed compared to the
     // bustling crop-farm staff.
     const baseSpeed = m.role === 'animal_keeper' ? 1.05 : 2.1;   // +50%
-    const speed = baseSpeed * coffeeSpeedMul();
+    const speed = baseSpeed * coffeeSpeedMul() * staffSpeedMul();
     const step = Math.min(dist, speed * dt);
     m.ix += (tdx / dist) * step;
     m.iy += (tdy / dist) * step;
@@ -8642,7 +8659,7 @@ function tickArborist(m, dt, now) {
         const dist = Math.hypot(dx, dy);
         if (dist < 0.05) { m.ix = t.ix; m.iy = t.iy; m.queue.shift(); }
         else {
-          const step = Math.min(dist, 1.2 * dt);
+          const step = Math.min(dist, 1.2 * staffSpeedMul() * dt);
           m.ix += (dx / dist) * step; m.iy += (dy / dist) * step;
           if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
         }
@@ -8656,14 +8673,14 @@ function tickArborist(m, dt, now) {
   if (dist < 0.5) {
     performArboristAction(m, m.task);
     m.task = null;
-    m.cooldownAt = now + Math.round(CROP_FARMER_COOLDOWN_MS / coffeeSpeedMul());
+    m.cooldownAt = now + Math.round(CROP_FARMER_COOLDOWN_MS / (coffeeSpeedMul() * staffSpeedMul()));
     return;
   }
   const placed = state.placed[m.task.key];
   if (!placed) { m.task = null; return; }
   if (m.task.action === 'water_tree' && !treeReadyToWater(placed)) { m.task = null; return; }
   if (m.task.action === 'harvest_tree' && !treeReadyToHarvest(placed)) { m.task = null; return; }
-  const step = Math.min(dist, CROP_FARMER_SPEED_TILES_S * coffeeSpeedMul() * dt);
+  const step = Math.min(dist, CROP_FARMER_SPEED_TILES_S * coffeeSpeedMul() * staffSpeedMul() * dt);
   m.ix += (dx / dist) * step;
   m.iy += (dy / dist) * step;
   if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
@@ -8690,7 +8707,7 @@ function tickCropFarmer(m, dt, now) {
         if (dist < 0.05) {
           m.ix = t.ix; m.iy = t.iy; m.queue.shift();
         } else {
-          const step = Math.min(dist, 1.2 * dt);
+          const step = Math.min(dist, 1.2 * staffSpeedMul() * dt);
           m.ix += (dx / dist) * step;
           m.iy += (dy / dist) * step;
           if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
@@ -8706,7 +8723,7 @@ function tickCropFarmer(m, dt, now) {
   if (dist < 0.3) {
     performCropFarmerAction(m, m.task);
     m.task = null;
-    m.cooldownAt = now + Math.round(CROP_FARMER_COOLDOWN_MS / coffeeSpeedMul());
+    m.cooldownAt = now + Math.round(CROP_FARMER_COOLDOWN_MS / (coffeeSpeedMul() * staffSpeedMul()));
     return;
   }
   // Re-validate the task each frame — if the player jumped in and finished
@@ -8725,7 +8742,7 @@ function tickCropFarmer(m, dt, now) {
     if (!p || p.state !== 'planted' || cropPhase(p) !== 'ready') invalid = true;
   }
   if (invalid) { m.task = null; return; }
-  const step = Math.min(dist, CROP_FARMER_SPEED_TILES_S * coffeeSpeedMul() * dt);
+  const step = Math.min(dist, CROP_FARMER_SPEED_TILES_S * coffeeSpeedMul() * staffSpeedMul() * dt);
   m.ix += (dx / dist) * step;
   m.iy += (dy / dist) * step;
   if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
@@ -11219,12 +11236,35 @@ function buildUpgradesGrid(grid) {
     });
   };
 
+  const staffSpeedCard = () => {
+    // Hidden until the Staff Hall unlock (player level 15) — no point
+    // showing a "speeds up your staff" upgrade before staff exist.
+    if (state.level < STAFF_SPEED_UNLOCK) return;
+    const lvl = p.staffSpeedLevel || 0;
+    const maxed = lvl >= STAFF_SPEED_MAX_LEVEL;
+    const cost = maxed ? null : staffSpeedCost(lvl);
+    const curPct  = Math.round((STAFF_SPEED_M[lvl] - 1) * 100);
+    const nextPct = maxed ? curPct : Math.round((STAFF_SPEED_M[lvl + 1] - 1) * 100);
+    const sub = maxed
+      ? `Staff move + work +${curPct}% faster (max)`
+      : `Staff move + work +${curPct}% → +${nextPct}% faster`;
+    makeUpgradeCard(grid, {
+      iconKey: 'tool_move',
+      name: 'Speedy Hands',
+      sub,
+      price: cost, max: maxed, level: lvl, maxLevel: STAFF_SPEED_MAX_LEVEL,
+      buy: () => { p.staffSpeedLevel = lvl + 1; state.coins -= cost; afterUpgrade(grid, 'Speedy Hands'); }
+    });
+  };
+
   // Order: Speed Boots (2.4k) → Water Efficiency (3.1k) → Expand Play
-  // Area (~3.2k first ring) → Bigger Baskets (3.7k).
+  // Area (~3.2k first ring) → Bigger Baskets (3.7k) → Speedy Hands (12.5k,
+  // gated to Lv 15 so it only appears once staff unlock).
   speedCard();
   waterCard();
   expandCard();
   yieldCard();
+  staffSpeedCard();
   // Expand Animal Pen lives on each barn's click menu now (multi-pen
   // farms had no way to pick *which* pen to grow from a single
   // upgrades-panel button). See the barn's BUILDING_MENUS entry for
