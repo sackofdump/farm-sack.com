@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Re-zoning a Crop Farmer now leaves their <b>current zone faded out</b> in the background so you can see what you're replacing while drawing the new one.</li>
         <li>Slaughter bonuses dialed way back: silo's flat slaughter bonus drops from +20¢/5 feed → +20¢/25 feed (5× softer at the new 500-per-silo cap), and the per-day mature-weight accrual drops from +10¢/day → +1¢/day. UI tooltips now read the live constants instead of hardcoded numbers.</li>
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
@@ -7903,15 +7904,22 @@ function drawAll() {
 
   // -------- Highlighted staff zone (only the one the player just clicked) --------
   if (live.highlightedStaff && live.highlightedStaff.zone) {
+    // While re-zoning, fade the existing zone way down so the new
+    // drag-rect preview reads cleanly on top. Otherwise we're just
+    // surfacing a clicked staffer's current assignment, which can stay
+    // at the normal blue tint.
+    const editing = !!(live.zoneSelect && live.zoneSelect.editingMember === live.highlightedStaff);
+    const fillCol = editing ? 'rgba(108, 175, 255, 0.10)' : 'rgba(108, 175, 255, 0.28)';
+    const strokeCol = editing ? 'rgba(60, 130, 220, 0.25)' : 'rgba(60, 130, 220, 0.7)';
     for (const k of live.highlightedStaff.zone) {
       const [ix, iy] = k.split(',').map(Number);
       const c = isoCenter(ix, iy);
       ctx.save();
       diamondPath(c.x, c.y, TILE_W - 6, TILE_H - 6);
-      ctx.fillStyle = 'rgba(108, 175, 255, 0.28)';
+      ctx.fillStyle = fillCol;
       ctx.fill();
       ctx.lineWidth = 1.5;
-      ctx.strokeStyle = 'rgba(60, 130, 220, 0.7)';
+      ctx.strokeStyle = strokeCol;
       ctx.stroke();
       ctx.restore();
     }
@@ -8652,12 +8660,17 @@ function enterCropFarmerZoneSelect() {
 }
 function enterCropFarmerZoneEdit(member) {
   live.zoneSelect = { role: 'crop_farmer', rect: null, dragging: false, editingMember: member };
+  // Re-set the highlight in case closeAnimalMenu cleared it before the
+  // zoneSelect flag was raised. Render path reads live.highlightedStaff
+  // and draws a translucent overlay on those tiles so the player can
+  // see the current zone while sketching the new one.
+  live.highlightedStaff = member;
   closeAnimalMenu();
   const banner = document.getElementById('zoneSelectBanner');
   if (banner) banner.style.display = 'flex';
   const msg = document.getElementById('zoneSelectMsg');
   if (msg) msg.innerHTML = `Drag a new zone for ${member.name}. ` +
-    '<span style="opacity:0.85;">A <b>Seed Container</b> anywhere on the map keeps them planting.</span>';
+    '<span style="opacity:0.85;">The current zone is faded out. A <b>Seed Container</b> anywhere on the map keeps them planting.</span>';
 }
 function staffAtTile(ix, iy) {
   if (!state.staff || !Array.isArray(state.staff.members)) return null;
