@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Crop Farmers now skip animal-feed harvests when the silo network is within 20 units of full — keeps a near-full silo from wasting feed crops while the farmer cycles other tiles.</li>
         <li>New <b>🔪 Butcher</b> staff role (Lv 15) — set a minimum slaughter price from the Staff Hall row's Min ¢ button, the butcher walks the farm auto-slaughtering any mature animal at or above that price.</li>
         <li><b>Animal Keeper</b> now also auto-collects ready yields (eggs, milk, wool) from animals in their pen — same XP / coins / loyalty timer as a manual harvest.</li>
         <li>Slaughter tool removed from the toolbar (the Slaughterhouse shortcut + barn menu's per-row Slaughter buttons cover the same action).</li>
@@ -3190,6 +3191,14 @@ function findCropFarmerTask(m) {
   const zone = (m.zone && m.zone.length) ? m.zone : null;
   if (!zone) return null;
   const seedSource = cropFarmerSeedSource(m);
+  // Hold off harvesting animal-feed when the silo network is within 20
+  // units of its cap — most of the harvest would just spill, so the
+  // farmer waits for the silo to drain instead. If there's no silo at
+  // all, skipFeedHarvest stays false (no cap to exceed; the existing
+  // "no silo" toast handling on harvest still applies).
+  const silCap = siloCapacity();
+  const silRoom = silCap - siloFeed();
+  const skipFeedHarvest = silCap > 0 && silRoom < 20;
   let best = null, bestScore = -Infinity;
   for (const k of zone) {
     if (claimed.has(k)) continue;
@@ -3200,7 +3209,17 @@ function findCropFarmerTask(m) {
     let action = null, priority = 0;
     if (p && p.state === 'planted') {
       const ph = cropPhase(p);
-      if (ph === 'ready') { action = 'harvest'; priority = 4; }
+      if (ph === 'ready') {
+        // Skip silo-bound harvests when the network is nearly full so
+        // the farmer doesn't waste them. Other ready crops still take
+        // priority so the field keeps cycling.
+        const c = CROPS[p.crop];
+        if (skipFeedHarvest && c && c.feed) {
+          // Treat as not actionable this scan.
+        } else {
+          action = 'harvest'; priority = 4;
+        }
+      }
       else if (ph === 'growing' && !p.watered && state.coins >= waterCost()) { action = 'water'; priority = 3; }
     } else if (p && p.state === 'plowed') {
       // Only plant when there's a seed source in the zone.
