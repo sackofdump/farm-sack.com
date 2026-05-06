@@ -12049,9 +12049,14 @@ async function renderLeaderboardTab(wrap) {
     return;
   }
   const me = cloud.user ? cloud.user.id : null;
+  // Prestige columns sit right after Lv/Coins so they read at a glance
+  // — they're the headline metric for veteran farms and the table is
+  // wide enough that anything past the first 4-5 cols requires a scroll.
   const cols = [
     { key: 'level',               label: 'Lv'      },
     { key: 'coins',               label: 'Coins'   },
+    { key: 'prestige_count',      label: 'Resets' },
+    { key: 'prestige_bonus_pct',  label: 'Prestige %', fmt: 'pct' },
     { key: 'day_count',           label: 'Day'     },
     { key: 'harvested',           label: 'Harvest' },
     { key: 'planted',             label: 'Plant'   },
@@ -12061,8 +12066,6 @@ async function renderLeaderboardTab(wrap) {
     { key: 'animals_owned',       label: 'Animals' },
     { key: 'animals_slaughtered', label: 'Slaughtered' },
     { key: 'staff_harvested',     label: 'Staff Hvst' },
-    { key: 'prestige_count',      label: 'Resets' },
-    { key: 'prestige_bonus_pct',  label: 'Prestige %', fmt: 'pct' },
     { key: 'daily_streak',        label: 'Streak'  },
     { key: 'quests_done',         label: 'Quests'  },
     { key: 'dailies_done',        label: 'Daily'   },
