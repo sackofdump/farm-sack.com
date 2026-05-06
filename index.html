@@ -2682,32 +2682,35 @@ const DAY_MS = 5 * 60 * 1000;
 // XP needed to reach next level (cumulative).
 // Cumulative XP needed to enter level N. The curve roughly compounds
 // 1.6× per tier so each level feels meaningful all the way to Lv 25.
+// XP thresholds for entering each level. Cumulative; multiplied by
+// 0.92 from the original curve (~8% reduction across the board) so
+// early/mid-game progression feels less grindy.
 const LEVEL_THRESHOLDS = [
   0,           // Lv 1
-  119,         // Lv 2
-  285,         // Lv 3
-  880,         // Lv 4
-  1980,        // Lv 5
-  3661,        // Lv 6
-  6461,        // Lv 7
-  11199,       // Lv 8
-  18952,       // Lv 9
-  31227,       // Lv 10
-  50610,       // Lv 11
-  80761,       // Lv 12
-  125987,      // Lv 13
-  193826,      // Lv 14
-  297201,      // Lv 15
-  447955,      // Lv 16
-  667625,      // Lv 17
-  979900,      // Lv 18
-  1410626,     // Lv 19
-  1992106,     // Lv 20
-  2756644,     // Lv 21
-  3747313,     // Lv 22
-  5017953,     // Lv 23
-  6633174,     // Lv 24
-  8679121,     // Lv 25
+  109,         // Lv 2
+  262,         // Lv 3
+  810,         // Lv 4
+  1822,        // Lv 5
+  3368,        // Lv 6
+  5944,        // Lv 7
+  10303,       // Lv 8
+  17436,       // Lv 9
+  28729,       // Lv 10
+  46561,       // Lv 11
+  74300,       // Lv 12
+  115908,      // Lv 13
+  178320,      // Lv 14
+  273425,      // Lv 15
+  412119,      // Lv 16
+  614215,      // Lv 17
+  901508,      // Lv 18
+  1297776,     // Lv 19
+  1832738,     // Lv 20
+  2536112,     // Lv 21
+  3447528,     // Lv 22
+  4616517,     // Lv 23
+  6102520,     // Lv 24
+  7984791,     // Lv 25
 ];
 
 // Camera zoom range.
