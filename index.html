@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Late-game perf: tooltip rebuild throttled to 250ms + cached, drawAll now culls off-screen state.placed + state.plots before sorting, and tickPlacedAnimals throttled to 10Hz. Should noticeably cut frame time on big farms.</li>
         <li>Staff Hall row now shows each Crop Farmer's enabled <b>Jobs</b> (Plow / Plant / Water / Harvest icons) inline next to the zone size — at-a-glance status without opening Edit.</li>
         <li>Expand Play Area now grows whichever sides still have room — used to refuse the whole purchase if any one edge had hit the world boundary, leaving 2 sides unfilled when the world bounds bumped from 70 → 72.</li>
         <li>Coffee Stand capacity 200 → 500 per stand.</li>
@@ -2922,8 +2923,16 @@ const PEN_WANDER_EXCLUDE = new Set();
 function tickPlacedAnimals(dtMs) {
   if (!state.placed) return;
   if (getAllBarnPens().length === 0) return;
-  const dt = dtMs / 1000;
-  const now = Date.now();
+  // Throttle the full state.placed walk to ~10Hz instead of 60Hz.
+  // Animal pen drift is slow (≤0.45 tiles/sec), so a 100ms tick is
+  // imperceptible and slashes the per-frame cost by ~6× on farms
+  // with hundreds of animals. Accumulated dt covers the gap.
+  const nowMs = Date.now();
+  if (tickPlacedAnimals._lastT && (nowMs - tickPlacedAnimals._lastT) < 100) return;
+  const elapsed = tickPlacedAnimals._lastT ? (nowMs - tickPlacedAnimals._lastT) : dtMs;
+  tickPlacedAnimals._lastT = nowMs;
+  const dt = elapsed / 1000;
+  const now = nowMs;
   for (const k in state.placed) {
     const it = state.placed[k];
     if (!it || !it.id || !it.id.startsWith('animal_')) continue;
@@ -7957,18 +7966,30 @@ function drawAll() {
   }
 
   // -------- Build draw list (objects sorted back-to-front) --------
+  // Culling bounds — tall sprites can extend several tiles NW of their
+  // anchor, so we widen the placed-cull box past the visible-tile box
+  // and skip any item whose anchor falls outside it.
+  const cullPlMinX = minIx - 6, cullPlMaxX = maxIx + 2;
+  const cullPlMinY = minIy - 6, cullPlMaxY = maxIy + 2;
+  const cullCrMinX = minIx - 1, cullCrMaxX = maxIx + 1;
+  const cullCrMinY = minIy - 1, cullCrMaxY = maxIy + 1;
   const list = [];
-  // Crops
+  // Crops — skip tiles outside the visible window so big farms don't
+  // pay for off-screen plots every frame.
   for (const k in state.plots) {
     const p = state.plots[k];
     if (p.state !== 'planted') continue;
-    const [ix, iy] = k.split(',').map(Number);
+    const ci = k.indexOf(',');
+    const ix = +k.slice(0, ci), iy = +k.slice(ci + 1);
+    if (ix < cullCrMinX || ix > cullCrMaxX || iy < cullCrMinY || iy > cullCrMaxY) continue;
     list.push({ depth: depthOf(ix, iy) + 0.4, kind: 'crop', ix, iy, plot: p });
   }
-  // Placed items
+  // Placed items — same culling window (looser since sprites stretch NW).
   for (const k in state.placed) {
     const it = state.placed[k];
-    const [ix, iy] = k.split(',').map(Number);
+    const ci = k.indexOf(',');
+    const ix = +k.slice(0, ci), iy = +k.slice(ci + 1);
+    if (ix < cullPlMinX || ix > cullPlMaxX || iy < cullPlMinY || iy > cullPlMaxY) continue;
     // While ONE dog is out chasing a coyote, hide just that dog (the one
     // anchored at dogChase.homeIx/homeIy). Other dogs in the pen stay
     // visible.
@@ -13644,12 +13665,27 @@ function showTooltip(ix, iy, e) {
 }
 // Re-runs buildTooltipHTML against the last hovered tile so the growth
 // countdown ticks each frame even when the cursor is sitting still.
+// Throttled to ~250ms + cached by tile + html. Per-frame rebuild was a
+// real frame-time cost on big farms because buildTooltipHTML does a
+// lot of helper calls + string concat for whatever is under the cursor.
+let _tooltipLastT = 0;
+let _tooltipLastKey = '';
+let _tooltipLastHtml = '';
 function refreshTooltip() {
   if (!live.hover) return;
   const tt = document.getElementById('tooltip');
   if (tt.classList.contains('hidden')) return;
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  const tileKey = live.hover.ix + ',' + live.hover.iy;
+  const moved = tileKey !== _tooltipLastKey;
+  if (!moved && (now - _tooltipLastT) < 250) return;   // skip — same tile, recent rebuild
+  _tooltipLastT = now;
+  _tooltipLastKey = tileKey;
   const html = buildTooltipHTML(live.hover.ix, live.hover.iy);
-  if (html) tt.innerHTML = html;
+  if (html && html !== _tooltipLastHtml) {
+    tt.innerHTML = html;
+    _tooltipLastHtml = html;
+  }
 }
 function hideTooltip() { document.getElementById('tooltip').classList.add('hidden'); }
 
