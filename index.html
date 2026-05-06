@@ -1732,6 +1732,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Seed Container's <b>Open Container</b> button now opens the buy menu immediately instead of making the farmer walk to the container first.</li>
+        <li>Placement preview now treats a tile with a pending placeHere as full — fast double-clicks can't stack two cows (or two of anything) on the same tile.</li>
         <li>Crop Farmer zone selection now ignores pen tiles instead of erroring — drag right across the pen and only the crop tiles get added.</li>
         <li>Coffee Stand storage now works like silos: each placed stand holds its own coffee, harvests cascade into the next when one tops out, and the menu / hover shows "this stand vs network".</li>
         <li>Crop Farmer harvesting Coffee Beans now actually fills the stand (was silently dropping the harvest into the regular sell branch for 0¢).</li>
@@ -6077,8 +6079,12 @@ const BUILDING_MENUS = {
              `<span style="color:#7a5430;font-size:11px;">Tip: place inside a crop farmer's zone so they can plant from it.</span>`;
     },
     actions: [{
+      // Open the buy menu immediately — there's nothing the farmer needs
+      // to physically do at the container, so the walk-to was just
+      // friction. Greenhouse still queues a walk because it's a real
+      // animation-driven interaction.
       label: '🌱 Open Container',
-      run: (tile) => { state.player.queue.push({ tool: 'enterSeedContainer', ix: tile.ix, iy: tile.iy }); },
+      run: (tile) => { openSeedContainerModal(tile.ix, tile.iy); },
     }],
   },
   building_coffee_stand: {
@@ -7499,6 +7505,18 @@ function isPlaceableTile(ix, iy) {
   const k = tileKey(ix, iy);
   if (state.placed[k]) return false;
   if (PATH_TILES.has(k)) return false;
+  // A queued placeHere counts the tile as taken so a fast double-click /
+  // chain of clicks can't stack two cows (or two of anything) on the
+  // same spot. The first click queues, the second sees the tile as
+  // pending and the hover preview shows "Tile is occupied" before the
+  // second walk-to even starts.
+  const pending = state.player && state.player.queue;
+  if (pending && pending.length) {
+    for (let i = 0; i < pending.length; i++) {
+      const q = pending[i];
+      if (q && q.tool === 'placeHere' && q.ix === ix && q.iy === iy) return false;
+    }
+  }
   const cat = live.placeMode && (shopItem(live.placeMode.id) || {}).cat;
   const id  = live.placeMode && live.placeMode.id;
   // The Slaughterhouse sits INSIDE the animal pen — needs an existing
