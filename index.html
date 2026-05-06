@@ -3283,10 +3283,20 @@ function windmillIsMaxed() { return buildingCount('building_windmill') >= 5; }
 // Each placed cow drops manure that fertilises the crop field — +10%
 // crop growth speed per cow, capped at 10 cows (+100%) so the player
 // can't trivialise growth by spamming a megafarm.
+// Memoised — cowFertilizerMul → growSpeedMul is called per-crop per
+// render frame. Without this, every visible plot was triggering an
+// O(state.placed) walk every paint, which reads as obvious lag once
+// the prestige bump enlarges the starting farm.
+const _cowCountCache = { value: 0, expiresAt: 0 };
 function cowCount() {
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (now < _cowCountCache.expiresAt) return _cowCountCache.value;
   let n = 0;
   for (const k in state.placed) if (state.placed[k].id === 'animal_cow') n++;
-  return Math.min(10, n);
+  const capped = Math.min(10, n);
+  _cowCountCache.value = capped;
+  _cowCountCache.expiresAt = now + 250;
+  return capped;
 }
 function cowFertilizerMul() { return 1 + 0.05 * cowCount(); }
 
