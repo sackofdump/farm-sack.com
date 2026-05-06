@@ -1732,6 +1732,9 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
+        <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
+        <li>Crop Farmers now skip <b>coffee</b> harvests too when the coffee-stand network is within 8 units of full (matches the silo-feed skip behavior).</li>
         <li>Crop Farmers now skip animal-feed harvests when the silo network is within 20 units of full — keeps a near-full silo from wasting feed crops while the farmer cycles other tiles.</li>
         <li>New <b>🔪 Butcher</b> staff role (Lv 15) — set a minimum slaughter price from the Staff Hall row's Min ¢ button, the butcher walks the farm auto-slaughtering any mature animal at or above that price.</li>
         <li><b>Animal Keeper</b> now also auto-collects ready yields (eggs, milk, wool) from animals in their pen — same XP / coins / loyalty timer as a manual harvest.</li>
@@ -3199,6 +3202,13 @@ function findCropFarmerTask(m) {
   const silCap = siloCapacity();
   const silRoom = silCap - siloFeed();
   const skipFeedHarvest = silCap > 0 && silRoom < 20;
+  // Same idea for coffee: if the coffee-stand network is within 8 units
+  // of full, skip coffee harvests so beans don't spill. No-stand path
+  // bypasses the gate (the "No coffee stand!" runtime hint still
+  // surfaces if the player tries the harvest by hand).
+  const cofCap = coffeeStandCapacity();
+  const cofRoom = cofCap - coffeeStored();
+  const skipCoffeeHarvest = cofCap > 0 && cofRoom < 8;
   let best = null, bestScore = -Infinity;
   for (const k of zone) {
     if (claimed.has(k)) continue;
@@ -3210,12 +3220,14 @@ function findCropFarmerTask(m) {
     if (p && p.state === 'planted') {
       const ph = cropPhase(p);
       if (ph === 'ready') {
-        // Skip silo-bound harvests when the network is nearly full so
-        // the farmer doesn't waste them. Other ready crops still take
-        // priority so the field keeps cycling.
+        // Skip silo-bound + coffee-bound harvests when their networks
+        // are nearly full so the farmer doesn't waste them. Other
+        // ready crops still take priority so the field keeps cycling.
         const c = CROPS[p.crop];
         if (skipFeedHarvest && c && c.feed) {
           // Treat as not actionable this scan.
+        } else if (skipCoffeeHarvest && c && c.coffee) {
+          // Same — coffee stand near full, leave the bean for later.
         } else {
           action = 'harvest'; priority = 4;
         }
@@ -5726,8 +5738,25 @@ const BUILDING_MENUS = {
         const cows = cowCount();
         const cur = cows * 5, cap = 50;
         const bonusColor = cur >= cap ? '#3F8338' : (cur > 0 ? '#5C7A1F' : '#8a5a1f');
-        html += `<div style="font-size:11px;color:${bonusColor};margin-bottom:8px;">` +
+        html += `<div style="font-size:11px;color:${bonusColor};margin-bottom:4px;">` +
                 `&#128004; <b>Cow Dung +${cur}%</b> growth speed · max +${cap}% (${cows}/10 cows)` +
+                `</div>`;
+      }
+      // Silo "weight" tip — mature animals accrue +10¢/day toward their
+      // eventual slaughter price while the silo network has feed. Show
+      // the live state so the player can see whether the bonus is
+      // currently ticking up.
+      {
+        const hasFeed = siloHasFeed();
+        const cap = siloCapacity();
+        const tipColor = hasFeed ? '#3F8338' : '#8a5a1f';
+        const status = cap === 0
+          ? 'Build a Silo and stock it to start the bonus.'
+          : (hasFeed
+              ? `<b>Active</b> — silo has feed.`
+              : `<b>Idle</b> — silo network is empty.`);
+        html += `<div style="font-size:11px;color:${tipColor};margin-bottom:8px;">` +
+                `&#127806; Mature animals gain <b>+10¢/day weight</b> at slaughter while silo has feed. ${status}` +
                 `</div>`;
       }
       // Filter dropdown — picks which slice of the roster to render.
@@ -6766,6 +6795,12 @@ function refreshDismountBanner() {
   // the inline display:flex overrode the class-based display:none.
   const mounted = !!(state.player && state.player.mounted);
   el.style.display = mounted ? 'flex' : 'none';
+  // Refresh the toolbar so the horse button's title flips between
+  // "Ride a horse" and "Dismount" without waiting for the next render.
+  const horseBtn = document.getElementById('toolHorseBtn');
+  if (horseBtn) {
+    horseBtn.title = mounted ? 'Dismount' : 'Ride a horse';
+  }
 }
 const TREE_FRUITS = {
   tree_oak:         { name: 'walnuts',     coins: 50, xp: 1 },
@@ -11395,6 +11430,59 @@ function buildToolbar() {
     }
   });
   tb.appendChild(staffBtn);
+  // Horse mount/dismount shortcut — sits to the right of the Staff Hall
+  // button. Greyed out until the horse unlock level. Click while
+  // dismounted: queue a walk-to + mount for the nearest placed horse.
+  // Click while mounted: dismount on the spot.
+  const horseItem = SHOP_ITEMS.find(i => i.id === 'animal_horse');
+  const horseUnlockLv = horseItem ? (horseItem.unlock || 1) : 15;
+  const horseLocked = state.level < horseUnlockLv;
+  const horseBtn = document.createElement('button');
+  horseBtn.className = 'tool toolHorse' + (horseLocked ? ' toolLocked' : '');
+  horseBtn.id = 'toolHorseBtn';
+  horseBtn.dataset.tool = 'horse';
+  const isMounted = !!(state.player && state.player.mounted);
+  horseBtn.title = horseLocked
+    ? `Horse — unlocks at Lv ${horseUnlockLv}`
+    : (isMounted ? 'Dismount' : 'Ride a horse');
+  horseBtn.disabled = horseLocked;
+  const hIcon = document.createElement('img');
+  hIcon.src = imgPath('animal_horse'); hIcon.alt = 'Horse';
+  hIcon.style.cssText = 'object-fit:contain;width:60px;height:60px;';
+  horseBtn.appendChild(hIcon);
+  horseBtn.addEventListener('click', () => {
+    if (horseLocked) return;
+    if (state.player && state.player.mounted) {
+      dismountHorse();
+      audio.play('click');
+      buildToolbar();   // re-render so the title flips back to "Ride a horse"
+      return;
+    }
+    // Find the nearest placed horse — pick the closest one to the
+    // player so a multi-horse barn doesn't make them trek across the
+    // farm to a far-side mount.
+    let bestKey = null, bestDist = Infinity;
+    for (const k in state.placed) {
+      if (state.placed[k].id !== 'animal_horse') continue;
+      const [hx, hy] = k.split(',').map(Number);
+      const d = Math.hypot(hx - state.player.ix, hy - state.player.iy);
+      if (d < bestDist) { bestDist = d; bestKey = k; }
+    }
+    if (!bestKey) {
+      // No horse owned yet — drop the player into the shop's Animals
+      // tab so they can grab one. Mirrors the Barn / Staff buttons'
+      // first-time flow.
+      activeShopTab = 'animal';
+      openShop();
+      audio.play('click');
+      return;
+    }
+    const [hx, hy] = bestKey.split(',').map(Number);
+    if (!state.player.queue) state.player.queue = [];
+    state.player.queue.push({ tool: 'mount', ix: hx, iy: hy, horseKey: bestKey });
+    audio.play('click');
+  });
+  tb.appendChild(horseBtn);
   refreshTools();
 }
 function refreshTools() {
