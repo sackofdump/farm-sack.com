@@ -6388,6 +6388,10 @@ function animalAgeIndex(placed) {
 function animalAgeStage(placed) { return ANIMAL_AGE_STAGES[animalAgeIndex(placed)]; }
 function animalAgeMul(placed)   { return ANIMAL_AGE_MULS[animalAgeIndex(placed)] || 0; }
 function animalIsAdult(placed)  { return animalAgeIndex(placed) >= 1; }
+// Strictly the Mature stage (index 3) — used by the barn's bulk
+// "Slaughter mature" path so the button only sweeps fully-grown animals
+// instead of every adult-or-older animal that canSlaughter accepts.
+function animalIsMature(placed) { return animalAgeIndex(placed) >= 3; }
 // Time until the next age step, in ms (0 once Mature).
 function animalNextAgeMs(placed) {
   const idx = animalAgeIndex(placed);
@@ -6706,7 +6710,7 @@ const BUILDING_MENUS = {
       // so the labels match what the player sees.
       const bulkCollectRows = rows.filter(r => animalReadyToHarvest(r.it));
       const bulkSlaughterRows = hasSlaughterhouse
-        ? rows.filter(r => ANIMAL_MEAT[r.it.id] && canSlaughter(r.it.id, r.it))
+        ? rows.filter(r => ANIMAL_MEAT[r.it.id] && animalIsMature(r.it))
         : [];
       const bulkPetRows = rows.filter(r => getAnimalLoyalty(r.it) < 60);
       const bulkBtnStyle = (palette, dim) =>
@@ -7299,7 +7303,7 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         }
         const m = state._barnRosterMode || 'species';
         const filtered = m === 'ready'  ? visibleRows.filter(r => animalReadyToHarvest(r.it))
-                       : m === 'mature' ? visibleRows.filter(r => canSlaughter(r.it.id, r.it))
+                       : m === 'mature' ? visibleRows.filter(r => ANIMAL_MEAT[r.it.id] && animalIsMature(r.it))
                        : visibleRows;
         // Walk a list of {ix,iy,extra...} rows in greedy nearest-
         // neighbour order. Starting point = the tail of any existing
@@ -7345,7 +7349,7 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         } else if (kind === 'slaughter') {
           const cand = [];
           for (const r of filtered) {
-            if (!ANIMAL_MEAT[r.it.id] || !canSlaughter(r.it.id, r.it)) continue;
+            if (!ANIMAL_MEAT[r.it.id] || !animalIsMature(r.it)) continue;
             const aKey = r.ix + ',' + r.iy;
             if ((state.player.queue || []).some(q =>
               (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver' || q.tool === 'slaughterAtTile') && q.animalKey === aKey)) continue;
@@ -14287,6 +14291,12 @@ function bindInput() {
           const it = state.placed[tileKey(px, py)];
           if (!it || !it.id) continue;
           if (!it.id.startsWith('building_')) continue;
+          // Sprinkler is single-tile and the sprite never extends NW of
+          // its anchor, so the wide SE probe was capturing clicks on
+          // tiles up to four squares away — making the sprinkler feel
+          // like it had a giant hitbox that stole clicks meant for
+          // crops. Anchor-tile (and pickPlacedItem alpha hit) is enough.
+          if (it.id === 'building_sprinkler' && (dx > 0 || dy > 0)) continue;
           if (!kindFilter(it)) continue;
           return { ix: px, iy: py, placed: it };
         }
