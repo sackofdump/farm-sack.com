@@ -1757,6 +1757,9 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>HUD chip shows your current <b>Prestige %</b> bonus (visible once you've banked any). Hover for "+N% to coins / XP / movement / growth · M resets".</li>
+        <li>Settings → <b>Wipe save</b> now preserves your prestige bonus across the wipe + reload.</li>
+        <li>Layout edit mode <b>snaps to default</b> when you drag a panel within ~28 px of its original spot — small nudges no longer leave a 1cm gap.</li>
         <li>Grass tint shifts a little with each prestige (hue rotates +25° per reset, slight saturation bump) so a veteran farm reads visibly different from a fresh one. Trees / animals / buildings stay their normal colours.</li>
         <li>Animals can now be placed in <b>bulk</b> too — shift+drag a rect with an animal staged from the shop and the bounding box fills with one click (skips occupied tiles + tiles outside the pen, stops when you run out of coins).</li>
         <li>Reset Farm now re-rolls the Quest + Daily slates immediately, so the panel doesn't sit empty after a prestige.</li>
@@ -1950,6 +1953,12 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
       <span class="xpFill"><i id="xpFill"></i></span>
     </div>
     <div class="chip" title="Day"><span class="iconDot day"></span><span>Day <b id="dayTxt">1</b></span></div>
+    <!-- Prestige chip — hidden by default, revealed by refreshHud once
+         the player has banked any prestige bonus. -->
+    <div class="chip" id="prestigeChip" title="Prestige bonus" style="display:none;">
+      <span style="font-size:14px;line-height:1;">&#127775;</span>
+      <span>+<b id="prestigeBonusTxt">0</b>%</span>
+    </div>
   </div>
   <div class="actions">
     <!-- Background music controls -->
@@ -2856,9 +2865,15 @@ function ensureLayoutDragHandlers() {
       const layout = (state.prefs && state.prefs.layout) || {};
       const start = layout[t.key] || { dx: 0, dy: 0 };
       const startMx = ev.clientX, startMy = ev.clientY;
+      // Snap radius — within this many CSS pixels of the default
+      // position (dx=0, dy=0) the offset rounds back to zero so a
+      // small nudge "feels" like it locks back into the original
+      // spot instead of leaving a 1cm gap.
+      const SNAP_PX = 28;
       const onMove = (mv) => {
-        const dx = start.dx + (mv.clientX - startMx);
-        const dy = start.dy + (mv.clientY - startMy);
+        let dx = start.dx + (mv.clientX - startMx);
+        let dy = start.dy + (mv.clientY - startMy);
+        if (Math.abs(dx) <= SNAP_PX && Math.abs(dy) <= SNAP_PX) { dx = 0; dy = 0; }
         if (!state.prefs) state.prefs = {};
         if (!state.prefs.layout) state.prefs.layout = {};
         state.prefs.layout[t.key] = { dx, dy };
@@ -2867,6 +2882,13 @@ function ensureLayoutDragHandlers() {
       const onUp = () => {
         window.removeEventListener('pointermove', onMove, true);
         window.removeEventListener('pointerup',   onUp,   true);
+        // Final snap on release — same rule, in case the player
+        // released a hair outside the live snap radius.
+        const cur = (state.prefs && state.prefs.layout && state.prefs.layout[t.key]) || { dx: 0, dy: 0 };
+        if (Math.abs(cur.dx) <= SNAP_PX && Math.abs(cur.dy) <= SNAP_PX) {
+          state.prefs.layout[t.key] = { dx: 0, dy: 0 };
+          applyLayoutOffsets();
+        }
         storage.save();
       };
       window.addEventListener('pointermove', onMove, true);
@@ -11903,6 +11925,22 @@ function refreshHud() {
   }
   const day = Math.floor((Date.now() - state.startedAt) / DAY_MS) + 1;
   document.getElementById('dayTxt').textContent = day;
+  // Prestige chip — visible only once the player has banked any
+  // bonus. Bonus value is the same number prestigeMul ()'s built on,
+  // so the chip's % matches the multiplier applied to all gains.
+  const presBonus = (state.prestige && state.prestige.totalBonus) || 0;
+  const presChip  = document.getElementById('prestigeChip');
+  if (presChip) {
+    if (presBonus > 0) {
+      presChip.style.display = '';
+      const txt = document.getElementById('prestigeBonusTxt');
+      if (txt) txt.textContent = Math.round(presBonus * 100);
+      const cnt = (state.prestige && state.prestige.count) || 0;
+      presChip.title = `Prestige bonus: +${Math.round(presBonus * 100)}% to coins / XP / movement / growth · ${cnt} reset${cnt === 1 ? '' : 's'}`;
+    } else {
+      presChip.style.display = 'none';
+    }
+  }
   refreshQuestsPanel();
 }
 const TOOLS = [
@@ -15352,6 +15390,25 @@ async function startGame() {
     } catch (e) { /* ignore — fall back to local */ }
   }
   if (!had) had = storage.load();
+  // Wipe-Save preserves prestige across the reload via a separate
+  // localStorage key. If the carry record exists AND the loaded state
+  // doesn't have any banked bonus, replay the carry so the new run
+  // keeps every prestige the player has earned.
+  try {
+    const carryRaw = localStorage.getItem('fs_prestige_carry');
+    if (carryRaw) {
+      const carry = JSON.parse(carryRaw);
+      const cur   = (state.prestige && state.prestige.totalBonus) || 0;
+      if (carry && (carry.totalBonus || 0) > cur) {
+        state.prestige = {
+          count:        carry.count        || 0,
+          totalBonus:   carry.totalBonus   || 0,
+          lastResetAt:  carry.lastResetAt  || 0,
+        };
+      }
+      localStorage.removeItem('fs_prestige_carry');
+    }
+  } catch (e) {}
   // Re-register any previously-discovered mutations as plantable crops
   // BEFORE the migration loop runs so saved plot.crop values that point at
   // a mutation id aren't wiped by the "unknown crop" cleanup.
@@ -15749,7 +15806,16 @@ async function startGame() {
     storage.save();
   });
   document.getElementById('resetBtn').onclick     = () => {
-    if (confirm('Wipe this profile\'s save and start a fresh farm?')) { storage.wipe(); location.reload(); }
+    if (!confirm('Wipe this profile\'s save and start a fresh farm? (Your prestige bonus is preserved.)')) return;
+    // Stash the prestige record in a separate localStorage key so the
+    // wipe doesn't blow it away. startGame restores it after the
+    // fresh state initialises so the bonus carries across.
+    try {
+      const p = state.prestige || { count: 0, totalBonus: 0, lastResetAt: 0 };
+      localStorage.setItem('fs_prestige_carry', JSON.stringify(p));
+    } catch (e) {}
+    storage.wipe();
+    location.reload();
   };
   const logoutBtn = document.getElementById('logoutBtn');
   if (logoutBtn) logoutBtn.onclick = async () => {
