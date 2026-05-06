@@ -1326,8 +1326,26 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
 }
 .toast.err  { border-color: var(--danger); }
 .toast.good { border-color: #6CD4FF; }
+/* Epic toast — used for level-up so the milestone reads louder than the
+   rest of the chip-style toasts. Bigger font, gold gradient fill,
+   pulsing border, and a punchier in/out animation. */
+.toast.epic {
+  background: linear-gradient(to bottom, #FFE066 0%, #C28A1A 100%);
+  color: #2A1A05;
+  padding: 14px 28px;
+  font-size: 22px;
+  font-weight: 900;
+  letter-spacing: 0.5px;
+  border-width: 4px;
+  border-color: #FFF6D6;
+  text-shadow: 0 1px 0 rgba(255, 246, 214, 0.7);
+  box-shadow: 0 0 24px rgba(255, 224, 102, 0.85), 0 6px 12px rgba(0, 0, 0, 0.35);
+  animation: epicIn 0.32s ease-out, epicOut 0.5s ease-in 2.4s forwards;
+}
 @keyframes tin  { from { transform: translateY(20px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
 @keyframes tout { to { transform: translateY(20px); opacity: 0; } }
+@keyframes epicIn  { from { transform: translateY(28px) scale(0.85); opacity: 0; } to { transform: translateY(0) scale(1); opacity: 1; } }
+@keyframes epicOut { to { transform: translateY(20px) scale(0.95); opacity: 0; } }
 
 /* ---------- Loading screen ---------- */
 #loadingScreen {
@@ -5317,11 +5335,14 @@ const audio = (() => {
         noise(0.10, 0.038, 320);
         noise(0.08, 0.020, 700);
         break;
-      // Levelup = mellow rising chord, no square waves. Triad + sustain.
+      // Levelup = celebratory rising fanfare. Louder + longer than the
+      // old triad and with a fourth top note so the milestone reads as
+      // an actual fanfare instead of a quiet chord.
       case 'levelup':
-        blip(392, 0.14, 'sine', 0.045);
-        blip(523, 0.18, 'sine', 0.045, 0.05);
-        blip(659, 0.30, 'triangle', 0.040, 0.10);
+        blip(392, 0.20, 'sine',     0.10);
+        blip(523, 0.24, 'sine',     0.10, 0.07);
+        blip(659, 0.28, 'sine',     0.10, 0.14);
+        blip(784, 0.50, 'triangle', 0.10, 0.22);
         break;
       // Click = soft tap, no tone — just a very short low-mid thump.
       case 'click':   noise(0.04, 0.018, 1200); break;
@@ -9592,6 +9613,9 @@ function hireStaff(role, opts) {
   state.staff.lastUpkeepAt = Date.now();
   storage.save();
   refreshHud();
+  // Return the freshly-pushed member so callers (e.g. zone-confirm)
+  // can immediately open their menu / task list without scanning.
+  return state.staff.members[state.staff.members.length - 1];
 }
 // ----- Seed container -----
 const SEED_CONTAINER_CAP = 1000;
@@ -10144,8 +10168,15 @@ function confirmZoneSelect() {
     toast(`Zone updated for ${z.editingMember.name} — ${tiles.length} tiles.`, false, 'good', 4000);
     audio.play('click');
     storage.save();
-  } else {
-    hireStaff(z.role, { zone: tiles, zoneRect: { x0, y0, x1, y1 } });
+  }
+  // Hold a reference to the staffer the zone applies to (newly-hired or
+  // re-zoned) so we can pop their job-list menu after the confirm path
+  // finishes — gives the player one-click access to flip task flags
+  // (Plow / Plant / Water / Harvest checkboxes) without having to
+  // hunt the staffer down on the map.
+  let openedMember = z.editingMember || null;
+  if (!z.editingMember) {
+    openedMember = hireStaff(z.role, { zone: tiles, zoneRect: { x0, y0, x1, y1 } });
     toast(`Crop Farmer hired — ${tiles.length} tiles assigned.`, false, 'good', 4000);
     audio.play('coin');
   }
@@ -10167,6 +10198,13 @@ function confirmZoneSelect() {
   live.highlightedStaff = null;
   if (!hasContainer) {
     setTimeout(() => openModal('seedContainerReminderModal'), 250);
+  } else if (openedMember) {
+    // No reminder modal in the way — surface this staffer's job list
+    // (task checkboxes, wages, zone size) the moment their zone is
+    // committed. Skip when the seed-container reminder takes priority
+    // so the player isn't fighting two modals at once. Defer one tick
+    // so the cancelZoneSelect banner finishes hiding first.
+    setTimeout(() => openStaffMenu(openedMember, window.innerWidth/2 - 200, window.innerHeight/2 - 200), 60);
   }
 }
 function staffWanderTarget(m) {
@@ -11379,7 +11417,7 @@ function grantXp(amount) {
   while (state.level < LEVEL_THRESHOLDS.length - 1 && state.xp >= LEVEL_THRESHOLDS[state.level]) {
     state.level++;
     audio.play('levelup');
-    toast(`Level up! Now level ${state.level}.`, false, 'good');
+    toast(`⭐ LEVEL ${state.level}!`, false, 'epic');
     refreshSeedStrip();
     // Rebuild the toolbar so any unlock-gated buttons (Barn at 8,
     // Staff Hall at 15, Greenhouse at 12, Horse at 15, Reset at 20)
@@ -12396,10 +12434,17 @@ function fxFloat(ix, iy, text, slot=0, color) {
 function toast(msg, isErr=false, kind, durationMs) {
   const root = document.getElementById('toasts');
   const el = document.createElement('div');
-  el.className = 'toast' + (isErr ? ' err' : (kind === 'good' ? ' good' : ''));
+  let cls = 'toast';
+  if (isErr) cls += ' err';
+  else if (kind === 'good') cls += ' good';
+  else if (kind === 'epic') cls += ' epic';
+  el.className = cls;
   el.textContent = msg;
   root.appendChild(el);
-  setTimeout(() => el.remove(), durationMs || 2200);
+  // Epic toasts ride a longer animation; default lifetime keeps pace
+  // so the fade-out doesn't clip the celebratory in-curve.
+  const defaultMs = kind === 'epic' ? 3000 : 2200;
+  setTimeout(() => el.remove(), durationMs || defaultMs);
 }
 
 // ============================================================
