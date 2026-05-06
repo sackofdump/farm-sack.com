@@ -14806,26 +14806,36 @@ function buildTooltipHTML(ix, iy) {
         // Per-building hover line — describe what the building actually
         // does + current live state. Slaughterhouse is special-cased
         // earlier in this function.
+        // Reusable MAXED tag — capped buildings append this in their hover
+        // line when buildingIsMaxed() flips true so the player can tell at
+        // a glance that buying another copy won't increase the bonus.
+        const _maxedTag = ` · <span style="color:#3F8338;font-weight:700;">MAXED</span>`;
         const BUILDING_HOVER = {
-          building_house:        () => `<span style="color:#2D6E33">+${Math.round((cottageXpMul()-1)*100)}% XP per harvest</span> · +5% per copy`,
+          building_house:        () => {
+            const tag = buildingIsMaxed('building_house') ? _maxedTag : ` · +5% per copy (cap +25%)`;
+            return `<span style="color:#2D6E33">+${Math.round((cottageXpMul()-1)*100)}% XP per harvest</span>${tag}`;
+          },
           building_silo:         (p) => {
             const own = Math.floor((p && typeof p.feed === 'number') ? p.feed : 0);
             const total = Math.floor(siloFeed());
             const cap = siloCapacity();
             const active = total > 0 && cap > 0;
+            const maxed = buildingIsMaxed('building_silo');
             return `<span style="color:#2D6E33">+${Math.round((siloYieldMul()-1)*100)}% crops &amp; animal yield</span>` +
+                   (maxed ? _maxedTag : '') +
                    `<br>This silo: <b>${own} / ${SILO_CAPACITY_PER}</b>` +
                    `<br>Network: <b>${total} / ${cap}</b>` +
                    (active
                      ? `<br><span style="color:#2D6E33">Active: faster animal yields + age-up</span>`
                      : `<br><span style="color:#8a5a1f">Idle — fill it to speed up animal yields.</span>`);
           },
-          building_market_stall: () => `<span style="color:#2D6E33">+${Math.round((marketSellMul()-1)*100)}% sell prices</span> · +5% per copy`,
+          building_market_stall: () => {
+            const tag = buildingIsMaxed('building_market_stall') ? _maxedTag : ` · +5% per copy (cap +25%)`;
+            return `<span style="color:#2D6E33">+${Math.round((marketSellMul()-1)*100)}% sell prices</span>${tag}`;
+          },
           building_windmill:     () => {
             const cur = Math.round((windmillGrowMul() - 1) * 100);
-            const tag = windmillIsMaxed()
-              ? ` · <span style="color:#3F8338;font-weight:700;">MAXED</span>`
-              : ` · +5% per copy (cap +25%)`;
+            const tag = buildingIsMaxed('building_windmill') ? _maxedTag : ` · +5% per copy (cap +25%)`;
             return `<span style="color:#2D6E33">+${cur}% crop growth speed</span>${tag}`;
           },
           building_barn:         () => `Opens the fenced animal pen — buy animals in the shop and drop them inside.`,
@@ -14843,7 +14853,9 @@ function buildTooltipHTML(ix, iy) {
             const total = Math.floor(coffeeStored());
             const cap = coffeeStandCapacity();
             const active = total > 0 && cap > 0;
+            const maxed = buildingIsMaxed('building_coffee_stand');
             return `<span style="color:#7A3F00">+${Math.round(COFFEE_SPEED_BONUS*100)}% staff speed</span> while it has coffee.` +
+                   (maxed ? _maxedTag : '') +
                    `<br>This stand: <b>${own} / ${COFFEE_CAPACITY_PER}</b>` +
                    `<br>Network: <b>${total} / ${cap}</b>` +
                    (active ? ' · <span style="color:#1f7a3e;">active</span>' : '');
