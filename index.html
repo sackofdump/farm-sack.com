@@ -8078,9 +8078,14 @@ function barnPenAt(ix, iy) {
       };
     }
   }
-  const r = ((state.rotation || 0) % 4 + 4) % 4;
+  // Pen side = camera rotation + the per-placement R-key offset on
+  // live.placeMode so the player can spin the pen to a preferred side
+  // without rotating the whole camera.
+  const placeOffset = (live.placeMode && !live.placeMode.moving) ? (live.placeMode.rot || 0) : 0;
+  const r = ((state.rotation || 0) + placeOffset) % 4;
+  const rr = ((r % 4) + 4) % 4;
   let dx0, dy0;
-  switch (r) {
+  switch (rr) {
     case 0: dx0 = -2; dy0 =  1; break;
     case 1: dx0 =  1; dy0 = -3; break;
     case 2: dx0 = -3; dy0 = -6; break;
@@ -10671,7 +10676,7 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       const origRecord = { ...placed };
       delete state.placed[k];
       live.placeMode = { id: placed.id, name: item.name, cost: 0, cat, moving: true,
-                         origKey: k, origRecord };
+                         origKey: k, origRecord, rot: 0 };
       document.getElementById('stage').classList.add('placeMode');
       const banner = document.getElementById('placeBanner');
       if (banner) {
@@ -12017,14 +12022,16 @@ function finishBuyLandRect() {
 // ============================================================
 function startPlaceMode(item) {
   if (state.coins < item.cost) { toast('Not enough coins.', true); audio.play('error'); return; }
-  live.placeMode = { id: item.id, name: item.name, cost: item.cost, cat: item.cat };
+  live.placeMode = { id: item.id, name: item.name, cost: item.cost, cat: item.cat, rot: 0 };
   closeAllModals();
   document.getElementById('stage').classList.add('placeMode');
   const banner = document.getElementById('placeBanner');
   banner.classList.remove('hidden');
   document.getElementById('placeBannerImg').src = imgPath(item.id);
   const where = item.cat === 'animal' ? 'in the Animal Pen' : 'on grass outside the fences';
-  document.getElementById('placeBannerText').textContent = `Placing ${item.name} (${item.cost}¢) — click a tile ${where}`;
+  const isBuilding = item.cat === 'building' || (item.id && item.id.startsWith('building_'));
+  const rotHint = isBuilding ? ' · press R to rotate' : '';
+  document.getElementById('placeBannerText').textContent = `Placing ${item.name} (${item.cost}¢) — click a tile ${where}${rotHint}`;
   // Hide the action-tip banner while the place banner is up.
   refreshTools();
 }
@@ -14455,7 +14462,22 @@ function bindInput() {
     else if (k === '+' || k === '=') camera.setZoom(state.zoom + ZOOM_STEP);
     else if (k === '-') camera.setZoom(state.zoom - ZOOM_STEP);
     else if (k === ' ') { camera.centerOnFarm(); e.preventDefault(); }
-    else if (k === 'r') { camera.rotate(1);  audio.play('click'); }
+    else if (k === 'r') {
+      // While placing a building, R rotates the building's facing
+      // (cycles 0..3) instead of spinning the world camera. Only the
+      // barn currently has a rotation-sensitive footprint (its pen
+      // side), but the field is generic so future directional
+      // buildings can read it. Non-building placeModes still get the
+      // camera spin so trees / decor / animals behave as before.
+      const pm = live.placeMode;
+      const isBuildingPlace = pm && (pm.cat === 'building' || (pm.id && pm.id.startsWith('building_')));
+      if (isBuildingPlace) {
+        pm.rot = ((pm.rot || 0) + 1) % 4;
+        audio.play('click');
+      } else {
+        camera.rotate(1); audio.play('click');
+      }
+    }
     else if (k === 't') { camera.rotate(-1); audio.play('click'); }
     else if (k === 'q' || k === 'w') {
       const order = CROP_IDS.filter(id => state.level >= CROPS[id].unlock);
