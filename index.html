@@ -1737,6 +1737,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
+        <li>Each placed horse now gives <b>+5% staff speed</b>, capped at <b>+25%</b> (5 horses). Stacks multiplicatively with the Speedy Hands upgrade.</li>
+        <li>Crop Farmer's per-staffer menu now has <b>Plow / Plant / Water / Harvest</b> task checkboxes — uncheck one to make that staffer skip it. All on by default.</li>
         <li>Crop Farmers' coffee skip threshold tightened from 8 → 49 free units to match the silo-feed gate's stricter pacing.</li>
         <li>Crop Farmers' silo-feed skip threshold tightened from 20 → 99 free units (so the silo has to be a lot lower before they'll plant new feed crops on top).</li>
         <li>Slaughter price is now <b>per-animal only</b> — base meat × age multiplier + the per-animal weight bonus. The flat silo-network slaughter bonus has been removed entirely. Staff Hall roster cap also reads correctly now (sums each role's max instead of the legacy 2).</li>
@@ -2592,7 +2594,25 @@ const STAFF_SPEED_MAX_LEVEL = STAFF_SPEED_M.length - 1;
 const STAFF_SPEED_UNLOCK = 15;
 function staffSpeedMul() {
   const lvl = Math.min(STAFF_SPEED_MAX_LEVEL, (state.player && state.player.staffSpeedLevel) || 0);
-  return STAFF_SPEED_M[lvl] || 1;
+  return (STAFF_SPEED_M[lvl] || 1) * horseStaffSpeedMul();
+}
+// Horse stable bonus: every placed horse adds +5% to staff speed,
+// capped at +25% (5 horses worth). Stacks multiplicatively with the
+// Speedy Hands upgrade so a maxed farm can pair both for the full
+// stack. Returns a multiplier (1.0 base) so the call site can just
+// multiply through.
+const HORSE_STAFF_SPEED_PER  = 0.05;
+const HORSE_STAFF_SPEED_CAP  = 0.25;
+function placedHorseCount() {
+  let n = 0;
+  for (const k in state.placed) {
+    const it = state.placed[k];
+    if (it && it.id === 'animal_horse') n++;
+  }
+  return n;
+}
+function horseStaffSpeedMul() {
+  return 1 + Math.min(HORSE_STAFF_SPEED_CAP, HORSE_STAFF_SPEED_PER * placedHorseCount());
 }
 // Steep ramp so each tier costs noticeably more than the last:
 // 12.5k → 31k → 78k for the +50% / +75% / +100% tiers.
@@ -3684,7 +3704,7 @@ const SHOP_ITEMS = [
   { cat: 'animal', id: 'animal_goat',    name: 'Goat',    cost: 600,  sub: 'Yields goat milk (63¢) · meat 563-1126¢',  unlock: 12 },
   { cat: 'animal', id: 'animal_cow',     name: 'Cow',     cost: 750,  sub: 'Milk (81¢) · meat 700-1400¢ · Cow Dung +5% Plant Growth Speed', unlock: 13 },
   { cat: 'animal', id: 'animal_dog',     name: 'Dog',     cost: 350,  sub: 'Loyal guardian — chases off coyotes',      unlock: 14 },
-  { cat: 'animal', id: 'animal_horse',   name: 'Horse',   cost: 1200, sub: 'Majestic · ride for fast travel',          unlock: 15 },
+  { cat: 'animal', id: 'animal_horse',   name: 'Horse',   cost: 1200, sub: 'Ride for 2× speed · each placed horse +5% staff speed (cap +25%)',          unlock: 15 },
   // ---- Buildings (each gives a stacking farm bonus while placed) ----
   { cat: 'building', id: 'building_house',        name: 'Cottage',      cost: 2250, sub: '+5% XP per harvest (cap +25%)',  unlock: 6  },
   { cat: 'building', id: 'building_barn',         name: 'Big Red Barn', cost: 3300, sub: 'Opens the animal pen — unlocks livestock', unlock: 8  },
