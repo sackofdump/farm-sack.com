@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Greenhouse <b>Start Brew</b> button moved into the Brew Preview section so it's always visible without scrolling past the active-brews list. Active Brews header now reads "Active brews (N/5)".</li>
         <li>Greenhouse upgrades extended <b>T4 → T10</b>. Each tier now multiplies the instability fail chance: T1 = 1.0× (no help), T4 = 0.55×, T10 = 0.08× (max-instability brew is under 5% fail). Tiers also keep ramping rarity bonus + brew speed; costs ramp from 900k (T5) to 70M (T10).</li>
         <li>New <b>Greenhouse</b> button on the toolbar between Staff Hall and Horse — opens the mutation lab instantly (no walk to the building). Greyed out until the greenhouse unlocks; falls back to the shop's Buildings tab if none is placed.</li>
         <li>Clicking <b>Open Greenhouse</b> on the building menu also opens the lab immediately instead of walking the farmer over first.</li>
@@ -14394,8 +14395,17 @@ function renderMutationLab() {
   slotsHtml += `</div>`;
 
   // ---- Preview / cost ----
+  // Brew button lives inside this section so the player doesn't have
+  // to scroll past the active-brews list to start a new one.
   const failPct = Math.round(preview.fail * 100);
   const recipesCount = preview.recipes.length;
+  const runs = state.greenhouse.activeRuns;
+  const queueFull = runs.length >= 5;
+  const canBrew = state.coins >= totalCost && !queueFull;
+  const brewDim = canBrew ? '' : 'opacity:0.45;filter:grayscale(0.6);cursor:not-allowed;';
+  const brewLabel = queueFull
+    ? 'Queue full (5/5)'
+    : `Start Brew (${totalCost}&cent;)`;
   const previewHtml = `
     <div class="settings-section" style="margin-top:6px;">
       <h3 style="margin:6px 0 8px;">Brew preview</h3>
@@ -14409,12 +14419,14 @@ function renderMutationLab() {
         return `<b style="color:#B23A2A;">0 &mdash; Seedling Burst only</b>`;
       })()}</div>
       <div class="settings-row" style="justify-content:space-between;"><span>Total cost</span><b style="color:${state.coins>=totalCost?'#4A2E15':'#B23A2A'};">${totalCost}&cent;</b></div>
+      <div style="display:flex;justify-content:center;margin-top:10px;">
+        <button class="splashBtn primary" id="ghBrewBtn" style="width:auto;padding:10px 22px;${brewDim}" ${canBrew?'':'disabled'}>${brewLabel}</button>
+      </div>
     </div>
   `;
 
   // ---- Active runs list ----
-  const runs = state.greenhouse.activeRuns;
-  let runsHtml = `<div class="settings-section" style="margin-top:6px;"><h3 style="margin:6px 0 8px;">Active brews (${runs.length})</h3>`;
+  let runsHtml = `<div class="settings-section" style="margin-top:6px;"><h3 style="margin:6px 0 8px;">Active brews (${runs.length}/5)</h3>`;
   if (!runs.length) {
     runsHtml += `<div style="color:#4A2E15;font-size:13px;">No active brews. Start one below.</div>`;
   } else {
@@ -14441,22 +14453,10 @@ function renderMutationLab() {
   }
   runsHtml += `</div>`;
 
-  // ---- Brew button ----
-  const queueFull = runs.length >= 5;
-  const canBrew = state.coins >= totalCost && !queueFull;
-  const dimStyle = canBrew ? '' : 'opacity:0.45;filter:grayscale(0.6);cursor:not-allowed;';
-  const brewLabel = queueFull
-    ? 'Queue full (5/5)'
-    : `Start Brew (${totalCost}&cent;)`;
-  const brewBtnHtml = `
-    <div class="modal-foot" style="justify-content:center;gap:10px;">
-      <button class="splashBtn primary" id="ghBrewBtn" style="width:auto;padding:10px 22px;${dimStyle}" ${canBrew?'':'disabled'}>
-        ${brewLabel}
-      </button>
-    </div>
-  `;
-
-  body.innerHTML = headerHtml + seedHtml + slotsHtml + previewHtml + runsHtml + brewBtnHtml;
+  // Start Brew button now lives inside the preview section above so
+  // the player doesn't have to scroll past the active-brews list to
+  // find it.
+  body.innerHTML = headerHtml + seedHtml + slotsHtml + previewHtml + runsHtml;
 
   // Wire seed dropdowns.
   const aSel = body.querySelector('#ghSeedA'); aSel.value = seedA;
