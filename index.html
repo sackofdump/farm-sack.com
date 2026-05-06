@@ -14229,12 +14229,31 @@ function bindInput() {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     const k = e.key.toLowerCase();
     if (k === 'escape') {
+      // Close any visible menu / modal FIRST so Esc reads as "close
+      // this thing." Falls through to placeMode / queue cancellation
+      // only when nothing's open.
+      const openModalEl = document.querySelector('.modal:not(.hidden)');
+      if (openModalEl) { openModalEl.classList.add('hidden'); return; }
+      const animalMenu = document.getElementById('animalMenu');
+      if (animalMenu && !animalMenu.classList.contains('hidden')) {
+        if (typeof closeAnimalMenu === 'function') closeAnimalMenu();
+        else animalMenu.classList.add('hidden');
+        return;
+      }
+      const seedModal = document.getElementById('seedContainerModal');
+      if (seedModal && !seedModal.classList.contains('hidden')) {
+        if (typeof closeSeedContainerModal === 'function') closeSeedContainerModal();
+        else seedModal.classList.add('hidden');
+        return;
+      }
       if (live.placeMode) { cancelPlaceMode(); return; }
       if (state.player.queue.length > 0 || state.player.busy > 0) {
         clearActionQueue();
         toast('Cancelled.', false);
         return;
       }
+      // Last resort — close anything still hanging around (e.g. inline
+      // banners that aren't .modal-classed).
       closeAllModals();
       return;
     }
