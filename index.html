@@ -1739,6 +1739,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Greenhouse mutation queue cap raised 4 → 5; <b>Start Brew</b> reads "Queue full (5/5)" + greys out when at the limit.</li>
+        <li>Greenhouse posts a toast + chime when a brew finishes while you're not in the lab — no more peeking at the modal to check.</li>
         <li>Greenhouse Claim button visibly greys out + reads "Brewing…" while the timer is running, so the disabled state actually reads as disabled.</li>
         <li>Render throttle scales with zoom: ~45 FPS at moderate zoom, ~30 FPS at low, ~20 FPS at min — sprite blits per frame dominate when the entire farm is on screen, so we just skip a frame instead of letting it stutter. Logic ticks (sim, walks, harvest) still run every frame.</li>
         <li>Late-game perf: refreshHud + quest-panel rebuild throttled to ~5Hz from the loop (inline callers still fire instantly), and the quest-panel innerHTML write is skipped when the markup hasn't actually changed.</li>
@@ -13999,7 +14001,7 @@ function ghStartRun(seedA, seedB, choices) {
   ensureGreenhouseState();
   const cost = ghTotalCost(seedA, seedB, choices);
   if (state.coins < cost) { toast('Not enough coins.', true); audio.play('error'); return false; }
-  if (state.greenhouse.activeRuns.length >= 4) { toast('Greenhouse is full — claim a run first.', true); audio.play('error'); return false; }
+  if (state.greenhouse.activeRuns.length >= 5) { toast('Greenhouse queue is full (5 brews max) — claim one first.', true); audio.play('error'); return false; }
   state.coins -= cost;
   const ms = ghBrewMs();
   const run = {
@@ -14113,8 +14115,24 @@ function ghClaim(runId) {
 
 // ---- Background ticker (purges nothing; lets timers redraw) ----
 function ghTickRuns() {
-  // No-op for now: claim is manual. Hook left here so future passive auto-
-  // claim logic has a clean place to live.
+  // Surface a one-shot toast the first time each run hits the ready
+  // gate, so the player doesn't have to keep peeking at the
+  // greenhouse menu while they farm. Suppressed while the modal is
+  // already open since the run row already says "Ready!".
+  if (!state.greenhouse || !Array.isArray(state.greenhouse.activeRuns)) return;
+  const labOpen = document.getElementById('mutationModal') &&
+                  !document.getElementById('mutationModal').classList.contains('hidden');
+  for (const r of state.greenhouse.activeRuns) {
+    if (!r || r.alertedReady) continue;
+    if (Date.now() < r.endAt) continue;
+    r.alertedReady = true;
+    if (!labOpen) {
+      const aName = (CROPS[r.seedA] && CROPS[r.seedA].name) || r.seedA;
+      const bName = (CROPS[r.seedB] && CROPS[r.seedB].name) || r.seedB;
+      toast(`Greenhouse brew ready — ${aName} × ${bName}.`, false, 'good', 5000);
+      audio.play('levelup');
+    }
+  }
 }
 
 // ---- Mutation Lab modal UI ----
@@ -14367,11 +14385,16 @@ function renderMutationLab() {
   runsHtml += `</div>`;
 
   // ---- Brew button ----
-  const canBrew = state.coins >= totalCost && runs.length < 4;
+  const queueFull = runs.length >= 5;
+  const canBrew = state.coins >= totalCost && !queueFull;
+  const dimStyle = canBrew ? '' : 'opacity:0.45;filter:grayscale(0.6);cursor:not-allowed;';
+  const brewLabel = queueFull
+    ? 'Queue full (5/5)'
+    : `Start Brew (${totalCost}&cent;)`;
   const brewBtnHtml = `
     <div class="modal-foot" style="justify-content:center;gap:10px;">
-      <button class="splashBtn primary" id="ghBrewBtn" style="width:auto;padding:10px 22px;" ${canBrew?'':'disabled'}>
-        Start Brew (${totalCost}&cent;)
+      <button class="splashBtn primary" id="ghBrewBtn" style="width:auto;padding:10px 22px;${dimStyle}" ${canBrew?'':'disabled'}>
+        ${brewLabel}
       </button>
     </div>
   `;
