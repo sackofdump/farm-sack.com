@@ -1732,6 +1732,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Zoom-out range extended (min 0.5× → 0.25×) so a fully expanded farm fits on one screen.</li>
+        <li>Edge-pan: while dragging a bulk-select rectangle (paint, move, zone, buy-land), push the cursor against any screen edge to scroll the camera that direction — selection follows past what's visible.</li>
         <li>Riding banner moved to the bottom-right corner so it stops overlapping the tool tooltip strip.</li>
         <li>Late-game perf: idle staff now throttle their "find next task" scan to once every 300ms instead of every frame — biggest fix for end-game lag with full crop farms.</li>
         <li>Leaderboard: new <b>Staff Hvst</b> column counting harvests done by your crop farmers + arborist.</li>
@@ -2510,7 +2512,7 @@ const LEVEL_THRESHOLDS = [
 ];
 
 // Camera zoom range.
-const ZOOM_MIN = 0.5, ZOOM_MAX = 1.5, ZOOM_STEP = 0.1;
+const ZOOM_MIN = 0.25, ZOOM_MAX = 1.5, ZOOM_STEP = 0.1;
 
 // Walking farmer who carries out queued actions.
 // Base speed is intentionally slow so faster boots feel meaningful;
@@ -13778,6 +13780,52 @@ function renderMutationBook() {
 // ============================================================
 // MAIN LOOP
 // ============================================================
+// Edge-pan: when one of the bulk-select drag modes is active and the
+// cursor is within EDGE_PAN_PX of the screen border, scroll the camera
+// in that direction. Lets the player extend a paint/move/zone/buyland
+// rectangle past what's currently on screen by pushing into the edge,
+// the same way RTS games do drag-select.
+const EDGE_PAN_PX        = 60;     // distance from edge that activates pan
+const EDGE_PAN_MAX_TILES = 14;     // tiles/sec at the very edge — scaled by depth
+function edgePanTick(dtMs) {
+  if (!live.pointerDown) return;
+  const mode = live.dragMode;
+  if (mode !== 'paintRect' && mode !== 'moveRect' &&
+      mode !== 'buyland'   && mode !== 'zoneSelect' &&
+      mode !== 'paint') return;
+  const mx = live.mouseX, my = live.mouseY;
+  if (typeof mx !== 'number' || typeof my !== 'number') return;
+  const W = window.innerWidth, H = window.innerHeight;
+  // Per-edge "intensity" 0..1 — 1 = cursor is right at (or past) the edge.
+  const leftI   = Math.max(0, (EDGE_PAN_PX - mx) / EDGE_PAN_PX);
+  const rightI  = Math.max(0, (mx - (W - EDGE_PAN_PX)) / EDGE_PAN_PX);
+  const topI    = Math.max(0, (EDGE_PAN_PX - my) / EDGE_PAN_PX);
+  const bottomI = Math.max(0, (my - (H - EDGE_PAN_PX)) / EDGE_PAN_PX);
+  if (!leftI && !rightI && !topI && !bottomI) return;
+  const dt = dtMs / 1000;
+  // Pan rate scales with how deep into the edge zone the cursor is.
+  // Convert tiles/sec to screen px/sec via TILE_W * zoom (rough).
+  const pxPerSec = EDGE_PAN_MAX_TILES * TILE_W * state.zoom;
+  const dx = (leftI - rightI) * pxPerSec * dt;
+  const dy = (topI - bottomI) * pxPerSec * dt;
+  if (dx === 0 && dy === 0) return;
+  state.camX += dx;
+  state.camY += dy;
+  // The cursor's screen pixel hasn't moved, but the world tile under it
+  // has — recompute the rect endpoint so the selection grows as we pan.
+  const t = screenToTile(mx, my);
+  if (t) {
+    if (mode === 'paintRect' && live.paintRect) {
+      live.paintRect.ix1 = t.ix; live.paintRect.iy1 = t.iy;
+    } else if (mode === 'moveRect' && live.moveRect) {
+      live.moveRect.ix1 = t.ix; live.moveRect.iy1 = t.iy;
+    } else if (mode === 'buyland' && live.landRect) {
+      live.landRect.ix1 = t.ix; live.landRect.iy1 = t.iy;
+    } else if (mode === 'zoneSelect' && live.zoneSelect && live.zoneSelect.rect) {
+      live.zoneSelect.rect.ix1 = t.ix; live.zoneSelect.rect.iy1 = t.iy;
+    }
+  }
+}
 let lastSaveT = 0;
 let lastTickT = 0;
 let lastAutoHarvestT = 0;
@@ -13796,6 +13844,7 @@ function loop(t) {
   refreshLiveBuildingMenu();// keep the open building popup's desc text live
   tickCoyote(dt);           // roll for / move / despawn coyote raids and the chasing dog
   tickPlacedAnimals(dt);    // drift pen animals around inside the fence
+  edgePanTick(dt);          // auto-pan camera when a bulk-select drag pushes against the screen edges
   drawAll();
   refreshHud();
   refreshTooltip();   // keep the growing countdown ticking even when the cursor is still
