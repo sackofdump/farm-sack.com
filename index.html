@@ -1739,6 +1739,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Mutation greenhouse no longer collapses your open dropdown when a worker action fires — auto-rerender pauses while the modal has focus or recent pointer activity.</li>
+        <li>Mutation slot costs <b>10×</b> across the board (Magic dust 1.5k → 15k, Enriched soil 600 → 6k, etc.) — top-tier brews are now a real investment.</li>
         <li>Greenhouse tier upgrades cost 4× more (T2 12k → 48k, T3 35k → 140k, T4 90k → 360k).</li>
         <li>Late-game perf: <b>buildingCount / placedHorseCount / siloFeed / coffeeStored</b> are now 200-250ms cached. With 20 crop farmers each calling staffSpeedMul → horseStaffSpeedMul → state.placed walk per frame, the cumulative cost was a real lag source on big farms.</li>
         <li>Coyote sprite faces the right way again (was inverted after the last facing pass).</li>
@@ -13647,26 +13649,26 @@ const MUT_SLOT_KEYS = ['water', 'light', 'soil', 'catalyst'];
 const MUT_SLOT_LABELS = { water:'Water', light:'Light', soil:'Soil', catalyst:'Catalyst' };
 const MUT_SLOT_OPTIONS = {
   water: [
-    { key:'LOW',    label:'Low water',    cost:0,    rarity:-1, instability:1 },
-    { key:'MEDIUM', label:'Medium water', cost:50,   rarity:0,  instability:0 },
-    { key:'HIGH',   label:'High water',   cost:120,  rarity:2,  instability:2 },
+    { key:'LOW',    label:'Low water',    cost:0,     rarity:-1, instability:1 },
+    { key:'MEDIUM', label:'Medium water', cost:500,   rarity:0,  instability:0 },
+    { key:'HIGH',   label:'High water',   cost:1200,  rarity:2,  instability:2 },
   ],
   light: [
-    { key:'NORMAL', label:'Normal light', cost:0,    rarity:0, instability:0 },
-    { key:'HEAT',   label:'Heat lamp',    cost:200,  rarity:2, instability:3 },
-    { key:'UV',     label:'UV bath',      cost:400,  rarity:3, instability:4 },
+    { key:'NORMAL', label:'Normal light', cost:0,     rarity:0, instability:0 },
+    { key:'HEAT',   label:'Heat lamp',    cost:2000,  rarity:2, instability:3 },
+    { key:'UV',     label:'UV bath',      cost:4000,  rarity:3, instability:4 },
   ],
   soil: [
-    { key:'NONE',     label:'Plain soil',    cost:0,    rarity:0, instability:0 },
-    { key:'MINERAL',  label:'Mineral mix',   cost:150,  rarity:1, instability:1 },
-    { key:'ORGANIC',  label:'Organic blend', cost:300,  rarity:2, instability:2 },
-    { key:'ENRICHED', label:'Enriched soil', cost:600,  rarity:4, instability:4 },
+    { key:'NONE',     label:'Plain soil',    cost:0,     rarity:0, instability:0 },
+    { key:'MINERAL',  label:'Mineral mix',   cost:1500,  rarity:1, instability:1 },
+    { key:'ORGANIC',  label:'Organic blend', cost:3000,  rarity:2, instability:2 },
+    { key:'ENRICHED', label:'Enriched soil', cost:6000,  rarity:4, instability:4 },
   ],
   catalyst: [
-    { key:'NONE',     label:'No catalyst',   cost:0,    rarity:0, instability:0 },
-    { key:'ELECTRIC', label:'Electric coil', cost:500,  rarity:3, instability:3 },
-    { key:'CHEMICAL', label:'Chemical bath', cost:800,  rarity:4, instability:4 },
-    { key:'MAGIC',    label:'Magic dust',    cost:1500, rarity:5, instability:6 },
+    { key:'NONE',     label:'No catalyst',   cost:0,     rarity:0, instability:0 },
+    { key:'ELECTRIC', label:'Electric coil', cost:5000,  rarity:3, instability:3 },
+    { key:'CHEMICAL', label:'Chemical bath', cost:8000,  rarity:4, instability:4 },
+    { key:'MAGIC',    label:'Magic dust',    cost:15000, rarity:5, instability:6 },
   ],
 };
 
@@ -14072,6 +14074,18 @@ function openMutationModal() {
   if (discClose) discClose.onclick = () => document.getElementById('mutationDiscoveryModal').classList.add('hidden');
   renderMutationLab();
   openModal('mutationModal');
+  // Track interaction so the auto-rerender loop knows to back off
+  // while the player is reading / picking. Idempotent — re-binding
+  // each open is fine.
+  const modalEl = document.getElementById('mutationModal');
+  if (modalEl && !modalEl._mutInteractBound) {
+    const bump = () => { live._mutationLastInteract = Date.now(); };
+    modalEl.addEventListener('pointerdown', bump);
+    modalEl.addEventListener('pointermove', bump);
+    modalEl.addEventListener('change',      bump);
+    modalEl.addEventListener('input',       bump);
+    modalEl._mutInteractBound = true;
+  }
 }
 
 // Pokémon-style discovery popup. Shows on every named/wild discovery so
@@ -14532,8 +14546,21 @@ function loop(t) {
   if (state.greenhouse && state.greenhouse.activeRuns && state.greenhouse.activeRuns.length) {
     const labOpen = !document.getElementById('mutationModal').classList.contains('hidden');
     if (labOpen && (t - (loop._ghLastT || 0) > 500)) {
-      loop._ghLastT = t;
-      renderMutationLab();
+      // Pause the auto-rerender while the player is actively poking
+      // the modal — re-rendering blows away open <select> dropdowns,
+      // so the dropdown closes mid-pick if a worker action fires
+      // (storage.save → ... → 500ms tick coincides). Same guard
+      // pattern as the barn-menu live refresh: focus check + recent
+      // pointer interaction window.
+      const focused = document.activeElement;
+      const modalEl = document.getElementById('mutationModal');
+      const focusInside = focused && modalEl && modalEl.contains(focused) &&
+                          /select|input|textarea|option/i.test(focused.tagName);
+      const recent = live._mutationLastInteract && (Date.now() - live._mutationLastInteract < 1500);
+      if (!focusInside && !recent) {
+        loop._ghLastT = t;
+        renderMutationLab();
+      }
     }
   }
   requestAnimationFrame(loop);
