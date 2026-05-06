@@ -6325,7 +6325,7 @@ const ITEM_RENDER_W = {
   building_slaughterhouse: 170, building_staff: 168, building_seed_container: 84,
   building_coffee_stand: 130,
   building_greenhouse: 218,
-  building_sprinkler: 64,
+  building_sprinkler: 48,
 };
 // Trees grow from sapling → mature in four stages. Each stage runs a
 // timer; when the timer expires the tree is "ready to water" and the
@@ -7963,12 +7963,12 @@ function drawPlacedItem(id, cx, cy, placed) {
     ctx.filter = 'none';
     ctx.restore();
   }
-  // Sprinkler is a short single-tile prop — anchor it like decor / animals
-  // (sprite bottom at the tile center) instead of bottom-of-diamond, so
-  // the sprinkler reads as sitting in the middle of its tile rather than
-  // tipped onto the front corner.
+  // Sprinkler is a short single-tile prop. Anchor between the tile
+  // centre and the diamond's front corner so the base sits low on the
+  // tile (looks planted in the dirt) without falling onto the front
+  // edge the way the building default does.
   if (id === 'building_sprinkler') {
-    drawObjectSprite(id, cx, cy, w0, -TILE_H / 2);
+    drawObjectSprite(id, cx, cy, w0, -TILE_H / 4);
     return;
   }
   drawObjectSprite(id, cx, cy, w0, 4);
