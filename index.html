@@ -543,6 +543,24 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 }
 .tool.toolLocked:hover { filter: grayscale(1) brightness(0.65); }
 
+/* Layout edit mode — draggable surfaces get a dashed outline + grab cursor. */
+body.layoutEdit #toolbar,
+body.layoutEdit #questsPanel,
+body.layoutEdit #dismountBanner {
+  outline: 3px dashed #FFE066;
+  outline-offset: 4px;
+  cursor: grab;
+  user-select: none;
+}
+body.layoutEdit #toolbar *,
+body.layoutEdit #questsPanel *,
+body.layoutEdit #dismountBanner * {
+  pointer-events: none !important;
+}
+body.layoutEdit #toolbar:active,
+body.layoutEdit #questsPanel:active,
+body.layoutEdit #dismountBanner:active { cursor: grabbing; }
+
 /* ---------- Modals ---------- */
 .modal {
   position: fixed; inset: 0;
@@ -1739,6 +1757,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Settings → <b>Controls</b>: rebind every toolbar shortcut (the seven tool digits + Shop/Barn/Staff/Greenhouse/Reset/Horse buttons). Click a key cell, press a new key, done. Reset to defaults button included.</li>
+        <li>Settings → <b>Layout</b>: turn on edit mode and drag the toolbar, quest panel, and dismount banner anywhere you want. Positions persist; "Reset positions" snaps everything back.</li>
         <li>Seed Containers now share a single <b>network view</b> — clicking any container opens a unified menu showing the total stocked across all of them. Buying / removing seeds cascades across containers, so you can stock the whole farm from one place.</li>
         <li>New <b>🔄 Reset Farm</b> prestige system at Lv 20 (button on the toolbar between Greenhouse and Horse). Wipes the run for a permanent <b>+1% boost to all coin/XP gains per 1,000,000¢</b> banked at reset. Bonuses stack across resets. Lv 20 popup explains it; the new toolbar buttons (Barn / Staff / Greenhouse / Horse / Reset) are also added to the starting tutorial.</li>
         <li>Horse staff-speed bonus toned down: +2% per placed horse, max +10% (was +5% / +25%).</li>
@@ -2449,6 +2469,30 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     </section>
 
     <section class="settings-section">
+      <h3>Controls</h3>
+      <p class="settings-hint" style="margin-top:0;">Click a key cell to rebind. Press <b>Esc</b> to cancel; press a single key to bind. Tools 1-7 default to digits.</p>
+      <div id="settingsKeybindList"></div>
+      <div class="settings-row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;margin-top:6px;">
+        <button class="settings-btn" id="settingsResetKeybinds">Reset to defaults</button>
+      </div>
+    </section>
+
+    <section class="settings-section">
+      <h3>Layout</h3>
+      <p class="settings-hint" style="margin-top:0;">Drag the toolbar, quest panel, or dismount banner to reposition them while edit mode is on.</p>
+      <label class="settings-row">
+        <span>Edit layout (drag to move)</span>
+        <span class="settings-toggle">
+          <input type="checkbox" id="settingsEditLayout">
+          <span class="settings-knob"></span>
+        </span>
+      </label>
+      <div class="settings-row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;">
+        <button class="settings-btn" id="settingsResetLayout">Reset positions</button>
+      </div>
+    </section>
+
+    <section class="settings-section">
       <h3>Account</h3>
       <div class="settings-row" style="justify-content:flex-start;gap:8px;flex-wrap:wrap;">
         <button class="settings-btn settings-btn-warn" id="resetBtn">Wipe save</button>
@@ -2656,6 +2700,199 @@ function prestigeBonusFromCoins(coins) {
   return Math.max(0, Math.floor(coins / 1000000)) * PRESTIGE_BONUS_PER_M;
 }
 function canResetFarm() { return (state.level || 1) >= PRESTIGE_UNLOCK_LEVEL; }
+
+// ----- Keybind rebinding -----
+// Player-facing list of every toolbar action that can be re-keyed.
+// Order is the order shown in the Settings → Controls list.
+const KEYBIND_ACTIONS = [
+  { id: 'tool_plow',     label: 'Tool · Plow',       defaultKey: '1' },
+  { id: 'tool_plant',    label: 'Tool · Plant',      defaultKey: '2' },
+  { id: 'tool_water',    label: 'Tool · Water',      defaultKey: '3' },
+  { id: 'tool_harvest',  label: 'Tool · Harvest',    defaultKey: '4' },
+  { id: 'tool_tree',     label: 'Tool · Trees shop', defaultKey: '5' },
+  { id: 'tool_sell',     label: 'Tool · Sell',       defaultKey: '6' },
+  { id: 'tool_move',     label: 'Tool · Move',       defaultKey: '7' },
+  { id: 'btn_shop',       label: 'Toolbar · Shop',           defaultKey: 's' },
+  { id: 'btn_barn',       label: 'Toolbar · Barn',           defaultKey: 'b' },
+  { id: 'btn_staff',      label: 'Toolbar · Staff Hall',     defaultKey: 'f' },
+  { id: 'btn_greenhouse', label: 'Toolbar · Greenhouse',     defaultKey: 'g' },
+  { id: 'btn_reset_farm', label: 'Toolbar · Reset Farm',     defaultKey: 'x' },
+  { id: 'btn_horse',      label: 'Toolbar · Horse / mount',  defaultKey: 'h' },
+];
+const KEYBIND_BY_ID = (() => {
+  const m = {};
+  for (const a of KEYBIND_ACTIONS) m[a.id] = a;
+  return m;
+})();
+function getKeybindMap() {
+  if (!state.prefs) state.prefs = {};
+  if (!state.prefs.keybinds || typeof state.prefs.keybinds !== 'object') state.prefs.keybinds = {};
+  return state.prefs.keybinds;
+}
+function getKeybind(actionId) {
+  const def = KEYBIND_BY_ID[actionId];
+  if (!def) return null;
+  const map = getKeybindMap();
+  const k = map[actionId];
+  return (typeof k === 'string' && k.length) ? k : def.defaultKey;
+}
+function setKeybind(actionId, key) {
+  if (!KEYBIND_BY_ID[actionId]) return;
+  const map = getKeybindMap();
+  // Reject duplicates — clear any other action that already owns the
+  // key so the player isn't left with a silently-stolen binding.
+  for (const a of KEYBIND_ACTIONS) {
+    if (a.id === actionId) continue;
+    if (getKeybind(a.id) === key) map[a.id] = '';
+  }
+  map[actionId] = key;
+  storage.save();
+}
+function findKeybindAction(key) {
+  const lower = (key || '').toLowerCase();
+  for (const a of KEYBIND_ACTIONS) {
+    if (getKeybind(a.id) === lower) return a.id;
+  }
+  return null;
+}
+// Re-export the action invokers as a single switch the keydown
+// handler can call directly. Splitting these out also lets the
+// rebind UI provide a "test" button later if we want one.
+function buildKeybindList() {
+  const wrap = document.getElementById('settingsKeybindList');
+  if (!wrap) return;
+  wrap.innerHTML = '';
+  for (const a of KEYBIND_ACTIONS) {
+    const cur = getKeybind(a.id);
+    const def = a.defaultKey;
+    const row = document.createElement('div');
+    row.className = 'settings-row';
+    row.style.cssText = 'justify-content:space-between;gap:8px;align-items:center;';
+    row.innerHTML =
+      `<span style="font-size:12px;">${a.label}<span style="color:#7a5430;font-size:10px;"> · default ${def.toUpperCase()}</span></span>` +
+      `<button type="button" class="settings-btn" data-bind="${a.id}" style="min-width:64px;font-family:monospace;font-weight:800;">${cur.toUpperCase()}</button>`;
+    wrap.appendChild(row);
+  }
+  wrap.querySelectorAll('button[data-bind]').forEach((btn) => {
+    btn.onclick = () => startKeybindCapture(btn);
+  });
+}
+let _keybindCaptureBtn = null;
+function startKeybindCapture(btn) {
+  if (_keybindCaptureBtn) {
+    // already capturing — restore prior label
+    const prevId = _keybindCaptureBtn.getAttribute('data-bind');
+    if (prevId) _keybindCaptureBtn.textContent = getKeybind(prevId).toUpperCase();
+  }
+  _keybindCaptureBtn = btn;
+  btn.textContent = 'press a key…';
+  btn.style.background = 'linear-gradient(to bottom,#FBE38A,#E8B339)';
+  // One-shot listener: capture the next keydown that isn't a modifier
+  // and assign it. Esc cancels.
+  const handler = (ev) => {
+    ev.stopPropagation();
+    ev.preventDefault();
+    if (ev.key === 'Shift' || ev.key === 'Control' || ev.key === 'Alt' || ev.key === 'Meta') return;
+    const k = ev.key === 'Escape' ? null : ev.key.toLowerCase();
+    window.removeEventListener('keydown', handler, true);
+    if (k && k.length === 1) {
+      const id = btn.getAttribute('data-bind');
+      setKeybind(id, k);
+    }
+    _keybindCaptureBtn = null;
+    buildKeybindList();
+  };
+  window.addEventListener('keydown', handler, true);
+}
+function applyLayoutOffsets() {
+  if (!state.prefs) state.prefs = {};
+  const layout = state.prefs.layout || {};
+  const apply = (id, key) => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const off = layout[key] || { dx: 0, dy: 0 };
+    el.style.transform = (off.dx || off.dy) ? `translate(${off.dx}px, ${off.dy}px)` : '';
+  };
+  apply('toolbar', 'toolbar');
+  apply('questsPanel', 'questsPanel');
+  apply('dismountBanner', 'dismountBanner');
+}
+function applyLayoutMode() {
+  // Add a class so each draggable surface gets an outline + grab cursor.
+  document.body.classList.toggle('layoutEdit', !!live.layoutEditMode);
+  ensureLayoutDragHandlers();
+}
+function ensureLayoutDragHandlers() {
+  // Idempotent — bind once per element. The runtime checks
+  // live.layoutEditMode before actually moving anything, so handlers
+  // are no-ops outside edit mode.
+  const targets = [
+    { id: 'toolbar', key: 'toolbar' },
+    { id: 'questsPanel', key: 'questsPanel' },
+    { id: 'dismountBanner', key: 'dismountBanner' },
+  ];
+  for (const t of targets) {
+    const el = document.getElementById(t.id);
+    if (!el || el._layoutDragBound) continue;
+    el._layoutDragBound = true;
+    el.addEventListener('pointerdown', (ev) => {
+      if (!live.layoutEditMode) return;
+      ev.stopPropagation();
+      ev.preventDefault();
+      const layout = (state.prefs && state.prefs.layout) || {};
+      const start = layout[t.key] || { dx: 0, dy: 0 };
+      const startMx = ev.clientX, startMy = ev.clientY;
+      const onMove = (mv) => {
+        const dx = start.dx + (mv.clientX - startMx);
+        const dy = start.dy + (mv.clientY - startMy);
+        if (!state.prefs) state.prefs = {};
+        if (!state.prefs.layout) state.prefs.layout = {};
+        state.prefs.layout[t.key] = { dx, dy };
+        applyLayoutOffsets();
+      };
+      const onUp = () => {
+        window.removeEventListener('pointermove', onMove, true);
+        window.removeEventListener('pointerup',   onUp,   true);
+        storage.save();
+      };
+      window.addEventListener('pointermove', onMove, true);
+      window.addEventListener('pointerup',   onUp,   true);
+    }, true);
+  }
+}
+function runKeybindAction(actionId) {
+  const TOOL_IDS = ['tool_plow','tool_plant','tool_water','tool_harvest','tool_tree','tool_sell','tool_move'];
+  if (TOOL_IDS.includes(actionId)) {
+    const tid = actionId.slice('tool_'.length);
+    const slot = TOOLS.find(t => t.id === tid);
+    if (!slot) return;
+    if (slot.shortcut === 'shopTree') { activeShopTab = 'tree'; openShop(); }
+    else { state.selectedTool = slot.id; }
+    audio.play('click'); refreshTools(); refreshSeedStrip();
+    return;
+  }
+  if (actionId === 'btn_shop') { openShop(); audio.play('click'); return; }
+  if (actionId === 'btn_barn') {
+    const btn = document.getElementById('toolBarnBtn'); if (btn) btn.click();
+    return;
+  }
+  if (actionId === 'btn_staff') {
+    const btn = document.getElementById('toolStaffBtn'); if (btn) btn.click();
+    return;
+  }
+  if (actionId === 'btn_greenhouse') {
+    const btn = document.getElementById('toolGreenhouseBtn'); if (btn) btn.click();
+    return;
+  }
+  if (actionId === 'btn_reset_farm') {
+    const btn = document.getElementById('toolResetFarmBtn'); if (btn) btn.click();
+    return;
+  }
+  if (actionId === 'btn_horse') {
+    const btn = document.getElementById('toolHorseBtn'); if (btn) btn.click();
+    return;
+  }
+}
 function openResetFarmModal() {
   if (!canResetFarm()) return;
   const earned = prestigeBonusFromCoins(state.coins || 0);
@@ -13648,22 +13885,13 @@ function bindInput() {
       closeAllModals();
       return;
     }
-    const num = parseInt(k, 10);
-    if (!isNaN(num) && num >= 1 && num <= TOOLS.length) {
-      const slot = TOOLS[num - 1];
-      if (slot.shortcut === 'shopTree') {
-        activeShopTab = 'tree';
-        openShop();
-      } else {
-        state.selectedTool = slot.id;
-      }
-      audio.play('click'); refreshTools(); refreshSeedStrip();
-      return;
-    }
-    if (k === 's') openShop();
-    else if (k === 'i') openInventory();
-    else if (k === 'h') openModal('helpModal');
-    else if (k === 'm') toggleMute();
+    // Try the rebindable toolbar action map first — covers tools 1-7
+    // + the 6 toolbar shortcut buttons. Players can rebind any of
+    // these from Settings → Controls.
+    const action = findKeybindAction(k);
+    if (action) { runKeybindAction(action); return; }
+    // Non-rebindable globals.
+    if (k === 'i') openInventory();
     else if (k === '+' || k === '=') camera.setZoom(state.zoom + ZOOM_STEP);
     else if (k === '-') camera.setZoom(state.zoom - ZOOM_STEP);
     else if (k === ' ') { camera.centerOnFarm(); e.preventDefault(); }
@@ -15430,6 +15658,35 @@ async function startGame() {
     refreshTutorial();
     storage.save();
   });
+  // Controls panel — list each keybind action with a clickable cell
+  // that captures the next keypress.
+  buildKeybindList();
+  const resetBindBtn = document.getElementById('settingsResetKeybinds');
+  if (resetBindBtn) resetBindBtn.onclick = () => {
+    if (state.prefs && state.prefs.keybinds) state.prefs.keybinds = {};
+    storage.save();
+    buildKeybindList();
+    toast('Keybinds reset to defaults.', false, 'good');
+  };
+  // Layout edit toggle + reset.
+  const editLayout = document.getElementById('settingsEditLayout');
+  if (editLayout) {
+    editLayout.checked = !!live.layoutEditMode;
+    editLayout.addEventListener('change', () => {
+      live.layoutEditMode = editLayout.checked;
+      applyLayoutMode();
+    });
+  }
+  const resetLayoutBtn = document.getElementById('settingsResetLayout');
+  if (resetLayoutBtn) resetLayoutBtn.onclick = () => {
+    if (state.prefs) state.prefs.layout = {};
+    storage.save();
+    applyLayoutOffsets();
+    toast('Layout reset.', false, 'good');
+  };
+  // Apply any persisted offsets on every settings open so the user
+  // sees the right state.
+  applyLayoutOffsets();
   document.querySelectorAll('[data-close]').forEach(el => el.onclick = closeAllModals);
   // Dismount button — visible only while riding (toggled via refreshDismountBanner).
   const dmBtn = document.getElementById('dismountBtn');
@@ -15461,6 +15718,10 @@ async function startGame() {
 
   // Center camera if we don't have a saved position.
   if (state.camX === 0 && state.camY === 0) camera.centerOnFarm();
+  // Apply persisted layout offsets + bind drag handlers (idempotent
+  // so re-runs on refresh don't double-bind).
+  if (typeof applyLayoutOffsets === 'function') applyLayoutOffsets();
+  if (typeof ensureLayoutDragHandlers === 'function') ensureLayoutDragHandlers();
 
   requestAnimationFrame(loop);
 }
