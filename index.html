@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Crop Farmer zone selection now ignores pen tiles instead of erroring — drag right across the pen and only the crop tiles get added.</li>
         <li>Coffee Stand storage now works like silos: each placed stand holds its own coffee, harvests cascade into the next when one tops out, and the menu / hover shows "this stand vs network".</li>
         <li>Crop Farmer harvesting Coffee Beans now actually fills the stand (was silently dropping the harvest into the regular sell branch for 0¢).</li>
         <li>Riding banner shrunk down so it doesn't dominate the screen.</li>
@@ -8611,21 +8612,13 @@ function confirmZoneSelect() {
   const r = z.rect;
   const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
   const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
-  // Reject any rect that touches the barn pen — crop farmers should never
-  // step on pen tiles.
-  let hitsPen = false;
-  for (let iy = y0; iy <= y1 && !hitsPen; iy++) {
-    for (let ix = x0; ix <= x1; ix++) {
-      if (inBarnPen(ix, iy)) { hitsPen = true; break; }
-    }
-  }
-  if (hitsPen) {
-    toast('Zone overlaps the barn pen — pick a rect away from the animals.', true);
-    audio.play('error'); return;
-  }
+  // Pen tiles inside the rect are silently skipped — only crop-farm tiles
+  // get added to the zone, so the player can drag over the pen without
+  // an error and the farmer still won't step on animals.
   const tiles = [];
   for (let iy = y0; iy <= y1; iy++) {
     for (let ix = x0; ix <= x1; ix++) {
+      if (inBarnPen(ix, iy)) continue;
       if (inCropFarm(ix, iy)) tiles.push(`${ix},${iy}`);
     }
   }
