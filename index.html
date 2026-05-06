@@ -1757,6 +1757,9 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Starting fenced lot bumped <b>6×6 → 12×12</b> for fresh runs. Reset Farm scaling now uses 12 as its base (so +25% prestige = 15×15, +100% = 24×24).</li>
+        <li>Bulk-action rect ordering reverted to "start from the farmer" — the farmer picks the closest tile in the rect first instead of starting at the click corner.</li>
+        <li>Water XP bumped from 1 → 2 starting at <b>Lv 8</b> (was Lv 10).</li>
         <li>New <b>My Farmer</b> button on the topbar (right of the FarmSack logo) — opens a profile modal with your current stats (with prestige bonus) and lets you rename / swap gender.</li>
         <li>Reset Farm now also: scales the starting farm lot by your prestige bonus (+25% = 8×8, +100% = 12×12), folds your bonus into the watered-grow base (50% becomes 75% at +25%, upgrades stack normally), bulk-paint farmer routes from the click-start corner, water grants 2 XP at every level, tree fruit yields scale with tree tier (60¢ → 360¢), reset path also clears the dismount banner.</li>
         <li>HUD chip shows your current <b>Prestige %</b> bonus (visible once you've banked any). Hover for "+N% to coins / XP / movement / growth · M resets".</li>
@@ -2666,7 +2669,11 @@ function defaultWorldBounds() {
   return { x0: CROP_FARM.x0, y0: CROP_FARM.y0, w: CROP_FARM.w, h: CROP_FARM.h };
 }
 // 6x6 starting fenced farm centered inside WORLD_W × WORLD_H.
-const CROP_FARM = { id: 'crop', x0: 32, y0: 32, w: 6, h: 6, name: 'Crop Field' };
+// Starting fenced lot: 12×12 (was 6×6 — bumped so a fresh farm has
+// enough room to actually plant something without having to expand
+// immediately). Reset Farm scales this further by the player's
+// prestige bonus.
+const CROP_FARM = { id: 'crop', x0: 32, y0: 32, w: 12, h: 12, name: 'Crop Field' };
 const FARMS = [CROP_FARM];
 
 // One in-game day = 5 minutes.
@@ -3075,12 +3082,13 @@ function resetFarm() {
   state.coffeeStand = { coffee: 0, lastTickAt: 0 };
   state.staff = { members: [], lastUpkeepAt: 0, lastLoyaltyAt: 0, nextStaffId: 1 };
   state.greenhouse = { tier: 1, book: state.greenhouse?.book || {}, activeRuns: [] };
-  // Scale the starting farm lot by the new prestige bonus so each
-  // reset gives a slightly bigger fenced area to start on. +25%
-  // bonus → round(6 × 1.25) = 8 tiles per side; +100% → 12. Floor
-  // at the original 6×6 in case totalBonus is somehow negative.
+  // Scale the starting farm lot by the new prestige bonus. Base is
+  // 12×12 (the new starting size); +25% prestige → round(12 × 1.25)
+  // = 15; +100% → 24. Floor at 12 in case totalBonus is somehow
+  // negative.
+  const STARTING_FARM_BASE = 12;
   const presBonusForLot = (state.prestige.totalBonus || 0);
-  const startSize = Math.max(6, Math.round(6 * (1 + presBonusForLot)));
+  const startSize = Math.max(STARTING_FARM_BASE, Math.round(STARTING_FARM_BASE * (1 + presBonusForLot)));
   state.cropFarmW = startSize;
   state.cropFarmH = startSize;
   // CROP_FARM is a `const` BINDING but the object is mutable —
@@ -3124,7 +3132,7 @@ function resetFarm() {
 function yieldFlatBonus() { return 0; }
 // XP awarded per watering action — bumped to +2 once the player hits
 // level 10 so late-game water passes feel a bit more rewarding.
-function waterXpGain() { return 2; }
+function waterXpGain() { return (state.level || 1) >= 8 ? 2 : 1; }
 function yieldCost(level) { return Math.round(2497 * Math.pow(2.5, level)); }
 
 // ----- Auto-harvest (chance per second to instantly harvest a ripe tile) -----
@@ -4698,7 +4706,7 @@ const state = {
     staffSpeedLevel: 0,   // staff move + work speed multiplier (Speedy Hands)
   },
   // Farm dimensions (mutable via Expand Field upgrade). Restored on load.
-  cropFarmW: 6, cropFarmH: 6,
+  cropFarmW: 12, cropFarmH: 12,
   // 0..3 — quarter-turn rotation of the iso view (R / Q to spin it).
   rotation: 0,
   // ----- Progress tracking for achievements & quests -----
@@ -13976,17 +13984,15 @@ function bindInput() {
             if (isPlaceableTile(ix, iy)) candidates.push({ ix, iy });
           }
         }
-        // Greedy nearest-neighbour ordering anchored to the drag's
-        // start tile (r.ix0, r.iy0) — the farmer heads to the corner
-        // the player initially clicked, then chains through the rest.
+        // Greedy nearest-neighbour ordering, anchored to the player
+        // (or queue tail). Farmer picks the closest tile in the rect
+        // first so they don't backtrack.
         const treeTail = state.player.queue.length
           ? state.player.queue[state.player.queue.length - 1]
           : null;
-        let cur = (typeof r.ix0 === 'number' && typeof r.iy0 === 'number')
-          ? { ix: r.ix0, iy: r.iy0 }
-          : (treeTail && treeTail.ix != null && treeTail.iy != null
-              ? { ix: treeTail.ix, iy: treeTail.iy }
-              : { ix: state.player.ix, iy: state.player.iy });
+        let cur = (treeTail && treeTail.ix != null && treeTail.iy != null)
+          ? { ix: treeTail.ix, iy: treeTail.iy }
+          : { ix: state.player.ix, iy: state.player.iy };
         const ordered = [];
         while (candidates.length > 0) {
           let bestI = 0, bestD = Infinity;
@@ -14042,19 +14048,16 @@ function bindInput() {
           if (canActOnTile(r.tool, ix, iy)) candidates.push({ ix, iy });
         }
       }
-      // Greedy nearest-neighbour ordering, anchored to the click that
-      // started the drag (r.ix0, r.iy0). The farmer walks toward
-      // wherever the player initially clicked, then chains through
-      // the rest of the rect by proximity. Falls back to the queue
-      // tail / player position only when no start corner is set.
+      // Greedy nearest-neighbour ordering, anchored to the player's
+      // current position (or queue tail when there's already a walk
+      // queued). Picks up the rect tile closest to the farmer first
+      // so they don't backtrack across the field.
       const rectTail = state.player.queue.length
         ? state.player.queue[state.player.queue.length - 1]
         : null;
-      let cur = (typeof r.ix0 === 'number' && typeof r.iy0 === 'number')
-        ? { ix: r.ix0, iy: r.iy0 }
-        : (rectTail && rectTail.ix != null && rectTail.iy != null
-            ? { ix: rectTail.ix, iy: rectTail.iy }
-            : { ix: state.player.ix, iy: state.player.iy });
+      let cur = (rectTail && rectTail.ix != null && rectTail.iy != null)
+        ? { ix: rectTail.ix, iy: rectTail.iy }
+        : { ix: state.player.ix, iy: state.player.iy };
       const ordered = [];
       while (candidates.length > 0) {
         let bestI = 0, bestD = Infinity;
