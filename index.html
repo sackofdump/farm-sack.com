@@ -5502,10 +5502,16 @@ function findAnimalAt(ix, iy) {
 // Used to block plow/plant/harvest under tall buildings (cottage, barn,
 // silo, etc.) since those tiles look paved-over but aren't in state.placed.
 function tileCoveredByBuilding(ix, iy) {
+  // Probes hit tiles SE of (ix,iy) — tall buildings anchored there have
+  // sprites that extend NW and visually cover this tile, so plowing /
+  // planting on it would put a crop under the building art.
+  // Sprinklers are single-tile, sprite-sized props that don't cover any
+  // neighbours, so excluding them lets the player tile crops right up
+  // next to a sprinkler instead of leaving dead diamonds around each one.
   const probes = [[1,0],[0,1],[1,1],[2,1],[1,2],[2,2]];
   for (const [dx, dy] of probes) {
     const p = state.placed[tileKey(ix + dx, iy + dy)];
-    if (p && p.id && p.id.startsWith('building_')) return true;
+    if (p && p.id && p.id.startsWith('building_') && p.id !== 'building_sprinkler') return true;
   }
   return false;
 }
