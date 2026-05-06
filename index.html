@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>New <b>🔄 Reset Farm</b> prestige system at Lv 20 (button on the toolbar between Greenhouse and Horse). Wipes the run for a permanent <b>+1% boost to all coin/XP gains per 1,000,000¢</b> banked at reset. Bonuses stack across resets. Lv 20 popup explains it; the new toolbar buttons (Barn / Staff / Greenhouse / Horse / Reset) are also added to the starting tutorial.</li>
         <li>Horse staff-speed bonus toned down: +2% per placed horse, max +10% (was +5% / +25%).</li>
         <li>Greenhouse <b>Start Brew</b> button moved into the Brew Preview section so it's always visible without scrolling past the active-brews list. Active Brews header now reads "Active brews (N/5)".</li>
         <li>Greenhouse upgrades extended <b>T4 → T10</b>. Each tier now multiplies the instability fail chance: T1 = 1.0× (no help), T4 = 0.55×, T10 = 0.08× (max-instability brew is under 5% fail). Tiers also keep ramping rarity bonus + brew speed; costs ramp from 900k (T5) to 70M (T10).</li>
@@ -2061,6 +2062,41 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 <!-- One-shot popup that fires the first time the player places a greenhouse. -->
 <!-- One-shot popup that fires the first time the player banks 6.7k¢ —
      nudge toward the Expand Play Area upgrade. -->
+<!-- Reset Farm prestige modals. The Lv20 reveal pops once on hitting Lv20
+     (and is also injected into the starting tutorial as one of the late
+     steps). The confirm modal previews the bonus before the wipe. -->
+<div id="resetFarmIntroModal" class="modal hidden">
+  <div class="modal-body" style="width:auto;max-width:min(480px,92vw);padding:20px 24px;text-align:center;">
+    <h2>&#128260; Reset Farm — unlocked!</h2>
+    <p style="color:#4A2E15;font-size:14px;line-height:1.5;text-align:left;">
+      You're at <b>Lv 20</b>. The new <b>Reset Farm</b> button on the toolbar (between Greenhouse and Horse) lets you wipe the run and start fresh — but you keep a permanent bonus.
+    </p>
+    <p style="color:#4A2E15;font-size:14px;line-height:1.5;text-align:left;">
+      You earn <b>+1% permanent boost</b> to coins + XP for every <b>1,000,000¢</b> you have banked at reset. Bonuses stack across resets, so the more you save before pressing Reset, the bigger the head start.
+    </p>
+    <p style="color:#7a5430;font-size:12px;line-height:1.5;text-align:left;">
+      Tip: if you want a meaningful jump, bank coins before you reset. 25M = +25%, 100M = +100%, etc.
+    </p>
+    <div class="modal-foot" style="justify-content:center;">
+      <button class="splashBtn primary" data-close style="padding:10px 24px;width:auto;">Got it!</button>
+    </div>
+  </div>
+</div>
+
+<div id="resetFarmConfirmModal" class="modal hidden">
+  <div class="modal-body" style="width:auto;max-width:min(480px,92vw);padding:20px 24px;text-align:center;">
+    <h2>&#9888;&#65039; Reset your farm?</h2>
+    <p id="resetFarmPreview" style="color:#4A2E15;font-size:14px;line-height:1.5;text-align:left;"></p>
+    <p style="color:#7a5430;font-size:12px;line-height:1.5;text-align:left;">
+      You'll lose your buildings, animals, crops, level, and coins. You keep your achievements, leaderboard stats, and every prestige bonus you've ever earned.
+    </p>
+    <div class="modal-foot" style="justify-content:center;gap:10px;">
+      <button class="splashBtn" id="resetFarmCancel" style="padding:10px 22px;width:auto;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border-color:var(--wood-3);box-shadow:0 3px 0 var(--wood-3);">Cancel</button>
+      <button class="splashBtn primary" id="resetFarmConfirm" style="padding:10px 22px;width:auto;">Reset farm</button>
+    </div>
+  </div>
+</div>
+
 <div id="expandHintModal" class="modal hidden">
   <div class="modal-body" style="width:auto;max-width:min(440px,92vw);padding:20px 24px;text-align:center;">
     <h2>&#127820; Got <b>1.85k¢</b>!</h2>
@@ -2603,7 +2639,95 @@ function bootsCost(level) {
 const YIELD_MAX_LEVEL = 5;
 const YIELD_PER_LEVEL = 0.05;
 function yieldMultiplier() {
-  return 1 + (state.player.yieldLevel || 0) * YIELD_PER_LEVEL;
+  return (1 + (state.player.yieldLevel || 0) * YIELD_PER_LEVEL) * prestigeMul();
+}
+// Prestige bonus: +1% to coin/XP gains per 1M coins banked at the
+// most recent reset. Stacks across resets. Applied through
+// yieldMultiplier (covers harvest / animal yield / slaughter / tree
+// fruit) and grantXp (covers every XP grant) so it shows up wherever
+// the player earns.
+const PRESTIGE_UNLOCK_LEVEL    = 20;
+const PRESTIGE_BONUS_PER_M     = 0.01;     // +1% per 1,000,000 coins held at reset
+function prestigeMul() {
+  return 1 + ((state.prestige && state.prestige.totalBonus) || 0);
+}
+function prestigeBonusFromCoins(coins) {
+  return Math.max(0, Math.floor(coins / 1000000)) * PRESTIGE_BONUS_PER_M;
+}
+function canResetFarm() { return (state.level || 1) >= PRESTIGE_UNLOCK_LEVEL; }
+function openResetFarmModal() {
+  if (!canResetFarm()) return;
+  const earned = prestigeBonusFromCoins(state.coins || 0);
+  const cur = (state.prestige && state.prestige.totalBonus) || 0;
+  const preview = document.getElementById('resetFarmPreview');
+  if (preview) {
+    preview.innerHTML =
+      `Coins on hand: <b>${formatCoins(state.coins || 0)}¢</b><br>` +
+      `Bonus this reset will bank: <b style="color:#3F8338;">+${(earned * 100).toFixed(0)}%</b>` +
+      ` <span style="color:#7a5430;">(1% per 1,000,000¢)</span><br>` +
+      `Permanent bonus afterward: <b style="color:#3F8338;">+${((cur + earned) * 100).toFixed(0)}%</b>` +
+      ` <span style="color:#7a5430;">(currently +${(cur * 100).toFixed(0)}%)</span>`;
+  }
+  openModal('resetFarmConfirmModal');
+  const cancel = document.getElementById('resetFarmCancel');
+  const confirm = document.getElementById('resetFarmConfirm');
+  if (cancel) cancel.onclick = () => document.getElementById('resetFarmConfirmModal').classList.add('hidden');
+  if (confirm) confirm.onclick = () => {
+    document.getElementById('resetFarmConfirmModal').classList.add('hidden');
+    resetFarm();
+  };
+}
+// Wipe the run + bank a permanent prestige bonus. Keeps farmer
+// identity, audio prefs, achievements, leaderboard counters, and
+// the prestige record itself; everything else (placed buildings,
+// crops, coins, level, XP, quests, expansions) resets to a fresh
+// game.
+function resetFarm() {
+  if (!canResetFarm()) return;
+  const earned = prestigeBonusFromCoins(state.coins || 0);
+  if (!state.prestige) state.prestige = { count: 0, totalBonus: 0, lastResetAt: 0 };
+  state.prestige.totalBonus = (state.prestige.totalBonus || 0) + earned;
+  state.prestige.count = (state.prestige.count || 0) + 1;
+  state.prestige.lastResetAt = Date.now();
+  // Reset run-scoped fields. KEEP_FIELDS that aren't touched here
+  // (achievements, stats, prestige, prefs, farmer, leaderboard data,
+  // tutorialShown flags) intentionally survive the wipe.
+  state.coins = 250;
+  state.xp = 0;
+  state.level = 1;
+  state.tutorialStep = 99;          // skip the starting tutorial on the reset run
+  state.plots = {};
+  state.placed = {};
+  state.farmExpansion = {};
+  state.barnPen = null;
+  state.barnPens = [];
+  state.clearedWild = {};
+  state.worldBounds = null;         // reverts to defaultWorldBounds
+  state.silo = { feed: 0, lastTickAt: 0, boostMs: 0 };
+  state.coffeeStand = { coffee: 0, lastTickAt: 0 };
+  state.staff = { members: [], lastUpkeepAt: 0, lastLoyaltyAt: 0, nextStaffId: 1 };
+  state.greenhouse = { tier: 1, book: state.greenhouse?.book || {}, activeRuns: [] };
+  state.cropFarmW = 6;
+  state.cropFarmH = 6;
+  state.player = {
+    ix: CROP_FARM.x0 - 1, iy: CROP_FARM.y0 + CROP_FARM.h,
+    queue: [], facing: 1, busy: 0, pending: null,
+    speedLevel: 0, yieldLevel: 0, autoHarvestLevel: 0, waterLevel: 0, staffSpeedLevel: 0,
+  };
+  state.quests = [];
+  state.questsCompleted = 0;
+  state.dailies = [];
+  state.dailyResetAt = 0;
+  state.dailiesCompleted = 0;
+  // Center the camera on the new farm so the player isn't dropped
+  // into a corner of the meadow.
+  state.camX = 0; state.camY = 0;
+  storage.save();
+  if (typeof refreshHud === 'function') refreshHud();
+  if (typeof buildToolbar === 'function') buildToolbar();
+  if (typeof camera !== 'undefined' && camera.centerOnFarm) camera.centerOnFarm();
+  toast(`Farm reset! Permanent bonus is now +${Math.round(state.prestige.totalBonus * 100)}%.`, false, 'good', 6000);
+  audio.play('levelup');
 }
 // Held over for harvest call sites that still add it; intentionally 0
 // now that Bigger Baskets pays via the multiplier instead of a flat
@@ -4219,6 +4343,11 @@ const state = {
   clearedWild: {},
   // 0..N where N === TUTORIAL_STEPS.length (final value hides the panel).
   tutorialStep: 0,
+  // Prestige / restart system. Player at Lv 20 can wipe their farm and
+  // start over with a permanent +1% bonus to yields/coins/XP per
+  // 1,000,000 coins held at reset (e.g., 25M → +25%). Bonuses stack
+  // forever across resets. Both fields persist via KEEP_FIELDS.
+  prestige: { count: 0, totalBonus: 0, lastResetAt: 0 },
   // Greenhouse mutation system. tier gates slot count + recipe rarity, book
   // is a discovery log keyed by mutation id, activeRuns is the queue of
   // mutations currently brewing. Initialized lazily on first open.
@@ -4265,7 +4394,7 @@ const storage = {
                 'dailies','dailyResetAt','dailiesCompleted','dailyStreak','lastDailyDay',
                 'tutorialStep','prefs','barnPen','barnPens','clearedWild','barnTutorialShown','greenhouseTutorialShown',
                 'siloTutorialShown','dogTutorialShown','greenhouse','priorityQuests','silo','staff','staffTutorialShown','coffeeStand','expandHintShown',
-                'slaughterhouseTutorialShown','staffComboTutorialShown'],
+                'slaughterhouseTutorialShown','staffComboTutorialShown','prestige','prestigeTutorialShown'],
   // Load from a parsed save object (used by both local + cloud paths).
   applySave(data) {
     if (!data || typeof data !== 'object') return false;
@@ -10290,7 +10419,10 @@ function tryPlace(ix, iy, silent=false) {
 }
 
 function grantXp(amount) {
-  state.xp += amount;
+  // Apply the prestige multiplier to every XP grant so the bonus
+  // shows up consistently — yieldMultiplier is the obvious place
+  // for coin gains, but XP doesn't always route through that.
+  state.xp += amount * prestigeMul();
   while (state.level < LEVEL_THRESHOLDS.length - 1 && state.xp >= LEVEL_THRESHOLDS[state.level]) {
     state.level++;
     audio.play('levelup');
@@ -10330,6 +10462,13 @@ function grantXp(amount) {
     if (state.level === 15 && !state.staffComboTutorialShown) {
       state.staffComboTutorialShown = true;
       queueTutorial('staffComboTutorialModal');
+    }
+    // Reset Farm + prestige system unlocks at Lv 20.
+    if (state.level === PRESTIGE_UNLOCK_LEVEL && !state.prestigeTutorialShown) {
+      state.prestigeTutorialShown = true;
+      queueTutorial('resetFarmIntroModal');
+      // Rebuild the toolbar so the Reset Farm button stops being greyed.
+      if (typeof buildToolbar === 'function') buildToolbar();
     }
     // Track level-ups so the "Level up N times" daily can score them.
     if (state.stats) bumpStat('levelUps');
@@ -10479,7 +10618,12 @@ const TUTORIAL_STEPS = [
   { num:20, trigger: 'planted',   text: 'Pick a seed at the bottom of the screen, then use <b>Plant</b> (<b>2</b>) on the plowed soil.' },
   { num:21, trigger: 'watered',   text: 'Use <b>Water</b> (<b>3</b>) on the planted tile so it grows faster.' },
   { num:22, trigger: 'harvested', text: 'When the crop glows, use <b>Harvest</b> (<b>4</b>) to cash in.' },
-  { num:23, trigger: '__keybinds__',
+  { num:23, trigger: '__next__', topbar: 'toolBarnBtn',        text: 'Quick-jump buttons live to the right of the Shop. <b>Big Red Barn</b> (highlighted) opens your barn roster — manage animals, slaughter, expand the pen.' },
+  { num:24, trigger: '__next__', topbar: 'toolStaffBtn',       text: '<b>Staff Hall</b> — hire and manage Crop Farmers / Arborist / Animal Keeper at Lv 15.' },
+  { num:25, trigger: '__next__', topbar: 'toolGreenhouseBtn',  text: '<b>Greenhouse</b> — pops the mutation lab. Brew rare seed mutations for big XP + coins. Unlocks at Lv 12.' },
+  { num:26, trigger: '__next__', topbar: 'toolResetFarmBtn',   text: '<b>Reset Farm</b> — at Lv 20 you can wipe the run for a permanent +1% boost per 1,000,000¢ banked. Bonuses stack across resets.' },
+  { num:27, trigger: '__next__', topbar: 'toolHorseBtn',       text: '<b>Horse</b> — once you place one, click here to walk over and mount up (2× speed). Click again to dismount.' },
+  { num:28, trigger: '__keybinds__',
     text: 'Last bit — <b>keybinds</b>:<br>' +
           '<b>1-6</b> tools · <b>Q/W</b> seeds · <b>S</b> shop · <b>I</b> inventory · <b>H</b> help<br>' +
           '<b>R</b> rotate · <b>+/-</b> zoom · <b>Space</b> recenter · <b>Esc</b> cancel' },
@@ -11624,6 +11768,26 @@ function buildToolbar() {
     audio.play('click');
   });
   tb.appendChild(ghBtn);
+  // Reset Farm prestige button — between Greenhouse and Horse.
+  // Greyed out until Lv 20 (PRESTIGE_UNLOCK_LEVEL). Click pops a
+  // confirm modal that previews the bonus the wipe will earn.
+  const rstLocked = !canResetFarm();
+  const rstBtn = document.createElement('button');
+  rstBtn.className = 'tool toolReset' + (rstLocked ? ' toolLocked' : '');
+  rstBtn.id = 'toolResetFarmBtn';
+  const earnedNow = prestigeBonusFromCoins(state.coins || 0);
+  rstBtn.title = rstLocked
+    ? `Reset Farm — unlocks at Lv ${PRESTIGE_UNLOCK_LEVEL}`
+    : `Reset Farm — wipe + bank +${Math.round(earnedNow * 100)}% permanent bonus (currently +${Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100)}%)`;
+  rstBtn.disabled = rstLocked;
+  rstBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;font-size:32px;line-height:1;';
+  rstBtn.textContent = '🔄';
+  rstBtn.addEventListener('click', () => {
+    if (rstLocked) return;
+    openResetFarmModal();
+    audio.play('click');
+  });
+  tb.appendChild(rstBtn);
   // Horse mount/dismount shortcut — sits to the right of the Staff Hall
   // button. Greyed out until the horse unlock level. Click while
   // dismounted: queue a walk-to + mount for the nearest placed horse.
@@ -15222,6 +15386,7 @@ async function startGame() {
     'barnTutorialModal', 'greenhouseTutorialModal', 'slaughterhouseTutorialModal',
     'greenhouseUnlockTutorialModal', 'staffComboTutorialModal', 'dogTutorialModal',
     'siloTutorialModal', 'expandHintModal', 'seedContainerReminderModal',
+    'resetFarmIntroModal', 'resetFarmConfirmModal',
     'levelUpModal', 'mutationDiscoveryModal', 'barnPenChoiceModal',
   ]);
   document.querySelectorAll('.modal').forEach(m => m.addEventListener('click', e => {
