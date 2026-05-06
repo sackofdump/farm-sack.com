@@ -7303,8 +7303,11 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         const member = state.staff.members.find(m => m.id === sid);
         if (!member) return;
         if (action === 'edit') {
+          // Stash the Staff Hall menu coords so Cancel / Save returns
+          // here instead of dropping the player back to the field.
+          const reopen = () => openBuildingMenu(buildingId, screenX, screenY, ix, iy);
           closeAnimalMenu();
-          openWorkerEditModal(member);
+          openWorkerEditModal(member, reopen);
         } else if (action === 'zone') {
           closeAnimalMenu();
           enterCropFarmerZoneEdit(member);
@@ -9629,7 +9632,7 @@ function staffAtTile(ix, iy) {
 // Pop a small modal that lets the player rename a worker and switch
 // their gender. Saves into state.staff.members[*] so the next render
 // + the leaderboard / save sync see the new identity.
-function openWorkerEditModal(member) {
+function openWorkerEditModal(member, onClose) {
   const modal = document.getElementById('workerEditModal');
   if (!modal) return;
   const nameInput = document.getElementById('workerEditName');
@@ -9680,7 +9683,10 @@ function openWorkerEditModal(member) {
       taskRow.style.display = 'none';
     }
   }
-  document.getElementById('workerEditCancel').onclick = () => modal.classList.add('hidden');
+  document.getElementById('workerEditCancel').onclick = () => {
+    modal.classList.add('hidden');
+    if (typeof onClose === 'function') onClose();
+  };
   document.getElementById('workerEditSave').onclick = () => {
     const trimmed = (nameInput.value || '').trim().slice(0, 20);
     member.name = trimmed || member.name || 'Worker';
@@ -9689,6 +9695,7 @@ function openWorkerEditModal(member) {
     storage.save();
     refreshHud();
     toast(`Updated ${member.name}.`, false, 'good');
+    if (typeof onClose === 'function') onClose();
   };
   modal.classList.remove('hidden');
   // Focus the input so the player can immediately retype.
