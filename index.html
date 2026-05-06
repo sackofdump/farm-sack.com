@@ -9318,9 +9318,11 @@ function drawAll() {
     }
     // Sprinkler ghost: paint the 5×5 watering radius the sprinkler will
     // cover from this tile so the player can position it without
-    // guessing which crops it'll reach. Existing sprinklers' coverage
-    // is painted first in a muted teal so the player can see which area
-    // is already watered and avoid wasting a placement on overlap.
+    // guessing which crops it'll reach. Three colours:
+    //   teal  — already covered by another sprinkler (no cursor here)
+    //   cyan  — fresh ground the new sprinkler will newly cover
+    //   red   — cursor tile that overlaps an existing sprinkler's
+    //           radius (still placeable, just flags wasted overlap)
     if (live.placeMode.id === 'building_sprinkler') {
       const cursorCovers = new Set();
       for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
@@ -9330,8 +9332,9 @@ function drawAll() {
           cursorCovers.add(tx + ',' + ty);
         }
       }
-      // Existing sprinkler footprints — drawn first so the cursor's
-      // bright highlight sits on top wherever the new one overlaps.
+      // Build the union of every existing sprinkler's footprint so the
+      // cursor pass below can decide cyan-vs-red per tile in O(1).
+      const existingCovers = new Set();
       for (const k in state.placed) {
         const it = state.placed[k];
         if (!it || it.id !== 'building_sprinkler') continue;
@@ -9341,19 +9344,29 @@ function drawAll() {
           for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
             const tx = sIx + dx, ty = sIy + dy;
             if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
-            const cc = isoCenter(tx, ty);
-            drawHoverHighlight(cc.x, cc.y, '#3F8FB5');
+            existingCovers.add(tx + ',' + ty);
           }
         }
       }
-      // Cursor preview on top — bright cyan, painted on every cursor
-      // tile (including ones already covered) so the new ghost stays
-      // visually distinct from existing footprints.
+      // Pass 1: paint existing-only tiles (covered, but not by the
+      // cursor) in muted teal so the player can see the area that's
+      // already watered without painting under the cursor's brighter
+      // ghost.
+      for (const tk of existingCovers) {
+        if (cursorCovers.has(tk)) continue;
+        const ci = tk.indexOf(',');
+        const tx = +tk.slice(0, ci), ty = +tk.slice(ci + 1);
+        const cc = isoCenter(tx, ty);
+        drawHoverHighlight(cc.x, cc.y, '#3F8FB5');
+      }
+      // Pass 2: cursor preview. Tiles that also belong to an existing
+      // sprinkler's radius paint red (overlap = wasted coverage); the
+      // rest paint bright cyan as fresh ground.
       for (const tk of cursorCovers) {
         const ci = tk.indexOf(',');
         const tx = +tk.slice(0, ci), ty = +tk.slice(ci + 1);
         const cc = isoCenter(tx, ty);
-        drawHoverHighlight(cc.x, cc.y, '#6CC8FF');
+        drawHoverHighlight(cc.x, cc.y, existingCovers.has(tk) ? '#FF6B5C' : '#6CC8FF');
       }
     }
   }
@@ -9873,6 +9886,7 @@ function buildSeedContainerModal() {
         btnRow.appendChild(mkBtn(1));
         btnRow.appendChild(mkBtn(5));
         btnRow.appendChild(mkBtn(25));
+        btnRow.appendChild(mkBtn(100));
         card.appendChild(wrap); card.appendChild(nm); card.appendChild(sub); card.appendChild(price); card.appendChild(btnRow);
         if (state.coins < c.cost) card.style.opacity = '0.65';
         grid.appendChild(card);
