@@ -12515,6 +12515,22 @@ function bindInput() {
     }
     // -------- Place mode click --------
     if (live.placeMode) {
+      // Shift+drag a rect while a tree is staged = bulk-plant the
+      // bounding box. Has to live INSIDE the placeMode branch because
+      // the branch returns before any other shift-drag handler runs.
+      if (e.button === 0 && e.shiftKey &&
+          live.placeMode.id && live.placeMode.id.startsWith('tree_') &&
+          !live.placeMode.moving) {
+        live.dragMode = 'paintRect';
+        live.paintRect = {
+          tool: 'placeTree',
+          ix0: startT.ix, iy0: startT.iy,
+          ix1: startT.ix, iy1: startT.iy,
+        };
+        stage.setPointerCapture(e.pointerId);
+        if (e.preventDefault) e.preventDefault();
+        return;
+      }
       // Buildings are placed OUTSIDE the main farm — `inWorld` is false
       // out there but the placement is still legal, so don't auto-cancel
       // for any building (barn, cottage, market stall, etc.).
@@ -12725,23 +12741,6 @@ function bindInput() {
       live.dragMode = 'paintRect';
       live.paintRect = {
         tool: state.selectedTool,
-        ix0: startT.ix, iy0: startT.iy,
-        ix1: startT.ix, iy1: startT.iy,
-      };
-      stage.setPointerCapture(e.pointerId);
-      if (e.preventDefault) e.preventDefault();
-      return;
-    }
-    // Shift+drag with a tree in placeMode = plant a rectangle of trees.
-    // Re-uses the paintRect machinery (rect drag + per-tile validation)
-    // by tagging the tool as 'placeTree'; the endPointer handler reads
-    // live.placeMode for the actual tree id when committing the queue.
-    if (e.button === 0 && e.shiftKey && live.placeMode &&
-        live.placeMode.id && live.placeMode.id.startsWith('tree_') &&
-        !live.placeMode.moving) {
-      live.dragMode = 'paintRect';
-      live.paintRect = {
-        tool: 'placeTree',
         ix0: startT.ix, iy0: startT.iy,
         ix1: startT.ix, iy1: startT.iy,
       };
