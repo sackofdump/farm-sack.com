@@ -3889,7 +3889,7 @@ const PET_COOLDOWN_MS            = DAY_MS;            // once per in-game day pe
 const STAFF_DAILY_UPKEEP         = 50;                // coins/day per staff
 const STAFF_ROLES = {
   animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen they live in, and auto-collects ready yields (eggs / milk / wool). Need one per pen.', unlock: 15, max: 1 },
-  crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 15, max: 20, levelStep: 3, freeHires: 1, extraLevelStep: 1 },
+  crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 15, max: 20, levelStep: 1, freeHires: 0, extraLevelStep: 1 },
   arborist:      { name: 'Arborist',      desc: 'Auto-waters trees and harvests their fruit.',     unlock: 15, max: 1 },
 };
 // Some roles cap dynamically — animal keeper lets you hire one per
@@ -3904,9 +3904,9 @@ function maxHires(role) {
 // multiple slots at the unlock level before the ramp kicks in.
 // `levelStep` is the cost of the FIRST over-free hire; subsequent
 // hires use `extraLevelStep` (defaults to levelStep). Crop Farmer
-// uses (freeHires:1, levelStep:3, extraLevelStep:1) so the 1st + 2nd
-// open at Lv 15, the 3rd at Lv 18, and every farmer past that
-// adds +1 to the unlock level (4th at 19, 5th at 20, …).
+// uses (freeHires:0, levelStep:1, extraLevelStep:1) so a fresh
+// crop farmer slot opens at every player level past the unlock —
+// 1st at Lv 15, 2nd at Lv 16, 3rd at Lv 17, … capped at max:20.
 function nextHireLevel(role) {
   const r = STAFF_ROLES[role]; if (!r) return Infinity;
   const have = staffCount(role);
