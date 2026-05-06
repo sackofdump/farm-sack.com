@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Hiring an Animal Keeper refills every animal in their pen to 100% loyalty on arrival.</li>
         <li>Crop Farmer ships with two hires unlocked at Lv 15 (was one); the third still waits for Lv 18.</li>
         <li><b>Speedy Hands</b> upgrade (unlocks at Lv 15) — three tiers stacking +50% / +75% / +100% staff move + work speed on top of the new baseline.</li>
         <li>Staff move + work +50% faster across the board.</li>
@@ -8102,6 +8103,28 @@ function hireStaff(role, opts) {
     zone: opts.zone || null,           // array of "ix,iy" tile keys
     zoneRect: opts.zoneRect || null,   // { x0, y0, x1, y1 } for visualisation
   });
+  // Hiring an Animal Keeper for a pen that already has animals refills
+  // each of those animals' loyalty to 100% — the keeper "settles them in"
+  // on arrival. Without this, a player who only hires a keeper after the
+  // pen has decayed would be stuck waiting out the slow per-tick recover.
+  if (role === 'animal_keeper') {
+    const pen = findBarnPenAt(spawn.ix, spawn.iy);
+    if (pen) {
+      const px1 = pen.x0 + pen.w, py1 = pen.y0 + pen.h;
+      let refilled = 0;
+      for (const k in state.placed) {
+        const it = state.placed[k];
+        if (!it || !it.id || !it.id.startsWith('animal_')) continue;
+        const [ax, ay] = k.split(',').map(Number);
+        if (ax < pen.x0 || ay < pen.y0 || ax >= px1 || ay >= py1) continue;
+        if (getAnimalLoyalty(it) < LOYALTY_MAX) {
+          it.loyalty = LOYALTY_MAX;
+          refilled++;
+        }
+      }
+      if (refilled > 0) toast(`Keeper refilled loyalty for ${refilled} animal${refilled === 1 ? '' : 's'}.`, false, 'good', 4000);
+    }
+  }
   // Reset upkeep clock so the new hire isn't billed for elapsed pre-hire time.
   state.staff.lastUpkeepAt = Date.now();
   storage.save();
