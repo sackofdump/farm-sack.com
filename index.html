@@ -1733,7 +1733,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
       <div class="patchDate">2026-05-05</div>
       <ul>
         <li>Fixed Staff Hall <b>Edit</b> / <b>Zone</b> / <b>Fire</b> buttons doing nothing — live refresh was wiping click handlers each frame; menus with interactive buttons now re-open through the throttled path that preserves handlers.</li>
-        <li>Bulk-move drop click is now the <b>center</b> of the moved group instead of the NW corner — twice the available drop room, and the off-edge error tells you which direction is overflowing.</li>
+        <li>Bulk-move drop click is now the <b>center</b> of the moved group instead of the NW corner — twice the available drop room, and the off-edge error tells you which direction is overflowing. Right-click cancels the move; ghost preview now appears over un-bought meadow too.</li>
         <li>Zoom-out range extended (min 0.5× → 0.25×) so a fully expanded farm fits on one screen.</li>
         <li>Edge-pan: while dragging a bulk-select rectangle (paint, move, zone, buy-land), push the cursor against any screen edge to scroll the camera that direction — selection follows past what's visible.</li>
         <li>Riding banner moved to the bottom-right corner so it stops overlapping the tool tooltip strip.</li>
@@ -12053,6 +12053,16 @@ function bindInput() {
       }
     }
 
+    // -------- Group-move right-click cancel --------
+    // Left-click drop is handled lower (after the Move-tool branch is
+    // suppressed). Right-click here aborts the staged move outright —
+    // group moves are short-lived and the player almost always means
+    // "abort" rather than "look around without leaving move mode".
+    if (live.moveGroup && e.button === 2) {
+      cancelGroupMove();
+      if (e.preventDefault) e.preventDefault();
+      return;
+    }
     // -------- Place mode click --------
     if (live.placeMode) {
       // Buildings are placed OUTSIDE the main farm — `inWorld` is false
@@ -12441,7 +12451,13 @@ function bindInput() {
       const snapHasPlaced = !!state.placed[tileKey(snapT.ix, snapT.iy)];
       const inAbsWorld = snapT.ix >= 0 && snapT.iy >= 0 &&
                          snapT.ix < WORLD_W && snapT.iy < WORLD_H;
-      const inBounds = isBuildingPlace
+      // While staging a bulk move, surface hover anywhere in the world
+      // box so the move-group ghost can preview over un-bought meadow
+      // (the player can validly drop a coffee stand on bought land that
+      // doesn't have a plot record yet, and they need to see the ghost
+      // before the click).
+      const isBulkMove = !!live.moveGroup;
+      const inBounds = (isBuildingPlace || isBulkMove)
         ? inAbsWorld
         : (snapHasPlaced ? inAbsWorld : inWorld(snapT.ix, snapT.iy));
       if (inBounds) {
