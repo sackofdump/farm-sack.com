@@ -1757,6 +1757,9 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Silo menu gets the same per-silo / per-stand layout the coffee stand uses + a green "active" / amber "idle" pill on the network header.</li>
+        <li>Trying to place a building over a planted/withered crop is now blocked — tooltip says "Can't put a building on a crop — harvest or sell first" instead of silently destroying the crop.</li>
+        <li>Seed Container modal now lists discovered mutations alongside the regular seeds, so crop farmers can plant rare hybrids straight from the network.</li>
         <li>Sidebar gets a new <b>Center on farmer</b> button (next to "Center on farm") so you can snap the camera back to wherever your farmer is.</li>
         <li>Leaderboard adds <b>Resets</b> + <b>Prestige %</b> columns so prestige progress is visible to everyone. (Backend: requires <code>prestige_count</code> + <code>prestige_bonus_pct</code> integer columns on the <code>leaderboard</code> table.)</li>
         <li>Settings → <b>Controls</b>: rebind every toolbar shortcut (the seven tool digits + Shop/Barn/Staff/Greenhouse/Reset/Horse buttons). Click a key cell, press a new key, done. Reset to defaults button included.</li>
@@ -6559,7 +6562,7 @@ const BUILDING_MENUS = {
   },
   building_silo: {
     title: 'Grain Silo',
-    desc: () => {
+    desc: ({ ix, iy } = {}) => {
       const cap = siloCapacity();
       const feed = Math.floor(siloFeed());
       const animals = countAnimalsPlaced();
@@ -6596,8 +6599,27 @@ const BUILDING_MENUS = {
         ? `<span style="color:#7a5430;">No fully-mature animals yet — the +${SLAUGHTER_OVERTIME_PER_DAY}¢/day slaughter bonus only ticks once they hit the Mature stage.</span>`
         : `<b>${matureCount}</b> mature animal${matureCount === 1 ? '' : 's'} accruing` +
           ` <b>+${SLAUGHTER_OVERTIME_PER_DAY}¢/day</b> while feed is in the silo · banked: <b>${matureTotal}¢</b>`;
+      // Per-silo readout for the one the player actually clicked on,
+      // matching the coffee-stand menu convention. Multi-silo farms
+      // can see "this silo vs network" without flipping between
+      // buildings.
+      let thisLine = '';
+      if (typeof ix === 'number' && typeof iy === 'number') {
+        const placed = state.placed[ix + ',' + iy];
+        if (placed && placed.id === 'building_silo') {
+          const own = Math.floor(typeof placed.feed === 'number' ? placed.feed : 0);
+          thisLine = `<div style="font-size:12px;color:#5b3f1f;margin:0 0 4px;">This silo: <b>${own} / ${SILO_CAPACITY_PER}</b></div>`;
+        }
+      }
+      // Status pill (matches the coffee-stand pattern). Sits next to
+      // the "Network" total so the green / amber state is impossible
+      // to miss.
+      const statusPill = active
+        ? ` · <span style="color:#1f7a3e;font-weight:800;">active</span>`
+        : ` · <span style="color:#8a5a1f;font-weight:800;">idle</span>`;
       return (
-        `<div style="margin-bottom:6px;">Feed: <b>${feed} / ${cap}</b></div>` +
+        thisLine +
+        `<div style="margin-bottom:6px;">Network: <b>${feed} / ${cap}</b>${statusPill}</div>` +
         `<div style="background:#3a2818;height:9px;border-radius:5px;overflow:hidden;margin:4px 0 8px;">` +
         `<div style="width:${pct}%;height:100%;background:linear-gradient(180deg,#FBE38A,#E8B339);"></div></div>` +
         `<div style="font-size:12px;color:#5b3f1f;">` +
@@ -8258,6 +8280,12 @@ function isPlaceableTile(ix, iy) {
   if (id && id.startsWith('building_')) {
     if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) return false;
     if (inBarnPen(ix, iy)) return false;
+    // Don't quietly bulldoze a planted crop — block placement so the
+    // tooltip's "Tile is occupied" branch fires + the click → tryPlace
+    // path produces an audible error instead of silently destroying
+    // the crop.
+    const plot = state.plots[k];
+    if (plot && (plot.state === 'planted' || plot.state === 'withered')) return false;
     return true;
   }
   // Everything else (trees / decor) lives inside the main farm and can't
@@ -9222,7 +9250,54 @@ function buildSeedContainerModal() {
       if (state.coins < c.cost) card.style.opacity = '0.65';
       grid.appendChild(card);
     }
-    if (unlocked.length === 0) {
+    // Discovered mutations — append to the grid so crop farmers can
+    // plant rare hybrids straight from the seed container. Treated
+    // exactly like normal seeds for buying purposes (the planting
+    // path doesn't care about the isMutation flag).
+    const mutCrops = Object.keys(CROPS).filter(id => CROPS[id].isMutation);
+    if (mutCrops.length) {
+      const header = document.createElement('div');
+      header.style.cssText = 'grid-column:1/-1;background:linear-gradient(160deg,#FFE7A8,#E0D4FF);border:2px solid #A335EE;border-radius:10px;padding:6px 10px;margin:8px 0 0;font-weight:700;color:#4A2E15;font-size:12px;text-align:center;';
+      header.innerHTML = `&#129528; <b>Discovered Mutations</b> &middot; ${mutCrops.length} unlocked`;
+      grid.appendChild(header);
+      const sortedMuts = mutCrops.slice().sort((a, b) =>
+        (CROPS[a].name || '').localeCompare(CROPS[b].name || ''));
+      for (const id of sortedMuts) {
+        const c = CROPS[id];
+        const color = (MUT_RARITY[c.rarity || 'common'] || {}).color || '#A335EE';
+        const card = document.createElement('div');
+        card.className = 'shop-card';
+        card.style.border = `2px solid ${color}`;
+        const wrap = document.createElement('div'); wrap.className = 'previewWrap';
+        const img = document.createElement('img');
+        img.src = imgPath(`crop_${id}_4`); img.alt = c.name;
+        img.style.cssText = `filter:drop-shadow(0 0 6px ${color});`;
+        img.onerror = function () { this.style.display = 'none'; };
+        wrap.appendChild(img);
+        const nm  = document.createElement('div'); nm.className = 'nm';
+        nm.style.color = color; nm.textContent = c.name;
+        const sub = document.createElement('div'); sub.className = 'sub';
+        sub.textContent = `${formatTime(c.time)} grow · sells ${c.sell}¢`;
+        const price = document.createElement('div'); price.className = 'price';
+        price.innerHTML = `<span class="iconDot coin" style="width:18px;height:18px;font-size:11px;"></span>${formatCoins(c.cost)} ea`;
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;gap:6px;margin-top:4px;width:100%;';
+        const mkBtn = (qty) => {
+          const b = document.createElement('button');
+          b.textContent = `+${qty}`;
+          b.style.cssText = 'flex:1;padding:6px 4px;font-size:12px;font-weight:800;background:linear-gradient(to bottom,#7BC56A,#3F8338);border:2px solid #2A4A1A;color:#FFF;border-radius:6px;cursor:pointer;box-shadow:0 2px 0 #2A4A1A;';
+          b.onclick = () => buySeedToContainer(id, qty);
+          return b;
+        };
+        btnRow.appendChild(mkBtn(1));
+        btnRow.appendChild(mkBtn(5));
+        btnRow.appendChild(mkBtn(25));
+        card.appendChild(wrap); card.appendChild(nm); card.appendChild(sub); card.appendChild(price); card.appendChild(btnRow);
+        if (state.coins < c.cost) card.style.opacity = '0.65';
+        grid.appendChild(card);
+      }
+    }
+    if (unlocked.length === 0 && mutCrops.length === 0) {
       grid.innerHTML = '<div style="color:#7a5430;font-size:12px;">No seeds unlocked yet.</div>';
     }
   }
@@ -13944,12 +14019,18 @@ function buildTooltipHTML(ix, iy) {
     let badReason = 'Tile is occupied.';
     if (!ok) {
       // Specific hints for the most common mistakes.
+      const k = tileKey(ix, iy);
+      const plot = state.plots[k];
+      const onCrop = plot && (plot.state === 'planted' || plot.state === 'withered');
+      const isBuilding = live.placeMode.id && live.placeMode.id.startsWith('building_');
       if (cat === 'animal' && !inBarnPen(ix, iy)) {
         badReason = 'Must be placed in the barnyard.';
       } else if (live.placeMode.id === 'building_slaughterhouse' && !inBarnPen(ix, iy)) {
         badReason = 'Must be placed inside the animal pen.';
       } else if (live.placeMode.id === 'building_barn') {
         badReason = 'Need empty grass with room for the pen south of here.';
+      } else if (isBuilding && onCrop) {
+        badReason = 'Can\'t put a building on a crop — harvest or sell first.';
       } else if (state.coins < live.placeMode.cost) {
         badReason = 'Not enough coins.';
       }
