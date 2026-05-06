@@ -5528,7 +5528,7 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
       const matureBonus = Math.round(animal.matureBonus || 0);
       const price = Math.round(meat.coins * animalAgeMul(animal)) + siloSlaughterBonus() + matureBonus;
       const stageLbl = matureBonus > 0
-        ? `${animalAgeStage(animal)} +${matureBonus}¢ aged`
+        ? `${animalAgeStage(animal)} +${matureBonus}¢ weight`
         : animalAgeStage(animal);
       slaughterBtn.disabled = false;
       slaughterBtn.textContent = `Slaughter for ${price}¢ (${stageLbl})`;
@@ -5855,7 +5855,7 @@ const BUILDING_MENUS = {
               const matureBonus = Math.round(it.matureBonus || 0);
               const price = Math.round(meat.coins * mul * yMul) + siloSlaughterBonus() + matureBonus;
               const tag = matureBonus > 0
-                ? `<b>${price}¢</b> <span style="color:#3F8338;font-size:10px;">(+${matureBonus} aged)</span>`
+                ? `<b>${price}¢</b> <span style="color:#3F8338;font-size:10px;">(+${matureBonus} weight)</span>`
                 : `<b>${price}¢</b>`;
               slaughterCell = tag;
             }
