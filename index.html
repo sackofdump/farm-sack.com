@@ -12942,13 +12942,18 @@ function buildUpgradesGrid(grid) {
     const lvl = p.waterLevel || 0;
     const maxed = lvl >= WATER_MAX_LEVEL;
     const cost = maxed ? null : waterCostUpgrade(lvl);
-    const curBoost  = Math.round((WATER_SPEED_M[lvl] - 1) * 100);
-    const nextBoost = maxed ? curBoost : Math.round((WATER_SPEED_M[lvl + 1] - 1) * 100);
+    // Display includes the prestige additive — wateredSpeedMul folds
+    // it into the watered base, so the upgrade card should match
+    // what the player actually receives in-game.
+    const presBonusPct = Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100);
+    const curBoost  = Math.round((WATER_SPEED_M[lvl] - 1) * 100) + presBonusPct;
+    const nextBoost = maxed ? curBoost : (Math.round((WATER_SPEED_M[lvl + 1] - 1) * 100) + presBonusPct);
     const curCost   = WATER_COSTS[lvl];
     const nextCost  = maxed ? curCost : WATER_COSTS[lvl + 1];
+    const presNote  = presBonusPct > 0 ? ` (+${presBonusPct}% prestige)` : '';
     const sub = maxed
-      ? `Crops &amp; trees +${curBoost}% growth · ${curCost}¢ per water`
-      : `Crops &amp; trees +${curBoost}% → +${nextBoost}% growth · ${curCost}¢ → ${nextCost}¢ per water`;
+      ? `Crops &amp; trees +${curBoost}% growth${presNote} · ${curCost}¢ per water`
+      : `Crops &amp; trees +${curBoost}% → +${nextBoost}% growth${presNote} · ${curCost}¢ → ${nextCost}¢ per water`;
     makeUpgradeCard(grid, {
       iconKey: 'tool_water',
       name: 'Water Efficiency',
