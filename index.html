@@ -1732,6 +1732,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Bulk-move centroid now uses the actual items' bounding box (not the dragged rect), so the cursor lands on the geometric center of the moved group; ghost preview rounds to the same tiles drop uses; un-bought meadow no longer rejects move drops.</li>
+        <li>Move tool walking no longer cancels the farmer's queued harvests / waters / etc. — the walk gets appended.</li>
         <li>Seed Containers no longer need to be near the crop farmer's zone — drop one anywhere on the map and any farmer can pull from any container.</li>
         <li>Barn menu now shows the pen's <b>animal count vs total tiles</b> at a glance, with the pen size and a "pen full — expand" hint when you've hit the cap.</li>
         <li>Fixed Staff Hall <b>Edit</b> / <b>Zone</b> / <b>Fire</b> buttons doing nothing — live refresh was wiping click handlers each frame; menus with interactive buttons now re-open through the throttled path that preserves handlers.</li>
@@ -7863,7 +7865,10 @@ function drawAll() {
     ctx.save();
     ctx.globalAlpha = 0.6;
     for (const it of grp.items) {
-      const tIx = dx + it.dx, tIy = dy + it.dy;
+      // Round so each ghost lands on the same integer tile finishGroupMoveAt
+      // will use — otherwise even-width groups render at sub-pixel offsets
+      // that don't match where the items actually drop.
+      const tIx = Math.round(dx + it.dx), tIy = Math.round(dy + it.dy);
       const c = isoCenter(tIx, tIy);
       drawPlacedItem(it.record.id, c.x, c.y, it.record);
     }
@@ -10649,16 +10654,23 @@ function startPlaceMode(item) {
 function finishGroupMoveAt(destIx, destIy) {
   if (!live.moveGroup) return;
   const grp = live.moveGroup;
+  // Round half-tile dx/dy from the float centroid so each item lands
+  // on a clean integer tile.
   const targets = grp.items.map(it => ({
-    srcKey: it.srcKey, dstIx: destIx + it.dx, dstIy: destIy + it.dy,
+    srcKey: it.srcKey,
+    dstIx: Math.round(destIx + it.dx),
+    dstIy: Math.round(destIy + it.dy),
     record: it.record,
   }));
-  // Validate every target tile (still in world; tile not occupied by
-  // *another* item that isn't part of the move group; not on a crop
-  // plot — moving onto crops would silently overwrite them).
+  // Validate every target tile. Bound check is the absolute world box
+  // (not state.worldBounds) so items can move onto un-bought meadow —
+  // buildings already place there freely, and forcing a move-only
+  // restriction surprises players. Existing-item / crop overlap
+  // checks below still protect against silent overwrites.
+  const inAbsWorld = (ix, iy) => ix >= 0 && iy >= 0 && ix < WORLD_W && iy < WORLD_H;
   const movingKeys = new Set(grp.items.map(it => it.srcKey));
   for (const t of targets) {
-    if (!inWorld(t.dstIx, t.dstIy)) {
+    if (!inAbsWorld(t.dstIx, t.dstIy)) {
       // Surface which edge so the player knows which way to nudge the
       // drop click instead of guessing.
       let dir = '';
@@ -10666,7 +10678,6 @@ function finishGroupMoveAt(destIx, destIy) {
       else if (t.dstIx >= WORLD_W) dir = ' (extends past the east edge)';
       else if (t.dstIy < 0)        dir = ' (extends past the north edge)';
       else if (t.dstIy >= WORLD_H) dir = ' (extends past the south edge)';
-      else                         dir = ' (lands on un-bought meadow)';
       toast('Destination would push items past the world' + dir + '.', true);
       audio.play('error'); return;
     }
@@ -12254,7 +12265,13 @@ function bindInput() {
         // required for drag-and-drop relocation.
         actOnTile('move', pickIx, pickIy, false);
       } else if (inWorld(startT.ix, startT.iy)) {
-        clearActionQueue();
+        // Move-tool walk now APPENDS to the queue instead of nuking
+        // pending harvest/water/plow actions — the player's farmer
+        // finishes whatever they were doing, then walks here. De-dupe
+        // any earlier 'move' that targeted the same tile so a chain of
+        // walk clicks still collapses to the latest one.
+        state.player.queue = state.player.queue.filter(q =>
+          !(q.tool === 'move' && q.ix === startT.ix && q.iy === startT.iy));
         state.player.queue.push({ tool: 'move', ix: startT.ix, iy: startT.iy });
       }
       live.dragMode = 'idle';
@@ -12523,13 +12540,12 @@ function bindInput() {
       const r = live.moveRect;
       const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
       const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
-      // Anchor to the rect's center, not its NW corner. The drop click
-      // becomes the centroid of the moved group, which is what the
-      // player visually expects and gives twice the available drop room
-      // before any item would push past the world edge.
-      const cx = Math.floor((x0 + x1) / 2);
-      const cy = Math.floor((y0 + y1) / 2);
-      const items = [];
+      // Collect every movable record in the rect first, then compute
+      // the centroid of the *actual items* (not the dragged rect). A
+      // wide rect with only a few items at one corner used to anchor
+      // to dead-empty space halfway across the selection, which made
+      // the cursor float far away from the group during the drop.
+      const collected = [];
       for (let iy = y0; iy <= y1; iy++) {
         for (let ix = x0; ix <= x1; ix++) {
           const k = tileKey(ix, iy);
@@ -12538,15 +12554,32 @@ function bindInput() {
           if (!placed.id) continue;
           if (!(placed.id.startsWith('building_') || placed.id.startsWith('tree_') ||
                 placed.id.startsWith('animal_') || placed.id.startsWith('decor_'))) continue;
-          items.push({ srcKey: k, ix, iy, dx: ix - cx, dy: iy - cy, record: placed });
+          collected.push({ srcKey: k, ix, iy, record: placed });
         }
       }
-      if (items.length === 0) {
+      if (collected.length === 0) {
         toast('Nothing movable in that area.', true);
         audio.play('error');
       } else {
+        // Float centroid of the items themselves. Half-tile offsets
+        // get resolved by Math.round at drop / preview time so the
+        // cursor truly lands on the geometric center of the group
+        // even for even-width clusters.
+        let minIx = Infinity, maxIx = -Infinity, minIy = Infinity, maxIy = -Infinity;
+        for (const c of collected) {
+          if (c.ix < minIx) minIx = c.ix;
+          if (c.ix > maxIx) maxIx = c.ix;
+          if (c.iy < minIy) minIy = c.iy;
+          if (c.iy > maxIy) maxIy = c.iy;
+        }
+        const cx = (minIx + maxIx) / 2;
+        const cy = (minIy + maxIy) / 2;
+        const items = collected.map(c => ({
+          srcKey: c.srcKey, ix: c.ix, iy: c.iy,
+          dx: c.ix - cx, dy: c.iy - cy, record: c.record,
+        }));
         // Stage the group — cursor banner + next click teleports.
-        live.moveGroup = { originIx: cx, originIy: cy, items };
+        live.moveGroup = { originIx: Math.round(cx), originIy: Math.round(cy), items };
         const banner = document.getElementById('placeBanner');
         if (banner) {
           banner.classList.remove('hidden');
