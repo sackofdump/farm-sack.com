@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Seed Containers now share a single <b>network view</b> — clicking any container opens a unified menu showing the total stocked across all of them. Buying / removing seeds cascades across containers, so you can stock the whole farm from one place.</li>
         <li>New <b>🔄 Reset Farm</b> prestige system at Lv 20 (button on the toolbar between Greenhouse and Horse). Wipes the run for a permanent <b>+1% boost to all coin/XP gains per 1,000,000¢</b> banked at reset. Bonuses stack across resets. Lv 20 popup explains it; the new toolbar buttons (Barn / Staff / Greenhouse / Horse / Reset) are also added to the starting tutorial.</li>
         <li>Horse staff-speed bonus toned down: +2% per placed horse, max +10% (was +5% / +25%).</li>
         <li>Greenhouse <b>Start Brew</b> button moved into the Brew Preview section so it's always visible without scrolling past the active-brews list. Active Brews header now reads "Active brews (N/5)".</li>
@@ -8802,7 +8803,80 @@ function seedContainerTotal(placed) {
   }
   return total;
 }
+// Iterate every placed seed container in stable order (state.placed
+// is iterated by insertion). Used for the network view + buy/remove
+// cascading.
+function eachSeedContainer(fn) {
+  for (const k in state.placed) {
+    const it = state.placed[k];
+    if (it && it.id === 'building_seed_container') fn(it, k);
+  }
+}
+// Collapse every container's seedQueue into a single { id → qty } map
+// for display. Insertion order in the resulting array matches the
+// first time each seed appears across the network so the planting
+// order stays predictable.
+function seedNetworkAggregate() {
+  const map = new Map();
+  eachSeedContainer(p => {
+    const q = ensureSeedQueue(p) || [];
+    for (const e of q) {
+      if (!e || !e.id) continue;
+      const cur = map.get(e.id) || 0;
+      map.set(e.id, cur + (e.qty | 0));
+    }
+  });
+  return map;
+}
+function seedNetworkCapacity() {
+  return SEED_CONTAINER_CAP * buildingCount('building_seed_container');
+}
+// Cascade-fill across containers. Returns the actual amount deposited
+// (clamped to network room).
+function addSeedToNetwork(seedId, qty) {
+  if (qty <= 0) return 0;
+  let remaining = qty, added = 0;
+  eachSeedContainer(p => {
+    if (remaining <= 0) return;
+    const q = ensureSeedQueue(p) || [];
+    const cur = q.reduce((s, e) => s + (e.qty | 0), 0);
+    const room = SEED_CONTAINER_CAP - cur;
+    if (room <= 0) return;
+    const fill = Math.min(remaining, room);
+    const existing = q.find(e => e.id === seedId);
+    if (existing) existing.qty += fill;
+    else q.push({ id: seedId, qty: fill });
+    remaining -= fill;
+    added += fill;
+  });
+  return added;
+}
+// Cascade-drain across containers. Removes the seed from any
+// container until `qty` units are pulled or the network runs out.
+function removeSeedFromNetwork(seedId, qty) {
+  if (qty <= 0) return 0;
+  let remaining = qty, removed = 0;
+  eachSeedContainer(p => {
+    if (remaining <= 0) return;
+    const q = ensureSeedQueue(p) || [];
+    for (let i = q.length - 1; i >= 0; i--) {
+      const e = q[i];
+      if (!e || e.id !== seedId) continue;
+      const take = Math.min(remaining, e.qty | 0);
+      e.qty -= take;
+      remaining -= take;
+      removed += take;
+      if (e.qty <= 0) q.splice(i, 1);
+      if (remaining <= 0) break;
+    }
+  });
+  return removed;
+}
 function openSeedContainerModal(ix, iy) {
+  // We treat all containers as one shared network now — clicking any
+  // single one opens the unified view. Still validate that the click
+  // landed on a real container so a stale ix/iy doesn't pop the modal
+  // by accident.
   const k = tileKey(ix, iy);
   const placed = state.placed[k];
   if (!placed || placed.id !== 'building_seed_container') return;
@@ -8816,62 +8890,50 @@ function closeSeedContainerModal() {
   document.getElementById('seedContainerModal').classList.add('hidden');
 }
 function buildSeedContainerModal() {
-  if (!live.activeSeedContainer) return;
-  const placed = state.placed[live.activeSeedContainer];
-  if (!placed) { closeSeedContainerModal(); return; }
-  const queue = ensureSeedQueue(placed);
-  const total = seedContainerTotal(placed);
-  const cap = SEED_CONTAINER_CAP;
-  const pct = Math.max(0, Math.min(100, Math.round((total / cap) * 100)));
+  // Network view — shows totals across every placed seed container.
+  // The single live.activeSeedContainer is just the click anchor; the
+  // data comes from the whole network so the player can stock + pull
+  // from any container by interacting with this one menu.
+  const networkMap = seedNetworkAggregate();
+  const total = Array.from(networkMap.values()).reduce((s, q) => s + q, 0);
+  const cap = seedNetworkCapacity();
+  const containerCount = buildingCount('building_seed_container');
+  const pct = cap > 0 ? Math.max(0, Math.min(100, Math.round((total / cap) * 100))) : 0;
   const info = document.getElementById('scQueueInfo');
-  if (info) info.innerHTML = `Stocked: <b>${total} / ${cap}</b> · Queue order = planting order`;
+  if (info) info.innerHTML =
+    `Total stocked: <b>${total.toLocaleString()} / ${cap.toLocaleString()}</b>` +
+    ` · across <b>${containerCount}</b> container${containerCount === 1 ? '' : 's'}` +
+    ` · pooled — any farmer can pull from any container`;
   const bar = document.getElementById('scQueueBar');
   if (bar) bar.style.width = pct + '%';
-  // Queue list — ordered with up/down to swap planting priority.
   const list = document.getElementById('scQueueList');
   if (list) {
     list.innerHTML = '';
     list.style.display = 'block';
-    if (queue.length === 0) {
-      list.innerHTML = '<div style="color:#7a5430;font-size:12px;padding:6px 0;">Queue is empty — buy seeds below.</div>';
+    const entries = Array.from(networkMap.entries());
+    if (entries.length === 0) {
+      list.innerHTML = '<div style="color:#7a5430;font-size:12px;padding:6px 0;">Network is empty — buy seeds below.</div>';
     } else {
-      queue.forEach((entry, idx) => {
-        const c = CROPS[entry.id]; const name = c ? c.name : entry.id;
+      entries.forEach(([seedId, qty], idx) => {
+        const c = CROPS[seedId]; const name = c ? c.name : seedId;
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid rgba(74,46,21,0.18);';
         row.innerHTML =
-          `<div style="display:flex;flex-direction:column;gap:2px;">` +
-            `<button data-up style="padding:0;width:22px;height:18px;font-size:12px;background:linear-gradient(to bottom,#FBE38A,#E8B339);border:2px solid #7A5A20;color:#3B2A1A;border-radius:4px;cursor:pointer;${idx === 0 ? 'opacity:0.4;cursor:not-allowed;' : ''}">▲</button>` +
-            `<button data-down style="padding:0;width:22px;height:18px;font-size:12px;background:linear-gradient(to bottom,#FBE38A,#E8B339);border:2px solid #7A5A20;color:#3B2A1A;border-radius:4px;cursor:pointer;${idx === queue.length - 1 ? 'opacity:0.4;cursor:not-allowed;' : ''}">▼</button>` +
-          `</div>` +
           `<div style="width:24px;text-align:center;font-weight:800;color:#7a5430;">${idx + 1}.</div>` +
-          `<img src="${imgPath('crop_'+entry.id+'_4')}" style="width:32px;height:32px;object-fit:contain;">` +
-          `<div style="flex:1;"><b>${name}</b> <span style="color:#7a5430;">× ${entry.qty}</span></div>`;
-        const upBtn   = row.querySelector('[data-up]');
-        const downBtn = row.querySelector('[data-down]');
-        if (upBtn) upBtn.onclick = () => {
-          if (idx === 0) return;
-          [queue[idx - 1], queue[idx]] = [queue[idx], queue[idx - 1]];
-          storage.save(); buildSeedContainerModal();
-        };
-        if (downBtn) downBtn.onclick = () => {
-          if (idx === queue.length - 1) return;
-          [queue[idx + 1], queue[idx]] = [queue[idx], queue[idx + 1]];
-          storage.save(); buildSeedContainerModal();
-        };
+          `<img src="${imgPath('crop_'+seedId+'_4')}" style="width:32px;height:32px;object-fit:contain;">` +
+          `<div style="flex:1;"><b>${name}</b> <span style="color:#7a5430;">× ${qty.toLocaleString()}</span></div>`;
         const rm = document.createElement('button');
         rm.textContent = '−1';
         rm.style.cssText = 'padding:4px 10px;font-size:12px;font-weight:700;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border:2px solid var(--wood-3);color:#FFF;border-radius:6px;cursor:pointer;';
         rm.onclick = () => {
-          entry.qty -= 1;
-          if (entry.qty <= 0) queue.splice(idx, 1);
+          removeSeedFromNetwork(seedId, 1);
           storage.save(); buildSeedContainerModal();
         };
         const rmAll = document.createElement('button');
         rmAll.textContent = 'Remove all';
         rmAll.style.cssText = 'padding:4px 10px;font-size:12px;font-weight:700;background:linear-gradient(to bottom,#A33B3B,#6e1f1f);border:2px solid #4a0f0f;color:#FFF;border-radius:6px;cursor:pointer;';
         rmAll.onclick = () => {
-          queue.splice(idx, 1);
+          removeSeedFromNetwork(seedId, qty);
           storage.save(); buildSeedContainerModal();
         };
         row.appendChild(rm);
@@ -8922,16 +8984,15 @@ function buildSeedContainerModal() {
   }
 }
 function buySeedToContainer(seedId, qty) {
-  if (!live.activeSeedContainer) return;
-  const placed = state.placed[live.activeSeedContainer];
-  if (!placed || placed.id !== 'building_seed_container') return;
-  const queue = ensureSeedQueue(placed);
+  // Network purchase: cascade across every placed container instead
+  // of dropping into the clicked one. Lets the player top up the
+  // whole farm from a single open menu.
   const c = CROPS[seedId];
   if (!c) return;
-  const total = seedContainerTotal(placed);
-  const room = SEED_CONTAINER_CAP - total;
+  const stored = Array.from(seedNetworkAggregate().values()).reduce((s, q) => s + q, 0);
+  const room = seedNetworkCapacity() - stored;
   if (room <= 0) {
-    toast('Container is full.', true); audio.play('error'); return;
+    toast('All containers are full.', true); audio.play('error'); return;
   }
   const buying = Math.min(qty, room);
   const cost = c.cost * buying;
@@ -8939,11 +9000,7 @@ function buySeedToContainer(seedId, qty) {
     toast(`Need ${cost}¢ for ${buying} ${c.name}.`, true); audio.play('error'); return;
   }
   state.coins -= cost;
-  // Merge with an existing entry of the same seed so the queue doesn't
-  // accumulate duplicate rows. New seed types append to the back.
-  const existing = queue.find(e => e.id === seedId);
-  if (existing) existing.qty += buying;
-  else queue.push({ id: seedId, qty: buying });
+  addSeedToNetwork(seedId, buying);
   audio.play('coin');
   toast(`+${buying} ${c.name} (−${cost}¢)`, false, 'good');
   storage.save(); refreshHud();
