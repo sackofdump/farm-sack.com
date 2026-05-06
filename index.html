@@ -1739,6 +1739,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>New <b>Greenhouse</b> button on the toolbar between Staff Hall and Horse — opens the mutation lab instantly (no walk to the building). Greyed out until the greenhouse unlocks; falls back to the shop's Buildings tab if none is placed.</li>
+        <li>Clicking <b>Open Greenhouse</b> on the building menu also opens the lab immediately instead of walking the farmer over first.</li>
         <li>Greenhouse mutation queue cap raised 4 → 5; <b>Start Brew</b> reads "Queue full (5/5)" + greys out when at the limit.</li>
         <li>Greenhouse posts a toast + chime when a brew finishes while you're not in the lab — no more peeking at the modal to check.</li>
         <li>Greenhouse Claim button visibly greys out + reads "Brewing…" while the timer is running, so the disabled state actually reads as disabled.</li>
@@ -6434,8 +6436,10 @@ const BUILDING_MENUS = {
     title: 'Mutation Greenhouse',
     desc: 'Brew rare seed mutations for XP + coins.',
     actions: [{
+      // Open immediately — no farmer walk required (Seed Container
+      // already adopted this pattern, and the modal is purely UI).
       label: '🧬 Open Greenhouse',
-      run: (tile) => { state.player.queue.push({ tool: 'enterGreenhouse', ix: tile.ix, iy: tile.iy }); },
+      run: () => { openMutationModal(); },
     }],
   },
 };
@@ -11583,6 +11587,40 @@ function buildToolbar() {
     }
   });
   tb.appendChild(staffBtn);
+  // Greenhouse shortcut — between Staff Hall and Horse. Greyed until
+  // the building's unlock level. Click while built: pop the lab
+  // modal directly (no walking required). Without one yet: drop the
+  // player into the shop's Buildings tab. Same UX pattern as Barn /
+  // Staff Hall.
+  const ghItem = SHOP_ITEMS.find(i => i.id === 'building_greenhouse');
+  const ghUnlockLv = ghItem ? (ghItem.unlock || 1) : 12;
+  const ghLocked = state.level < ghUnlockLv;
+  const ghBuilt = !!Object.keys(state.placed || {}).find(k =>
+    state.placed[k] && state.placed[k].id === 'building_greenhouse'
+  );
+  const ghBtn = document.createElement('button');
+  ghBtn.className = 'tool toolGreenhouse' + (ghLocked ? ' toolLocked' : '');
+  ghBtn.id = 'toolGreenhouseBtn';
+  ghBtn.title = ghLocked
+    ? `Greenhouse — unlocks at Lv ${ghUnlockLv}`
+    : (ghBuilt ? 'Greenhouse — open the mutation lab' : 'Greenhouse — build one in the shop');
+  ghBtn.disabled = ghLocked;
+  const ghIcon = document.createElement('img');
+  ghIcon.src = imgPath('building_greenhouse'); ghIcon.alt = 'Greenhouse';
+  ghIcon.style.cssText = 'object-fit:contain;width:60px;height:60px;';
+  ghBtn.appendChild(ghIcon);
+  ghBtn.addEventListener('click', () => {
+    if (ghLocked) return;
+    if (!ghBuilt) {
+      activeShopTab = 'building';
+      openShop();
+      audio.play('click');
+      return;
+    }
+    openMutationModal();
+    audio.play('click');
+  });
+  tb.appendChild(ghBtn);
   // Horse mount/dismount shortcut — sits to the right of the Staff Hall
   // button. Greyed out until the horse unlock level. Click while
   // dismounted: queue a walk-to + mount for the nearest placed horse.
