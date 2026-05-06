@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Late-game perf: refreshHud + quest-panel rebuild throttled to ~5Hz from the loop (inline callers still fire instantly), and the quest-panel innerHTML write is skipped when the markup hasn't actually changed.</li>
         <li>Late-game perf: tooltip rebuild throttled to 250ms + cached, drawAll now culls off-screen state.placed + state.plots before sorting, and tickPlacedAnimals throttled to 10Hz. Should noticeably cut frame time on big farms.</li>
         <li>Staff Hall row now shows each Crop Farmer's enabled <b>Jobs</b> (Plow / Plant / Water / Harvest icons) inline next to the zone size — at-a-glance status without opening Edit.</li>
         <li>Expand Play Area now grows whichever sides still have room — used to refuse the whole purchase if any one edge had hit the world boundary, leaving 2 sides unfilled when the world bounds bumped from 70 → 72.</li>
@@ -10883,6 +10884,11 @@ function refreshQuestsPanel() {
     html += '<h4 style="margin-top:8px;color:#FFB85C;">Daily ★</h4>';
     for (const d of state.dailies) html += renderRow(d, true);
   }
+  // Skip the DOM write when nothing changed — refreshHud fires often
+  // and quest progress only ticks on harvest / plow / slaughter
+  // events, so most calls are no-ops.
+  if (panel._lastHtml === html) return;
+  panel._lastHtml = html;
   panel.innerHTML = html;
   const collapseBtn = document.getElementById('qPanelCollapse');
   const collapseFn = (ev) => {
@@ -14588,7 +14594,13 @@ function loop(t) {
   tickPlacedAnimals(dt);    // drift pen animals around inside the fence
   edgePanTick(dt);          // auto-pan camera when a bulk-select drag pushes against the screen edges
   drawAll();
-  refreshHud();
+  // refreshHud rebuilds chip text + the quest panel innerHTML; doesn't
+  // need 60Hz. Inline callers (harvest, slaughter, level-up, etc.)
+  // still hit refreshHud immediately for responsive feedback.
+  if (t - (loop._hudLastT || 0) > 200) {
+    loop._hudLastT = t;
+    refreshHud();
+  }
   refreshTooltip();   // keep the growing countdown ticking even when the cursor is still
   tryFlushLevelUpPopup();   // pop any deferred level-up modal once the player is idle
   tryFlushTutorial();       // pop any queued tutorial popup (barn, etc.) once idle
