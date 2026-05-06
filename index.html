@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Greenhouse upgrades extended <b>T4 → T10</b>. Each tier now multiplies the instability fail chance: T1 = 1.0× (no help), T4 = 0.55×, T10 = 0.08× (max-instability brew is under 5% fail). Tiers also keep ramping rarity bonus + brew speed; costs ramp from 900k (T5) to 70M (T10).</li>
         <li>New <b>Greenhouse</b> button on the toolbar between Staff Hall and Horse — opens the mutation lab instantly (no walk to the building). Greyed out until the greenhouse unlocks; falls back to the shop's Buildings tab if none is placed.</li>
         <li>Clicking <b>Open Greenhouse</b> on the building menu also opens the lab immediately instead of walking the farmer over first.</li>
         <li>Greenhouse mutation queue cap raised 4 → 5; <b>Start Brew</b> reads "Queue full (5/5)" + greys out when at the limit.</li>
@@ -13754,11 +13755,21 @@ function openShop() { buildShopTabs(); buildShopGrid(); openModal('shopModal'); 
 // ------------------------------------------------------------
 
 const MUT_TIERS = {
-  // tier -> active slot count, rarity bonus, brew minutes, hybrid gate, upgrade cost.
-  1: { slots: 2, rarityBonus: 0,  brewMin: 60, allowsCrossBreed: false, upgradeCost: 0 },
-  2: { slots: 3, rarityBonus: 4,  brewMin: 50, allowsCrossBreed: false, upgradeCost: 48000 },
-  3: { slots: 4, rarityBonus: 8,  brewMin: 40, allowsCrossBreed: false, upgradeCost: 140000 },
-  4: { slots: 4, rarityBonus: 12, brewMin: 30, allowsCrossBreed: true,  upgradeCost: 360000 },
+  // tier -> active slot count, rarity bonus, brew minutes, hybrid gate,
+  // upgrade cost, failMul (multiplier on the instability fail chance).
+  // failMul scales the existing min(0.5, instability * 0.025) so a
+  // maxed-out lab can still brew even a max-instability recipe with
+  // < 5% fail at T10. Earlier tiers keep failMul == 1 by default.
+  1:  { slots: 2, rarityBonus: 0,  brewMin: 60, allowsCrossBreed: false, upgradeCost: 0,        failMul: 1.00 },
+  2:  { slots: 3, rarityBonus: 4,  brewMin: 50, allowsCrossBreed: false, upgradeCost: 48000,    failMul: 0.85 },
+  3:  { slots: 4, rarityBonus: 8,  brewMin: 40, allowsCrossBreed: false, upgradeCost: 140000,   failMul: 0.70 },
+  4:  { slots: 4, rarityBonus: 12, brewMin: 30, allowsCrossBreed: true,  upgradeCost: 360000,   failMul: 0.55 },
+  5:  { slots: 4, rarityBonus: 16, brewMin: 25, allowsCrossBreed: true,  upgradeCost: 900000,   failMul: 0.40 },
+  6:  { slots: 4, rarityBonus: 20, brewMin: 20, allowsCrossBreed: true,  upgradeCost: 2200000,  failMul: 0.28 },
+  7:  { slots: 4, rarityBonus: 24, brewMin: 16, allowsCrossBreed: true,  upgradeCost: 5400000,  failMul: 0.20 },
+  8:  { slots: 4, rarityBonus: 28, brewMin: 13, allowsCrossBreed: true,  upgradeCost: 13000000, failMul: 0.14 },
+  9:  { slots: 4, rarityBonus: 32, brewMin: 11, allowsCrossBreed: true,  upgradeCost: 30000000, failMul: 0.10 },
+  10: { slots: 4, rarityBonus: 36, brewMin: 9,  allowsCrossBreed: true,  upgradeCost: 70000000, failMul: 0.08 },
 };
 // Slot order in the UI also dictates which slots a tier exposes.
 const MUT_SLOT_KEYS = ['water', 'light', 'soil', 'catalyst'];
@@ -13925,7 +13936,15 @@ function ghInstability(choices) {
   for (const k of ghActiveSlots()) s += ghOption(k, choices[k]).instability;
   return s;
 }
-function ghFailChance(instability) { return Math.min(0.5, instability * 0.025); }
+function ghFailChance(instability) {
+  // Multiply the instability fail chance by the current tier's
+  // failMul so upgrading actually softens dangerous brews. A T10 lab
+  // brings even max-instability runs under 5% fail.
+  const tier = (state.greenhouse && state.greenhouse.tier) || 1;
+  const mul  = (MUT_TIERS[tier] && typeof MUT_TIERS[tier].failMul === 'number')
+               ? MUT_TIERS[tier].failMul : 1;
+  return Math.min(0.5, instability * 0.025) * mul;
+}
 
 // Recipe match: does the (seedA, seedB, choices) line up with this mutation?
 function ghRecipeMatches(def, seedA, seedB) {
@@ -14333,7 +14352,7 @@ function renderMutationLab() {
     t.allowsCrossBreed ? chip(`&#129528; Cross-breed`, '#A335EE') : '',
   ].filter(Boolean).join('');
   const rightSide = next
-    ? `<button class="splashBtn" id="ghUpgradeBtn" style="width:auto;padding:8px 14px;font-size:12px;font-weight:800;letter-spacing:.5px;">Upgrade T${tierNum+1} &middot; ${next.upgradeCost}&cent;</button>`
+    ? `<button class="splashBtn" id="ghUpgradeBtn" style="width:auto;padding:8px 14px;font-size:12px;font-weight:800;letter-spacing:.5px;">Upgrade T${tierNum+1} &middot; ${formatCoins(next.upgradeCost)}&cent;</button>`
     : `<span style="display:inline-flex;align-items:center;gap:4px;background:linear-gradient(160deg,#FFD27F,#C98E4F);color:#4A2E15;border:2px solid #B7944D;border-radius:8px;padding:6px 14px;font-weight:900;letter-spacing:1.5px;font-size:12px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.15);">&#9733; MAX TIER</span>`;
   const headerHtml = `
     <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;background:linear-gradient(160deg,#FFFAE5,#F7E8C8);border:2px solid #B7944D;border-radius:10px;padding:10px 12px;margin-bottom:10px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.04);">
