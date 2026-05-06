@@ -3074,6 +3074,7 @@ function openResetFarmModal() {
         `<li>Crop + tree growth speed</li>` +
         `<li>Watered base bonus (+${totalPct}% added to the level-0 +50%, upgrades stack on top)</li>` +
         `<li>Starting fenced lot: <b>${newLot}×${newLot}</b> (was ${curLot}×${curLot} from your current bonus)</li>` +
+        `<li>Starting coins: <b>${formatCoins(Math.round(1000 * (1 + total)))}¢</b> (1,000 base × prestige)</li>` +
         `<li>Farm grass tint shifts a hue per reset</li>` +
       `</ul>`;
   }
@@ -3101,7 +3102,11 @@ function resetFarm() {
   // Reset run-scoped fields. KEEP_FIELDS that aren't touched here
   // (achievements, stats, prestige, prefs, farmer, leaderboard data,
   // tutorialShown flags) intentionally survive the wipe.
-  state.coins = 250;
+  // Starting coins scale with the new prestige bonus — 1,000 × (1 + N).
+  // +25% prestige starts at 1,250¢; +100% at 2,000¢, etc.
+  const STARTING_COINS_BASE = 1000;
+  const presBonusForCoins   = (state.prestige.totalBonus || 0);
+  state.coins = Math.round(STARTING_COINS_BASE * (1 + presBonusForCoins));
   state.xp = 0;
   state.level = 1;
   state.tutorialStep = 99;          // skip the starting tutorial on the reset run
@@ -4747,7 +4752,7 @@ function preloadAssets(onProgress, onDone) {
 // STATE
 // ============================================================
 const state = {
-  coins: 250,
+  coins: 1000,
   xp: 0,
   level: 1,
   selectedTool: 'plow',
