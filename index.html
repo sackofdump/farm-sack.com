@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Greenhouse tier upgrades cost 4× more (T2 12k → 48k, T3 35k → 140k, T4 90k → 360k).</li>
         <li>Late-game perf: <b>buildingCount / placedHorseCount / siloFeed / coffeeStored</b> are now 200-250ms cached. With 20 crop farmers each calling staffSpeedMul → horseStaffSpeedMul → state.placed walk per frame, the cumulative cost was a real lag source on big farms.</li>
         <li>Coyote sprite faces the right way again (was inverted after the last facing pass).</li>
         <li>Mature-animal weight bonus 1¢/day → 5¢/day, partially restoring the silo-bonus power that was removed.</li>
@@ -13637,9 +13638,9 @@ function openShop() { buildShopTabs(); buildShopGrid(); openModal('shopModal'); 
 const MUT_TIERS = {
   // tier -> active slot count, rarity bonus, brew minutes, hybrid gate, upgrade cost.
   1: { slots: 2, rarityBonus: 0,  brewMin: 60, allowsCrossBreed: false, upgradeCost: 0 },
-  2: { slots: 3, rarityBonus: 4,  brewMin: 50, allowsCrossBreed: false, upgradeCost: 12000 },
-  3: { slots: 4, rarityBonus: 8,  brewMin: 40, allowsCrossBreed: false, upgradeCost: 35000 },
-  4: { slots: 4, rarityBonus: 12, brewMin: 30, allowsCrossBreed: true,  upgradeCost: 90000 },
+  2: { slots: 3, rarityBonus: 4,  brewMin: 50, allowsCrossBreed: false, upgradeCost: 48000 },
+  3: { slots: 4, rarityBonus: 8,  brewMin: 40, allowsCrossBreed: false, upgradeCost: 140000 },
+  4: { slots: 4, rarityBonus: 12, brewMin: 30, allowsCrossBreed: true,  upgradeCost: 360000 },
 };
 // Slot order in the UI also dictates which slots a tier exposes.
 const MUT_SLOT_KEYS = ['water', 'light', 'soil', 'catalyst'];
