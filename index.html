@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Horse staff-speed bonus toned down: +2% per placed horse, max +10% (was +5% / +25%).</li>
         <li>Greenhouse <b>Start Brew</b> button moved into the Brew Preview section so it's always visible without scrolling past the active-brews list. Active Brews header now reads "Active brews (N/5)".</li>
         <li>Greenhouse upgrades extended <b>T4 → T10</b>. Each tier now multiplies the instability fail chance: T1 = 1.0× (no help), T4 = 0.55×, T10 = 0.08× (max-instability brew is under 5% fail). Tiers also keep ramping rarity bonus + brew speed; costs ramp from 900k (T5) to 70M (T10).</li>
         <li>New <b>Greenhouse</b> button on the toolbar between Staff Hall and Horse — opens the mutation lab instantly (no walk to the building). Greyed out until the greenhouse unlocks; falls back to the shop's Buildings tab if none is placed.</li>
@@ -2637,8 +2638,8 @@ function staffSpeedMul() {
 // Speedy Hands upgrade so a maxed farm can pair both for the full
 // stack. Returns a multiplier (1.0 base) so the call site can just
 // multiply through.
-const HORSE_STAFF_SPEED_PER  = 0.05;
-const HORSE_STAFF_SPEED_CAP  = 0.25;
+const HORSE_STAFF_SPEED_PER  = 0.02;   // +2% staff speed per placed horse
+const HORSE_STAFF_SPEED_CAP  = 0.10;   // hard-capped at +10% (5 horses worth)
 // Memoised: walking state.placed every staffer × every frame was the
 // dominant late-game cost once the crop-farmer cap was raised to 20.
 // Cache for one animation frame (~16ms) so multiple staff ticks in
@@ -3832,7 +3833,7 @@ const SHOP_ITEMS = [
   { cat: 'animal', id: 'animal_goat',    name: 'Goat',    cost: 600,  sub: 'Yields goat milk (63¢) · meat 563-1126¢',  unlock: 12 },
   { cat: 'animal', id: 'animal_cow',     name: 'Cow',     cost: 750,  sub: 'Milk (81¢) · meat 700-1400¢ · Cow Dung +5% Plant Growth Speed', unlock: 13 },
   { cat: 'animal', id: 'animal_dog',     name: 'Dog',     cost: 350,  sub: 'Loyal guardian — chases off coyotes',      unlock: 14 },
-  { cat: 'animal', id: 'animal_horse',   name: 'Horse',   cost: 1200, sub: 'Ride for 2× speed · each placed horse +5% staff speed (cap +25%)',          unlock: 15 },
+  { cat: 'animal', id: 'animal_horse',   name: 'Horse',   cost: 1200, sub: 'Ride for 2× speed · each placed horse +2% staff speed (cap +10%)',          unlock: 15 },
   // ---- Buildings (each gives a stacking farm bonus while placed) ----
   { cat: 'building', id: 'building_house',        name: 'Cottage',      cost: 2250, sub: '+5% XP per harvest (cap +25%)',  unlock: 6  },
   { cat: 'building', id: 'building_barn',         name: 'Big Red Barn', cost: 3300, sub: 'Opens the animal pen — unlocks livestock', unlock: 8  },
