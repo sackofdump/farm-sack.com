@@ -3297,6 +3297,23 @@ function marketSellMul()   { return 1 + 0.05 * buildingCount('building_market_st
 const WINDMILL_MAX_BONUS = 0.25;
 function windmillGrowMul() { return 1 + Math.min(WINDMILL_MAX_BONUS, 0.05 * buildingCount('building_windmill')); }
 function windmillIsMaxed() { return buildingCount('building_windmill') >= 5; }
+// Building-menu MAXED chip: predicate per id that returns true when the
+// building's primary stacking bonus has hit its hard cap. Storage-only
+// caps (silo feed slots, seed container slots) and per-copy buildings
+// without a global cap (barn pens, sprinklers, slaughterhouse) are
+// intentionally absent — adding more of those still does something
+// useful, so flagging them MAXED would mislead.
+const BUILDING_MAXED_AT = {
+  building_house:        () => buildingCount('building_house')        >= 5,
+  building_market_stall: () => buildingCount('building_market_stall') >= 5,
+  building_windmill:     () => buildingCount('building_windmill')     >= 5,
+  building_silo:         () => buildingCount('building_silo')         >= 5,
+  building_coffee_stand: () => buildingCount('building_coffee_stand') >= 3,
+};
+function buildingIsMaxed(id) {
+  const fn = BUILDING_MAXED_AT[id];
+  return !!(fn && fn());
+}
 // Each placed cow drops manure that fertilises the crop field — +10%
 // crop growth speed per cow, capped at 10 cows (+100%) so the player
 // can't trivialise growth by spamming a megafarm.
@@ -4484,6 +4501,50 @@ const SHOP_ITEMS = [
 // sprinkler tile. Preview overlay reads this so what the player sees
 // matches the shop description.
 const SPRINKLER_RADIUS = 2;
+const SPRINKLER_INTERVAL_MS = 6000;
+// Soak the 5×5 vicinity around (sx, sy): every planted crop that isn't
+// already watered gets the watered flag, plays an FX, and credits the
+// player the same XP a manual water would. Returns the number of plots
+// freshly watered so callers can short-circuit FX work when the pass is
+// idle.
+function sprinklerSoak(sx, sy) {
+  let n = 0;
+  for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
+    for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
+      const ix = sx + dx, iy = sy + dy;
+      if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) continue;
+      const k = ix + ',' + iy;
+      const p = state.plots[k];
+      if (!p || p.state !== 'planted' || p.watered) continue;
+      p.watered = true;
+      n++;
+      const wxp = waterXpGain();
+      grantXp(wxp);
+      bumpStat('watered');
+      fxBurst(ix, iy, '#6CD4FF', 6);
+      fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
+    }
+  }
+  if (n > 0) audio.play('water');
+  return n;
+}
+// Walk every placed sprinkler and fire its 6s soak whenever its
+// individual timer is due. lastSoakAt is stamped per-sprinkler on
+// placement so a fresh sprinkler doesn't have to wait the full 6s for
+// its first pour.
+function tickSprinklers() {
+  const now = Date.now();
+  for (const k in state.placed) {
+    const it = state.placed[k];
+    if (!it || it.id !== 'building_sprinkler') continue;
+    if (typeof it.lastSoakAt !== 'number') it.lastSoakAt = 0;
+    if (now - it.lastSoakAt < SPRINKLER_INTERVAL_MS) continue;
+    it.lastSoakAt = now;
+    const ci = k.indexOf(',');
+    const ix = +k.slice(0, ci), iy = +k.slice(ci + 1);
+    sprinklerSoak(ix, iy);
+  }
+}
 
 // ============================================================
 // ACHIEVEMENTS — one-shot milestones with a coin/XP reward.
@@ -7170,7 +7231,15 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
       scrollSnap.push(el.scrollHeight > el.clientHeight + 1 ? el.scrollTop : null);
     });
   }
-  document.getElementById('amTitle').textContent = cfg.title;
+  // Title gets a green MAXED chip when the building's primary stacking
+  // bonus is at cap, so the player can tell at a glance whether buying
+  // more copies will improve anything.
+  const titleEl = document.getElementById('amTitle');
+  if (buildingIsMaxed(buildingId)) {
+    titleEl.innerHTML = `${cfg.title}<span style="margin-left:8px;font-size:11px;font-weight:900;color:#1f6b1a;background:#d6f3c6;border:1px solid #5fa64a;border-radius:8px;padding:2px 7px;vertical-align:middle;letter-spacing:0.5px;">MAXED</span>`;
+  } else {
+    titleEl.textContent = cfg.title;
+  }
   const desc = document.getElementById('amDesc');
   const collectBtn = document.getElementById('amCollect');
   const slaughterBtn = document.getElementById('amSlaughter');
@@ -8644,9 +8713,22 @@ function drawAll() {
     if (c.ix < minIx) minIx = c.ix; if (c.ix > maxIx) maxIx = c.ix;
     if (c.iy < minIy) minIy = c.iy; if (c.iy > maxIy) maxIy = c.iy;
   }
-  minIx = Math.max(0, minIx - 2); minIy = Math.max(0, minIy - 4);
-  maxIx = Math.min(WORLD_W - 1, maxIx + 2);
-  maxIy = Math.min(WORLD_H - 1, maxIy + 4);
+  // Clamp to state.worldBounds + a small decorative margin instead of the
+  // full 72×72 absolute world. At low zoom the cull diamond was filling
+  // the screen with empty meadow tiles outside the bought land — the
+  // player saw a giant blank green expanse around their farm. The margin
+  // still lets a thin grass border peek past the fence so the play area
+  // doesn't read as cut-off against the sky gradient.
+  const _wb = state.worldBounds || defaultWorldBounds();
+  const _MEADOW_MARGIN = 6;
+  const _wbMinX = Math.max(0, _wb.x0 - _MEADOW_MARGIN);
+  const _wbMinY = Math.max(0, _wb.y0 - _MEADOW_MARGIN);
+  const _wbMaxX = Math.min(WORLD_W - 1, _wb.x0 + _wb.w - 1 + _MEADOW_MARGIN);
+  const _wbMaxY = Math.min(WORLD_H - 1, _wb.y0 + _wb.h - 1 + _MEADOW_MARGIN);
+  minIx = Math.max(_wbMinX, minIx - 2);
+  minIy = Math.max(_wbMinY, minIy - 4);
+  maxIx = Math.min(_wbMaxX, maxIx + 2);
+  maxIy = Math.min(_wbMaxY, maxIy + 4);
 
   // -------- Pass A: ground tiles, sorted by *rotated* depth --------
   // (Sorting matters once the camera rotates; otherwise grass tile thickness
@@ -8937,6 +9019,12 @@ function drawAll() {
   if (live.moveGroup && live.hover) {
     const grp = live.moveGroup;
     const dx = live.hover.ix, dy = live.hover.iy;
+    // Mirror the fence bounds finishGroupMoveAt validates against, so a
+    // ghost that's about to be rejected on click renders red BEFORE the
+    // click instead of the player guessing which trees overshoot.
+    const _wbG = state.worldBounds || defaultWorldBounds();
+    const _wbGMinX = _wbG.x0, _wbGMaxX = _wbG.x0 + _wbG.w - 1;
+    const _wbGMinY = _wbG.y0, _wbGMaxY = _wbG.y0 + _wbG.h - 1;
     ctx.save();
     ctx.globalAlpha = 0.6;
     for (const it of grp.items) {
@@ -8945,7 +9033,19 @@ function drawAll() {
       // that don't match where the items actually drop.
       const tIx = Math.round(dx + it.dx), tIy = Math.round(dy + it.dy);
       const c = isoCenter(tIx, tIy);
-      drawPlacedItem(it.record.id, c.x, c.y, it.record);
+      const inFence = tIx >= _wbGMinX && tIx <= _wbGMaxX &&
+                      tIy >= _wbGMinY && tIy <= _wbGMaxY;
+      if (inFence) {
+        drawPlacedItem(it.record.id, c.x, c.y, it.record);
+      } else {
+        // ctx.filter is expensive at scale, but bulk-move groups only run
+        // dozens of items at a time so the per-frame cost stays tiny.
+        ctx.save();
+        ctx.filter = 'sepia(1) saturate(6) hue-rotate(-40deg) brightness(0.95)';
+        drawPlacedItem(it.record.id, c.x, c.y, it.record);
+        ctx.restore();
+        drawHoverHighlight(c.x, c.y, '#FF6B5C');
+      }
     }
     ctx.restore();
   }
@@ -10705,6 +10805,13 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       state.greenhouseTutorialShown = true;
       setTimeout(() => openModal('greenhouseTutorialModal'), 350);
     }
+    // Sprinkler: pour the first round immediately so the player sees
+    // the 5×5 vicinity light up the moment they drop the building, then
+    // arm the per-sprinkler timer for the next 6s tick.
+    if (data.id === 'building_sprinkler' && !data.moving) {
+      sprinklerSoak(ix, iy);
+      rec.lastSoakAt = Date.now();
+    }
     // Buildings are expensive one-offs — drop placeMode after placing
     // one so the player doesn't accidentally buy a second copy by
     // clicking again. Trees / decor stay in placeMode for bulk placing.
@@ -12107,23 +12214,28 @@ function finishGroupMoveAt(destIx, destIy) {
     dstIy: Math.round(destIy + it.dy),
     record: it.record,
   }));
-  // Validate every target tile. Bound check is the absolute world box
-  // (not state.worldBounds) so items can move onto un-bought meadow —
-  // buildings already place there freely, and forcing a move-only
-  // restriction surprises players. Existing-item / crop overlap
-  // checks below still protect against silent overwrites.
-  const inAbsWorld = (ix, iy) => ix >= 0 && iy >= 0 && ix < WORLD_W && iy < WORLD_H;
+  // Validate every target tile. Restrict to the bought fence
+  // (state.worldBounds) — bulk-moving onto un-bought meadow stranded
+  // trees outside the play area where the player couldn't see / interact
+  // with them properly. Single-placement still allows buying-as-you-go
+  // via separate code paths; this check is bulk-move only.
+  const _wbMove = state.worldBounds || defaultWorldBounds();
+  const _wbMinX = _wbMove.x0;
+  const _wbMinY = _wbMove.y0;
+  const _wbMaxX = _wbMove.x0 + _wbMove.w - 1;
+  const _wbMaxY = _wbMove.y0 + _wbMove.h - 1;
+  const inFence = (ix, iy) => ix >= _wbMinX && iy >= _wbMinY && ix <= _wbMaxX && iy <= _wbMaxY;
   const movingKeys = new Set(grp.items.map(it => it.srcKey));
   for (const t of targets) {
-    if (!inAbsWorld(t.dstIx, t.dstIy)) {
+    if (!inFence(t.dstIx, t.dstIy)) {
       // Surface which edge so the player knows which way to nudge the
       // drop click instead of guessing.
       let dir = '';
-      if (t.dstIx < 0)            dir = ' (extends past the west edge)';
-      else if (t.dstIx >= WORLD_W) dir = ' (extends past the east edge)';
-      else if (t.dstIy < 0)        dir = ' (extends past the north edge)';
-      else if (t.dstIy >= WORLD_H) dir = ' (extends past the south edge)';
-      toast('Destination would push items past the world' + dir + '.', true);
+      if (t.dstIx < _wbMinX)      dir = ' (extends past the west fence)';
+      else if (t.dstIx > _wbMaxX) dir = ' (extends past the east fence)';
+      else if (t.dstIy < _wbMinY) dir = ' (extends past the north fence)';
+      else if (t.dstIy > _wbMaxY) dir = ' (extends past the south fence)';
+      toast('Destination would push items outside the fence' + dir + '.', true);
       audio.play('error'); return;
     }
     const dstKey = tileKey(t.dstIx, t.dstIy);
@@ -15755,7 +15867,18 @@ let lastSaveT = 0;
 let lastTickT = 0;
 let lastAutoHarvestT = 0;
 function loop(t) {
-  const dt = lastTickT ? (t - lastTickT) : 16;
+  // Browsers pause requestAnimationFrame when the tab is hidden, so we
+  // fall back to a setTimeout-driven tick (see _scheduleNextFrame) and
+  // skip the render passes — there's nothing visible to draw, and the
+  // sim ticks below either use real-time deltas or are no-ops without
+  // input, so they advance correctly across long invisible stretches.
+  const hidden = !!document.hidden;
+  // Clamp dt so a long suspend (hidden tab, closed laptop lid) doesn't
+  // dump a multi-minute delta into the movement / animation ticks below.
+  // Real-time-driven state (silo, loyalty, staff upkeep) reads Date.now()
+  // internally and has its own catch-up logic, so it isn't affected here.
+  const rawDt = lastTickT ? (t - lastTickT) : 16;
+  const dt = Math.min(rawDt, 1000);
   lastTickT = t;
   live.time = t;
   // Tick all sim state BEFORE drawing so the renderer always sees this
@@ -15766,7 +15889,8 @@ function loop(t) {
   loyaltyTick();            // animals lose 1 loyalty every 3 min unless a keeper is on duty
   staffUpkeepTick();        // deduct 50¢/day per hired staff (fires staff if you can't pay)
   tickStaff(dt);            // wander the visible staffers around the staff hall
-  refreshLiveBuildingMenu();// keep the open building popup's desc text live
+  tickSprinklers();         // pour every 6 sec: water unwatered planted crops in 5×5 + grant XP
+  if (!hidden) refreshLiveBuildingMenu();// keep the open building popup's desc text live
   tickCoyote(dt);           // roll for / move / despawn coyote raids and the chasing dog
   tickPlacedAnimals(dt);    // drift pen animals around inside the fence
   edgePanTick(dt);          // auto-pan camera when a bulk-select drag pushes against the screen edges
@@ -15779,18 +15903,18 @@ function loop(t) {
   if      (state.zoom <= 0.30) renderInterval = 50;   // ~20 FPS
   else if (state.zoom <= 0.45) renderInterval = 33;   // ~30 FPS
   else if (state.zoom <= 0.65) renderInterval = 22;   // ~45 FPS
-  if (t - (loop._drawLastT || 0) >= renderInterval) {
+  if (!hidden && t - (loop._drawLastT || 0) >= renderInterval) {
     loop._drawLastT = t;
     drawAll();
   }
   // refreshHud rebuilds chip text + the quest panel innerHTML; doesn't
   // need 60Hz. Inline callers (harvest, slaughter, level-up, etc.)
   // still hit refreshHud immediately for responsive feedback.
-  if (t - (loop._hudLastT || 0) > 200) {
+  if (!hidden && t - (loop._hudLastT || 0) > 200) {
     loop._hudLastT = t;
     refreshHud();
   }
-  refreshTooltip();   // keep the growing countdown ticking even when the cursor is still
+  if (!hidden) refreshTooltip();   // keep the growing countdown ticking even when the cursor is still
   tryFlushLevelUpPopup();   // pop any deferred level-up modal once the player is idle
   tryFlushTutorial();       // pop any queued tutorial popup (barn, etc.) once idle
   // Auto-harvest pass once a second — each ripe tile rolls against the
@@ -15812,7 +15936,7 @@ function loop(t) {
   if (t - lastSaveT > 4000) { lastSaveT = t; storage.save(); }
   // Greenhouse: keep brew timers ticking visually whenever the lab is open.
   ghTickRuns();
-  if (state.greenhouse && state.greenhouse.activeRuns && state.greenhouse.activeRuns.length) {
+  if (!hidden && state.greenhouse && state.greenhouse.activeRuns && state.greenhouse.activeRuns.length) {
     const labOpen = !document.getElementById('mutationModal').classList.contains('hidden');
     if (labOpen && (t - (loop._ghLastT || 0) > 500)) {
       // Pause the auto-rerender while the player is actively poking
@@ -15832,8 +15956,40 @@ function loop(t) {
       }
     }
   }
-  requestAnimationFrame(loop);
+  _scheduleNextFrame();
 }
+
+// Loop scheduler: rAF when the tab is visible (smooth animation), and
+// setTimeout when it's hidden (browsers freeze rAF on hidden tabs, which
+// otherwise stalls the whole sim). 250ms is a balance — browsers throttle
+// background setTimeout to ≥1s, so we'll effectively tick once per second
+// while hidden, which is plenty for an idle game and keeps the dt math
+// honest because every tick uses real elapsed time.
+let _rafId = 0, _hiddenTimerId = 0;
+function _cancelLoopTimers() {
+  if (_rafId) { cancelAnimationFrame(_rafId); _rafId = 0; }
+  if (_hiddenTimerId) { clearTimeout(_hiddenTimerId); _hiddenTimerId = 0; }
+}
+function _scheduleNextFrame() {
+  if (document.hidden) {
+    if (_hiddenTimerId) return;
+    _hiddenTimerId = setTimeout(() => {
+      _hiddenTimerId = 0;
+      loop(performance.now());
+    }, 250);
+  } else {
+    if (_rafId) return;
+    _rafId = requestAnimationFrame((t) => { _rafId = 0; loop(t); });
+  }
+}
+document.addEventListener('visibilitychange', () => {
+  // Cancel whichever loop variant is currently in flight and immediately
+  // schedule the right one for the new visibility state. Without this,
+  // going hidden→visible would keep ticking on the slow setTimeout path
+  // until the next tick fired and re-evaluated the scheduler.
+  _cancelLoopTimers();
+  _scheduleNextFrame();
+});
 
 // ============================================================
 // INIT
@@ -16401,7 +16557,7 @@ async function startGame() {
   if (typeof applyLayoutOffsets === 'function') applyLayoutOffsets();
   if (typeof ensureLayoutDragHandlers === 'function') ensureLayoutDragHandlers();
 
-  requestAnimationFrame(loop);
+  _scheduleNextFrame();
 }
 
 // ============================================================
