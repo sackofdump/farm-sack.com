@@ -1737,6 +1737,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
+        <li>Coffee Stand capacity 100 → 200 per stand.</li>
         <li>Crop Farmer no longer crosses the whole map for one water tile — distance now outweighs the priority gap among water/plant/plow (e.g., a plow at the farmer's feet beats a water 30 tiles away). Harvest still always wins regardless of distance.</li>
         <li>Crop Farmers' silo + coffee skip is now hysteresis-style: once the network tops out they pause, then resume harvesting once it's drained ≥99 (silo) or ≥49 (coffee) free units, and farm it back to full before pausing again.</li>
         <li>Each placed horse now gives <b>+5% staff speed</b>, capped at <b>+25%</b> (5 horses). Stacks multiplicatively with the Speedy Hands upgrade.</li>
@@ -2750,7 +2751,7 @@ function countAnimalsPlaced() {
 // ----- Coffee stand -----
 // Each Coffee Stand adds capacity for harvested Coffee Beans. While the
 // stand has coffee, every hired staff member moves + works faster.
-const COFFEE_CAPACITY_PER             = 100;
+const COFFEE_CAPACITY_PER             = 200;
 const COFFEE_PER_HARVEST              = 8;
 const COFFEE_DRAIN_PER_STAFF_PER_MIN  = 0.5;
 const COFFEE_SPEED_BONUS              = 0.5;     // base +50% from the first stand
