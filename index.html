@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Slaughter bonuses dialed way back: silo's flat slaughter bonus drops from +20¢/5 feed → +20¢/25 feed (5× softer at the new 500-per-silo cap), and the per-day mature-weight accrual drops from +10¢/day → +1¢/day. UI tooltips now read the live constants instead of hardcoded numbers.</li>
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
@@ -2640,10 +2641,16 @@ const SILO_FEED_PER_HARVEST         = 8;       // feed units per Animal Feed har
 const SILO_DRAIN_PER_ANIMAL_PER_MIN = 0.5;     // 0.5 units per animal per minute
 const SILO_AGE_BONUS                = 0.5;     // +50% age-up speed while feeding
 const SILO_YIELD_SPEED_BONUS        = 0.25;    // +25% faster yield timers while feeding
-// Slaughter bonus: +20¢ per 5 feed in the silo (so 100 feed = +400¢, paid
+// Slaughter bonus: +20¢ per 25 feed in the silo (so 100 feed = +80¢, paid
 // flat on top of the meat's age-scaled coin price). Stops when feed = 0.
+// The per-feed rate dropped 5× from its previous "+20¢ per 5" so the
+// 500-per-silo cap doesn't push the bonus into runaway territory.
 const SILO_SLAUGHTER_BONUS_COINS    = 20;
-const SILO_SLAUGHTER_BONUS_PER_FEED = 5;
+const SILO_SLAUGHTER_BONUS_PER_FEED = 25;
+// Per-day weight that mature animals accrue toward their slaughter
+// payout while the silo network has feed. Hoisted to module scope so
+// the silo + barn menus can pull the live number into their tooltips.
+const SLAUGHTER_OVERTIME_PER_DAY    = 1;
 // Yield-rate multiplier — divide the next-yield delay by this so each
 // timer counts down 25% faster while the silo is feeding.
 function siloYieldSpeedMul() { return siloHasFeed() ? 1 + SILO_YIELD_SPEED_BONUS : 1; }
@@ -3517,13 +3524,13 @@ function siloTick() {
     drainSiloFeed(drain);
     state.silo.boostMs = (state.silo.boostMs || 0) + dt * SILO_AGE_BONUS;
     // Mature-overtime slaughter bonus: while the silo has feed, every
-    // animal that's already at max age stage accrues +10¢/day toward
-    // its eventual slaughter payout. Stored on the animal so it
-    // survives barn moves / saves. Bumped from +5 → +10 to make the
-    // silo + mature combo a noticeably bigger end-game lever.
+    // animal that's already at max age stage accrues
+    // SLAUGHTER_OVERTIME_PER_DAY ¢/day toward its eventual slaughter
+    // payout. Stored on the animal so it survives barn moves / saves.
+    // Constant lives at module scope (see top of file) so the UI
+    // tooltips read the same number used here.
     const matureIdx = ANIMAL_AGE_STAGES.length - 1;
     const dayFraction = dt / DAY_MS;
-    const SLAUGHTER_OVERTIME_PER_DAY = 10;
     for (const k in state.placed) {
       const a = state.placed[k];
       if (!a || !a.id || !ANIMAL_MEAT[a.id]) continue;
@@ -5761,7 +5768,7 @@ const BUILDING_MENUS = {
               ? `<b>Active</b> — silo has feed.`
               : `<b>Idle</b> — silo network is empty.`);
         html += `<div style="font-size:11px;color:${tipColor};margin-bottom:8px;">` +
-                `&#127806; Mature animals gain <b>+10¢/day weight</b> at slaughter while silo has feed. ${status}` +
+                `&#127806; Mature animals gain <b>+${SLAUGHTER_OVERTIME_PER_DAY}¢/day weight</b> at slaughter while silo has feed. ${status}` +
                 `</div>`;
       }
       // Filter dropdown — picks which slice of the roster to render.
@@ -6043,9 +6050,9 @@ const BUILDING_MENUS = {
         matureTotal += Math.round(a.matureBonus || 0);
       }
       const matureLine = matureCount === 0
-        ? `<span style="color:#7a5430;">No fully-mature animals yet — the +5¢/day slaughter bonus only ticks once they hit the Mature stage.</span>`
+        ? `<span style="color:#7a5430;">No fully-mature animals yet — the +${SLAUGHTER_OVERTIME_PER_DAY}¢/day slaughter bonus only ticks once they hit the Mature stage.</span>`
         : `<b>${matureCount}</b> mature animal${matureCount === 1 ? '' : 's'} accruing` +
-          ` <b>+5¢/day</b> while feed is in the silo · banked: <b>${matureTotal}¢</b>`;
+          ` <b>+${SLAUGHTER_OVERTIME_PER_DAY}¢/day</b> while feed is in the silo · banked: <b>${matureTotal}¢</b>`;
       return (
         `<div style="margin-bottom:6px;">Feed: <b>${feed} / ${cap}</b></div>` +
         `<div style="background:#3a2818;height:9px;border-radius:5px;overflow:hidden;margin:4px 0 8px;">` +
