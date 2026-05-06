@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Seed Container menu + hover now show "This container vs network" totals like silos / coffee stands.</li>
         <li>Seed Container capacity 200 → 1,000 seeds.</li>
         <li>Seed Container's <b>Open Container</b> button now opens the buy menu immediately instead of making the farmer walk to the container first.</li>
         <li>Placement preview now treats a tile with a pending placeHere as full — fast double-clicks can't stack two cows (or two of anything) on the same tile.</li>
@@ -6073,10 +6074,21 @@ const BUILDING_MENUS = {
   },
   building_seed_container: {
     title: 'Seed Container',
-    desc: () => {
+    desc: ({ ix, iy } = {}) => {
       const total = seedContainerTotal();
-      return `Stockpile up to <b>1,000</b> seeds for crop farmers to plant.<br>` +
-             `Currently holding <b>${total} / 1,000</b> seeds.<br>` +
+      const count = buildingCount('building_seed_container');
+      const netCap = SEED_CONTAINER_CAP * count;
+      let thisLine = '';
+      if (typeof ix === 'number' && typeof iy === 'number') {
+        const placed = state.placed[ix + ',' + iy];
+        if (placed && placed.id === 'building_seed_container') {
+          const own = seedContainerTotal(placed);
+          thisLine = `<div style="font-size:12px;color:#5b3f1f;margin:0 0 4px;">This container: <b>${own.toLocaleString()} / ${SEED_CONTAINER_CAP.toLocaleString()}</b></div>`;
+        }
+      }
+      return thisLine +
+             `<div style="margin-bottom:6px;">Network: <b>${total.toLocaleString()} / ${netCap.toLocaleString()}</b></div>` +
+             `<div style="font-size:12px;color:#5b3f1f;">Stockpile up to <b>${SEED_CONTAINER_CAP.toLocaleString()}</b> seeds per container for crop farmers to plant.</div>` +
              `<span style="color:#7a5430;font-size:11px;">Tip: place inside a crop farmer's zone so they can plant from it.</span>`;
     },
     actions: [{
@@ -12804,7 +12816,14 @@ function buildTooltipHTML(ix, iy) {
           building_windmill:     () => `<span style="color:#2D6E33">+${Math.round((windmillGrowMul()-1)*100)}% crop growth speed</span> · +5% per copy`,
           building_barn:         () => `Opens the fenced animal pen — buy animals in the shop and drop them inside.`,
           building_staff:        () => `Hire farmhands — crop farmers, arborists, animal keepers.`,
-          building_seed_container: (p) => `Stockpile up to <b>1,000</b> seeds for crop farmers to plant.<br>Stocked: <b>${seedContainerTotal(p)} / 1,000</b>`,
+          building_seed_container: (p) => {
+            const own = seedContainerTotal(p);
+            const total = seedContainerTotal();
+            const netCap = SEED_CONTAINER_CAP * buildingCount('building_seed_container');
+            return `Stockpile up to <b>${SEED_CONTAINER_CAP.toLocaleString()}</b> seeds per container.` +
+                   `<br>This container: <b>${own.toLocaleString()} / ${SEED_CONTAINER_CAP.toLocaleString()}</b>` +
+                   `<br>Network: <b>${total.toLocaleString()} / ${netCap.toLocaleString()}</b>`;
+          },
           building_coffee_stand:   (p) => {
             const own = Math.floor((p && typeof p.coffee === 'number') ? p.coffee : 0);
             const total = Math.floor(coffeeStored());
