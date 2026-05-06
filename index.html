@@ -10150,6 +10150,12 @@ function confirmZoneSelect() {
     }
   }
   cancelZoneSelect();
+  // Drop the blue zone overlay once the assignment is committed — the
+  // tiles were only highlighted to give the player visual feedback while
+  // they were drawing / editing the rectangle. After confirm the staff
+  // is on the job and the persistent overlay reads as clutter; clicking
+  // the staff member later still re-shows it via highlightedStaff.
+  live.highlightedStaff = null;
   if (!hasContainer) {
     setTimeout(() => openModal('seedContainerReminderModal'), 250);
   }
