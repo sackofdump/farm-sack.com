@@ -4480,6 +4480,10 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations for XP + coins — click to open the greenhouse', unlock: 12 },
   { cat: 'building', id: 'building_sprinkler',      name: 'Sprinkler',      cost: 4200, sub: 'Auto-waters every planted crop in a 5×5 radius. Pours every 6 sec.', unlock: 11 },
 ];
+// Sprinkler radius: 5×5 means 2 tiles in each direction from the
+// sprinkler tile. Preview overlay reads this so what the player sees
+// matches the shop description.
+const SPRINKLER_RADIUS = 2;
 
 // ============================================================
 // ACHIEVEMENTS — one-shot milestones with a coin/XP reward.
@@ -5946,6 +5950,34 @@ function drawHoverHighlight(cx, cy, color = '#FFE066') {
   ctx.shadowColor = color; ctx.shadowBlur = 12;
   diamondPath(cx, cy, TILE_W - 3, TILE_H - 3);
   ctx.stroke();
+  ctx.restore();
+}
+// Yield-ready sparkle — three twinkling stars circling above an
+// animal's head so the player can spot harvest-ready animals at a
+// glance even when the barn menu is closed. Phase is offset by tile
+// position so adjacent animals don't twinkle in lockstep.
+function drawReadySparkle(cx, cy, time) {
+  ctx.save();
+  const baseY = cy - TILE_H * 0.85;
+  const phase = (cx * 0.013) + (cy * 0.017);
+  for (let i = 0; i < 3; i++) {
+    const t = time / 600 + phase + i * (Math.PI * 2 / 3);
+    const dx = Math.cos(t) * 14;
+    const dy = Math.sin(t) * 4 - 2;
+    const sz = 3 + Math.sin(t * 1.7) * 1.4;
+    ctx.fillStyle = '#FFE066';
+    ctx.shadowColor = '#FFD24A';
+    ctx.shadowBlur = 8;
+    ctx.beginPath();
+    for (let s = 0; s < 4; s++) {
+      const a = s * Math.PI / 2;
+      const r1 = sz, r2 = sz * 0.4;
+      ctx.lineTo(cx + dx + Math.cos(a) * r1, baseY + dy + Math.sin(a) * r1);
+      ctx.lineTo(cx + dx + Math.cos(a + Math.PI / 4) * r2, baseY + dy + Math.sin(a + Math.PI / 4) * r2);
+    }
+    ctx.closePath();
+    ctx.fill();
+  }
   ctx.restore();
 }
 function drawTrailOutline(cx, cy, ok=true) {
@@ -8781,6 +8813,13 @@ function drawAll() {
     } else if (it.kind === 'placed') {
       const c = isoCenter(it.ix, it.iy);
       drawPlacedItem(it.id, c.x, c.y, it.placed);
+      // Sparkle halo on animals whose yield is ready, so the player can
+      // spot which ones to click without opening the barn menu.
+      if (it.id && it.id.startsWith('animal_') &&
+          typeof animalReadyToHarvest === 'function' &&
+          animalReadyToHarvest(it.placed)) {
+        drawReadySparkle(c.x, c.y, live.time || 0);
+      }
     } else if (it.kind === 'player') {
       const c = isoCenter(state.player.ix, state.player.iy);
       const walking = state.player.queue.length > 0 && state.player.busy <= 0;
@@ -8939,7 +8978,12 @@ function drawAll() {
     if (isTreeRect) {
       const isAnimal = live.placeMode && live.placeMode.id && live.placeMode.id.startsWith('animal_');
       const verb = isAnimal ? 'place' : 'plant';
-      txt = `${verb} ${(live.placeMode && live.placeMode.name) || 'item'} ×${valid}`;
+      const unit = (live.placeMode && live.placeMode.cost) || 0;
+      const total = unit * valid;
+      const canAfford = state.coins >= total;
+      txt = `${verb} ${(live.placeMode && live.placeMode.name) || 'item'} ×${valid}` +
+            (unit > 0 ? ` · ${formatCoins(total)}¢` : '');
+      ctx.fillStyle = canAfford ? '#1F3F1F' : '#5A1F1F';
     } else {
       txt = `${r.tool} ×${valid}`;
     }
@@ -9119,6 +9163,19 @@ function drawAll() {
     // and its fence will land before they commit.
     if (live.placeMode.id === 'building_barn') {
       drawBarnPenPreview(barnPenAt(ix, iy));
+    }
+    // Sprinkler ghost: paint the 5×5 watering radius the sprinkler will
+    // cover from this tile so the player can position it without
+    // guessing which crops it'll reach.
+    if (live.placeMode.id === 'building_sprinkler') {
+      for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
+        for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
+          const tx = ix + dx, ty = iy + dy;
+          if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
+          const cc = isoCenter(tx, ty);
+          drawHoverHighlight(cc.x, cc.y, '#6CC8FF');
+        }
+      }
     }
   }
 
