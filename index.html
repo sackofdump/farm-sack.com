@@ -1737,6 +1737,10 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
+        <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
+        <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Coyote sprite faces the right way again (was inverted after the last facing pass).</li>
+        <li>Mature-animal weight bonus 1¢/day → 5¢/day, partially restoring the silo-bonus power that was removed.</li>
         <li>World grows by one more ring: WORLD_W/H bumped 70 → 72, so the Expand Play Area upgrade is purchasable again for one final outer band of tiles.</li>
         <li>Crop Farmer hire cap raised from 3 → 20. After the 3rd hire (Lv 18) every additional crop farmer unlocks at +1 level (4th at 19, 5th at 20, 6th at 21…).</li>
         <li>Crop Farmer silo + coffee skip thresholds now scale with the network — the resume cutoff is "25% empty" of whatever the current cap is, so adding more silos/stands grows the trigger room with them.</li>
@@ -2683,7 +2687,7 @@ const SILO_YIELD_SPEED_BONUS        = 0.25;    // +25% faster yield timers while
 // (The flat silo-network slaughter bonus that used to sit alongside
 // this was removed — slaughter price now comes purely from the
 // per-animal age multiplier + per-animal weight.)
-const SLAUGHTER_OVERTIME_PER_DAY    = 1;
+const SLAUGHTER_OVERTIME_PER_DAY    = 5;
 // Yield-rate multiplier — divide the next-yield delay by this so each
 // timer counts down 25% faster while the silo is feeding.
 function siloYieldSpeedMul() { return siloHasFeed() ? 1 + SILO_YIELD_SPEED_BONUS : 1; }
@@ -5111,10 +5115,11 @@ function drawCoyote(coyote, cx, cy, time) {
   ctx.ellipse(cx, feetY, w0 * 0.40, w0 * 0.16, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
-  // Coyote sprites follow the same default-direction convention as the
-  // cow/dog: the `_left`-suffixed frame is actually the right-facing one,
-  // so screen-space-positive motion picks that sheet.
-  const facingLeft = coyote.facing > 0;
+  // Coyote sprite convention flipped back — the previous "_left is
+  // right-facing" assumption was wrong. The default frame is right-
+  // facing, the _left-suffixed frame is left-facing, so a negative
+  // screen-space velocity (moving left) picks the left sheet.
+  const facingLeft = coyote.facing < 0;
   const frameTable = facingLeft ? COYOTE_ANIM_FRAMES_L : COYOTE_ANIM_FRAMES_R;
   const frames = frameTable[stateName] || 1;
   const fps = stateName === 'run' ? 12 : (stateName === 'pounce' ? 14 : 8);
@@ -5840,7 +5845,7 @@ const BUILDING_MENUS = {
                 `&#128004; <b>Cow Dung +${cur}%</b> growth speed · max +${cap}% (${cows}/10 cows)` +
                 `</div>`;
       }
-      // Silo "weight" tip — mature animals accrue +10¢/day toward their
+      // Silo "weight" tip — mature animals accrue +N¢/day toward their
       // eventual slaughter price while the silo network has feed. Show
       // the live state so the player can see whether the bonus is
       // currently ticking up.
@@ -5853,8 +5858,21 @@ const BUILDING_MENUS = {
           : (hasFeed
               ? `<b>Active</b> — silo has feed.`
               : `<b>Idle</b> — silo network is empty.`);
-        html += `<div style="font-size:11px;color:${tipColor};margin-bottom:8px;">` +
+        html += `<div style="font-size:11px;color:${tipColor};margin-bottom:4px;">` +
                 `&#127806; Mature animals gain <b>+${SLAUGHTER_OVERTIME_PER_DAY}¢/day weight</b> at slaughter while silo has feed. ${status}` +
+                `</div>`;
+      }
+      // Horse stable tally — every placed horse adds +5% staff speed,
+      // hard-capped at +25% (5 horses). Same color treatment as the
+      // cow-dung line so the player can read all three bonuses
+      // together at a glance.
+      {
+        const horses = placedHorseCount();
+        const cur = Math.round((horseStaffSpeedMul() - 1) * 100);
+        const cap = Math.round(HORSE_STAFF_SPEED_CAP * 100);
+        const bonusColor = cur >= cap ? '#3F8338' : (cur > 0 ? '#5C7A1F' : '#8a5a1f');
+        html += `<div style="font-size:11px;color:${bonusColor};margin-bottom:8px;">` +
+                `&#128014; <b>Stable +${cur}%</b> staff speed · max +${cap}% (${horses}/5 horses)` +
                 `</div>`;
       }
       // Filter dropdown — picks which slice of the roster to render.
@@ -8712,6 +8730,11 @@ function buySeedToContainer(seedId, qty) {
 // ----- Crop-farmer zone picker -----
 function enterCropFarmerZoneSelect() {
   live.zoneSelect = { role: 'crop_farmer', rect: null, dragging: false, editingMember: null };
+  // Hiring a fresh farmer should NOT show an existing staff's zone in
+  // the background — that left some players thinking every farmer was
+  // about to be re-zoned at once. Wipe the highlight before opening
+  // the picker so only the new drag-rect is visible.
+  live.highlightedStaff = null;
   closeAnimalMenu();
   const banner = document.getElementById('zoneSelectBanner');
   if (banner) banner.style.display = 'flex';
