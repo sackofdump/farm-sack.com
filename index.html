@@ -1732,6 +1732,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Late-game perf: idle staff now throttle their "find next task" scan to once every 300ms instead of every frame — biggest fix for end-game lag with full crop farms.</li>
+        <li>Leaderboard: new <b>Staff Hvst</b> column counting harvests done by your crop farmers + arborist.</li>
         <li>Seed Container menu + hover now show "This container vs network" totals like silos / coffee stands.</li>
         <li>Seed Container capacity 200 → 1,000 seeds.</li>
         <li>Seed Container's <b>Open Container</b> button now opens the buy menu immediately instead of making the farmer walk to the container first.</li>
@@ -3259,6 +3261,7 @@ function performArboristAction(m, task) {
     placed.fruitAt = Date.now() + TREE_FRUIT_MS;
     bumpStat('harvested');
     bumpStat('treesHarvested');
+    bumpStat('staffHarvested');
     bumpStat('harvestedByCrop.' + (f.name || placed.id));
     storage.save(); refreshHud();
   }
@@ -3350,6 +3353,7 @@ function performCropFarmerAction(m, task) {
     }
     audio.play('harvest');
     bumpStat('harvested');
+    bumpStat('staffHarvested');
     bumpStat('harvestedByCrop.' + p.crop);
     p.state = 'dirt'; p.crop = null; p.plantedAt = null; p.watered = false;
     storage.save(); refreshHud();
@@ -8839,7 +8843,17 @@ function tickStaff(dtMs) {
 function tickArborist(m, dt, now) {
   if (m.cooldownAt && now < m.cooldownAt) return;
   if (!m.task) {
-    m.task = findArboristTask(m);
+    // Throttle the full state.placed scan to once every ~300ms when the
+    // arborist has nothing to do. Without this, an idle arborist re-scans
+    // every tree on the farm every frame which is the dominant late-game
+    // hotspot (per the perf audit). 300ms is well below the lag the
+    // player would notice but slashes the per-frame cost by ~95%.
+    if (m.nextSearchAt && now < m.nextSearchAt) {
+      // Skip the search this frame; fall through into the wander loop.
+    } else {
+      m.task = findArboristTask(m);
+      if (!m.task) m.nextSearchAt = now + 300;
+    }
     if (!m.task) {
       // Idle — wander the meadow looking for trees.
       if (!m.queue || m.queue.length === 0) {
@@ -8886,7 +8900,16 @@ function tickCropFarmer(m, dt, now) {
   if (m.cooldownAt && now < m.cooldownAt) return;
   // No active task? Find one.
   if (!m.task) {
-    m.task = findCropFarmerTask(m);
+    // Throttle the per-frame zone scan to once every ~300ms when there's
+    // nothing to do. The scan iterates the farmer's whole zone + builds
+    // a claimed-set from every other staffer; running it 60×/sec for
+    // every idle farmer dominates late-game frame time.
+    if (m.nextSearchAt && now < m.nextSearchAt) {
+      // Skip the search this frame; fall through into the wander loop.
+    } else {
+      m.task = findCropFarmerTask(m);
+      if (!m.task) m.nextSearchAt = now + 300;
+    }
     if (!m.task) {
       // Nothing to do — meander a bit so they don't freeze in place.
       if (!m.queue || m.queue.length === 0) {
@@ -10409,6 +10432,7 @@ async function renderLeaderboardTab(wrap) {
     { key: 'trees_placed',        label: 'Trees'   },
     { key: 'animals_owned',       label: 'Animals' },
     { key: 'animals_slaughtered', label: 'Slaughtered' },
+    { key: 'staff_harvested',     label: 'Staff Hvst' },
     { key: 'daily_streak',        label: 'Streak'  },
     { key: 'quests_done',         label: 'Quests'  },
     { key: 'dailies_done',        label: 'Daily'   },
@@ -14407,6 +14431,7 @@ const cloud = {
       trees_placed: s.treesPlaced || 0,
       animals_owned:      animals,
       animals_slaughtered: s.slaughtered || 0,
+      staff_harvested: s.staffHarvested || 0,
       daily_streak: state.dailyStreak || 0,
       quests_done:  state.questsCompleted || 0,
       dailies_done: state.dailiesCompleted || 0,
@@ -14418,7 +14443,7 @@ const cloud = {
   async fetchLeaderboard(limit = 10) {
     if (!sb) return [];
     const { data, error } = await sb.from('leaderboard')
-      .select('user_id, farmer_name, level, coins, day_count, harvested, planted, plowed, watered, trees_placed, animals_owned, animals_slaughtered, daily_streak, quests_done, dailies_done, updated_at')
+      .select('user_id, farmer_name, level, coins, day_count, harvested, planted, plowed, watered, trees_placed, animals_owned, animals_slaughtered, staff_harvested, daily_streak, quests_done, dailies_done, updated_at')
       .order('level', { ascending: false })
       .order('coins', { ascending: false })
       .limit(limit);
