@@ -3443,7 +3443,7 @@ const CROPS = {
   watermelon: { name: 'Watermelon', cost: 130, sell: 353,  time: 2476,  wither: WITHER_SECONDS, unlock: 13 },
   pineapple:  { name: 'Pineapple',  cost: 160, sell: 457,  time: 3184,  wither: WITHER_SECONDS, unlock: 15 },
   feed_corn:  { name: 'Animal Feed',cost: 30,  sell: 0,    time: 566,   wither: WITHER_SECONDS, unlock: 9, feed: true, feedYield: SILO_FEED_PER_HARVEST },
-  coffee:     { name: 'Coffee Beans', cost: 35, sell: 0,   time: 849,   wither: WITHER_SECONDS, unlock: 18, coffee: true, coffeeYield: COFFEE_PER_HARVEST },
+  coffee:     { name: 'Coffee Beans', cost: 35, sell: 0,   time: 849,   wither: WITHER_SECONDS, unlock: 15, coffee: true, coffeeYield: COFFEE_PER_HARVEST },
 };
 // Mutable list — rebuilt whenever a mutation is registered as plantable.
 let CROP_IDS = Object.keys(CROPS);
@@ -3471,7 +3471,7 @@ const SHOP_ITEMS = [
   { cat: 'seed', id: 'watermelon', name: 'Watermelon', cost: 130, sub: '41m 16s · sells 353¢', unlock: 13 },
   { cat: 'seed', id: 'pineapple',  name: 'Pineapple',  cost: 160, sub: '53m 04s · sells 457¢', unlock: 15 },
   { cat: 'seed', id: 'feed_corn',  name: 'Animal Feed',cost: 30,  sub: '9m 26s · fills the silo (XP only)', unlock: 9  },
-  { cat: 'seed', id: 'coffee',     name: 'Coffee Beans', cost: 35, sub: '14m 09s · brews coffee that speeds up workers', unlock: 18 },
+  { cat: 'seed', id: 'coffee',     name: 'Coffee Beans', cost: 35, sub: '14m 09s · brews coffee that speeds up workers', unlock: 15 },
   // ---- Trees (yield fruit from the mature stage) ----
   { cat: 'tree', id: 'tree_oak',         name: 'Oak Tree',     cost: 80,  sub: 'Yields walnuts',     unlock: 1  },
   { cat: 'tree', id: 'tree_pine_dark',   name: 'Pine Tree',    cost: 120, sub: 'Yields pine nuts',   unlock: 4  },
@@ -3512,8 +3512,8 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_windmill',     name: 'Windmill',     cost: 5250, sub: '+5% crop growth speed (cap +25%)', unlock: 10 },
   { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% harvest yield (cap +25%) · stores Animal Feed for animal bonuses', unlock: 9  },
   { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1800, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 15 },
-  { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile up to 200 seeds for your crop farmer to plant', unlock: 18 },
-  { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 18 },
+  { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile up to 200 seeds for your crop farmer to plant', unlock: 15 },
+  { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
   { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
   { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations for XP + coins — click to open the greenhouse', unlock: 12 },
 ];
