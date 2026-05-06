@@ -8720,18 +8720,32 @@ function drawAll() {
   minIx = Math.max(0, minIx - 2); minIy = Math.max(0, minIy - 4);
   maxIx = Math.min(WORLD_W - 1, maxIx + 2);
   maxIy = Math.min(WORLD_H - 1, maxIy + 4);
-  // Ground rendering uses a tighter range clamped to state.worldBounds
-  // plus a small decorative margin so the cheap-fill meadow stops near
-  // the fence instead of stretching to the absolute world ceiling. Items
-  // and crops still cull off the wider minIx/maxIx above — clamping
-  // ground+items together hid every building placed outside the bought
-  // land, which is what the previous push regressed.
+  // Ground rendering covers the union of state.worldBounds and the
+  // bounding box of every placed item, plus a small decorative margin.
+  // Clamping to worldBounds alone left buildings sitting on un-bought
+  // meadow visually stranded on the dark sky-gradient background; the
+  // placed-bounds union ensures the meadow polygon always wraps under
+  // the player's content. Items / crops still cull off the wider
+  // minIx/maxIx above so they render correctly past the meadow.
   const _wb = state.worldBounds || defaultWorldBounds();
   const _MEADOW_MARGIN = 6;
-  const groundMinIx = Math.max(minIx, Math.max(0, _wb.x0 - _MEADOW_MARGIN));
-  const groundMinIy = Math.max(minIy, Math.max(0, _wb.y0 - _MEADOW_MARGIN));
-  const groundMaxIx = Math.min(maxIx, Math.min(WORLD_W - 1, _wb.x0 + _wb.w - 1 + _MEADOW_MARGIN));
-  const groundMaxIy = Math.min(maxIy, Math.min(WORLD_H - 1, _wb.y0 + _wb.h - 1 + _MEADOW_MARGIN));
+  let _gMinX = _wb.x0;
+  let _gMinY = _wb.y0;
+  let _gMaxX = _wb.x0 + _wb.w - 1;
+  let _gMaxY = _wb.y0 + _wb.h - 1;
+  for (const k in state.placed) {
+    const ci = k.indexOf(',');
+    if (ci <= 0) continue;
+    const ix = +k.slice(0, ci), iy = +k.slice(ci + 1);
+    if (ix < _gMinX) _gMinX = ix;
+    if (iy < _gMinY) _gMinY = iy;
+    if (ix > _gMaxX) _gMaxX = ix;
+    if (iy > _gMaxY) _gMaxY = iy;
+  }
+  const groundMinIx = Math.max(minIx, Math.max(0, _gMinX - _MEADOW_MARGIN));
+  const groundMinIy = Math.max(minIy, Math.max(0, _gMinY - _MEADOW_MARGIN));
+  const groundMaxIx = Math.min(maxIx, Math.min(WORLD_W - 1, _gMaxX + _MEADOW_MARGIN));
+  const groundMaxIy = Math.min(maxIy, Math.min(WORLD_H - 1, _gMaxY + _MEADOW_MARGIN));
 
   // -------- Pass A: ground tiles, sorted by *rotated* depth --------
   // (Sorting matters once the camera rotates; otherwise grass tile thickness
