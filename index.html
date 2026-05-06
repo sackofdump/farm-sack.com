@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Expand Play Area now grows whichever sides still have room — used to refuse the whole purchase if any one edge had hit the world boundary, leaving 2 sides unfilled when the world bounds bumped from 70 → 72.</li>
         <li>Coffee Stand capacity 200 → 500 per stand.</li>
         <li>Mutation greenhouse no longer collapses your open dropdown when a worker action fires — auto-rerender pauses while the modal has focus or recent pointer activity.</li>
         <li>Mutation slot costs <b>10×</b> across the board (Magic dust 1.5k → 15k, Enriched soil 600 → 6k, etc.) — top-tier brews are now a real investment.</li>
@@ -12113,10 +12114,25 @@ function applyExpandPen(pen) {
 // Compute how many new tiles a one-ring expansion would add and what it
 // costs. Each press grows worldBounds by one tile on every side; players
 // who want the entire grass square can drag the Buy Land tool instead.
+// Grow each side independently — clamp the sides that already touch
+// the absolute world edge so the player can keep expanding the open
+// edges instead of being told "Already at the world edge" the moment
+// any one side runs out of room.
+function expandedRect(b) {
+  const growW = b.x0 > 0;            // can grow west
+  const growE = b.x0 + b.w < WORLD_W; // can grow east
+  const growN = b.y0 > 0;            // can grow north
+  const growS = b.y0 + b.h < WORLD_H; // can grow south
+  const newX0 = growW ? b.x0 - 1 : b.x0;
+  const newY0 = growN ? b.y0 - 1 : b.y0;
+  const newW  = b.w + (growW ? 1 : 0) + (growE ? 1 : 0);
+  const newH  = b.h + (growN ? 1 : 0) + (growS ? 1 : 0);
+  const grew  = growW || growE || growN || growS;
+  return { newX0, newY0, newW, newH, grew };
+}
 function expandAreaInfo() {
   const b = state.worldBounds || defaultWorldBounds();
-  const newX0 = b.x0 - 1, newY0 = b.y0 - 1;
-  const newW  = b.w + 2,  newH  = b.h + 2;
+  const { newX0, newY0, newW, newH, grew } = expandedRect(b);
   let tiles = 0;
   for (let dy = 0; dy < newH; dy++) {
     for (let dx = 0; dx < newW; dx++) {
@@ -12137,8 +12153,9 @@ function expandAreaInfo() {
   const ringsTaken = Math.max(0, Math.round((base.w - baseW) / 2));
   const ringMul = 1 + ringsTaken * 0.5;            // +50% per ring already owned
   const cost = Math.round(tiles * LAND_PRICE * 0.66 * ringMul);
-  const maxed = (newX0 < 0 || newY0 < 0 ||
-                 newX0 + newW > WORLD_W || newY0 + newH > WORLD_H);
+  // Maxed only when the bounds already cover the entire world box —
+  // partial-edge expansion still yields room on the open sides.
+  const maxed = !grew;
   return { tiles, cost, maxed };
 }
 
@@ -12152,8 +12169,7 @@ function applyExpandArea() {
   }
   state.coins -= exp.cost;
   const b = state.worldBounds || defaultWorldBounds();
-  const newX0 = b.x0 - 1, newY0 = b.y0 - 1;
-  const newW  = b.w + 2,  newH  = b.h + 2;
+  const { newX0, newY0, newW, newH } = expandedRect(b);
   for (let dy = 0; dy < newH; dy++) {
     for (let dx = 0; dx < newW; dx++) {
       const ix = newX0 + dx, iy = newY0 + dy;
