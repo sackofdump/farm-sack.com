@@ -1737,6 +1737,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
+        <li>Shift+drag a rectangle while holding a tree from the shop now plants the whole rect (skips occupied tiles, stops when you run out of coins).</li>
+        <li>Arborist now also does the early-water +50% growth boost on saplings, in addition to the level-up watering.</li>
         <li>Coffee Stand capacity 100 → 200 per stand.</li>
         <li>Crop Farmer no longer crosses the whole map for one water tile — distance now outweighs the priority gap among water/plant/plow (e.g., a plow at the farmer's feet beats a water 30 tiles away). Harvest still always wins regardless of distance.</li>
         <li>Crop Farmers' silo + coffee skip is now hysteresis-style: once the network tops out they pause, then resume harvesting once it's drained ≥99 (silo) or ≥49 (coffee) free units, and farm it back to full before pausing again.</li>
@@ -3318,7 +3320,8 @@ function findArboristTask(m) {
     if (!it || !it.id || !it.id.startsWith('tree_') || it.id === 'tree_stump') continue;
     let action = null, priority = 0;
     if (treeReadyToHarvest(it)) { action = 'harvest_tree'; priority = 3; }
-    else if (treeReadyToWater(it) && state.coins >= waterCost()) { action = 'water_tree'; priority = 2; }
+    else if (treeReadyToWater(it)  && state.coins >= waterCost()) { action = 'water_tree';       priority = 2; }
+    else if (treeNeedsEarlyWater(it) && state.coins >= waterCost()) { action = 'early_water_tree'; priority = 1; }
     if (!action) continue;
     const [ix, iy] = k.split(',').map(Number);
     const dist = Math.hypot(ix - m.ix, iy - m.iy);
@@ -3348,6 +3351,23 @@ function performArboristAction(m, task) {
       toast('Tree fully grown!', false, 'good');
       if (TREE_FRUITS[placed.id]) placed.fruitAt = Date.now() + TREE_FRUIT_MS;
     }
+    storage.save(); refreshHud();
+  } else if (task.action === 'early_water_tree') {
+    // Sapling-stage early water: +50% growth-speed boost for the
+    // current stage. Mirrors the player's manual treeNeedsEarlyWater
+    // path so XP / coin cost / stat counter all match.
+    if (!treeNeedsEarlyWater(placed)) return;
+    const wc = waterCost();
+    if (state.coins < wc) return;
+    state.coins -= wc;
+    placed.watered = true;
+    audio.play('water'); fxBurst(ix, iy, '#6CD4FF', 10);
+    bumpStat('watered');
+    const wxp = waterXpGain();
+    grantXp(wxp);
+    if (wc > 0) fxFloat(ix, iy, '−' + wc + '¢', 0, '#FF9966');
+    fxFloat(ix, iy, '+' + Math.round((wateredSpeedMul()-1)*100) + '% growth', 1, '#6CFFB4');
+    fxFloat(ix, iy, '+' + wxp + ' XP', 2, '#6CFFB4');
     storage.save(); refreshHud();
   } else if (task.action === 'harvest_tree') {
     if (!treeReadyToHarvest(placed)) return;
@@ -8027,10 +8047,14 @@ function drawAll() {
     const r = live.paintRect;
     const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
     const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
+    // Tree-rect mode validates with isPlaceableTile (the same gate
+    // single-click placement uses) since canActOnTile doesn't know
+    // about placeMode targets.
+    const isTreeRect = r.tool === 'placeTree';
     let valid = 0;
     for (let iy = y0; iy <= y1; iy++) {
       for (let ix = x0; ix <= x1; ix++) {
-        const ok = canActOnTile(r.tool, ix, iy);
+        const ok = isTreeRect ? isPlaceableTile(ix, iy) : canActOnTile(r.tool, ix, iy);
         const c = isoCenter(ix, iy);
         drawHoverHighlight(c.x, c.y, ok ? '#FFE066' : '#FF7B6B');
         if (ok) valid++;
@@ -8043,7 +8067,9 @@ function drawAll() {
     ctx.textAlign = 'center';
     ctx.lineWidth = 4;
     ctx.strokeStyle = '#FFF6D6';
-    const txt = `${r.tool} ×${valid}`;
+    const txt = isTreeRect
+      ? `plant ${live.placeMode && live.placeMode.name || 'tree'} ×${valid}`
+      : `${r.tool} ×${valid}`;
     ctx.strokeText(txt, cMid.x, cMid.y - 18);
     ctx.fillText(txt, cMid.x, cMid.y - 18);
     ctx.restore();
@@ -9137,8 +9163,9 @@ function tickArborist(m, dt, now) {
   }
   const placed = state.placed[m.task.key];
   if (!placed) { m.task = null; return; }
-  if (m.task.action === 'water_tree' && !treeReadyToWater(placed)) { m.task = null; return; }
-  if (m.task.action === 'harvest_tree' && !treeReadyToHarvest(placed)) { m.task = null; return; }
+  if (m.task.action === 'water_tree'       && !treeReadyToWater(placed))   { m.task = null; return; }
+  if (m.task.action === 'early_water_tree' && !treeNeedsEarlyWater(placed)) { m.task = null; return; }
+  if (m.task.action === 'harvest_tree'     && !treeReadyToHarvest(placed))  { m.task = null; return; }
   const step = Math.min(dist, CROP_FARMER_SPEED_TILES_S * coffeeSpeedMul() * staffSpeedMul() * dt);
   m.ix += (dx / dist) * step;
   m.iy += (dy / dist) * step;
@@ -12686,6 +12713,23 @@ function bindInput() {
       if (e.preventDefault) e.preventDefault();
       return;
     }
+    // Shift+drag with a tree in placeMode = plant a rectangle of trees.
+    // Re-uses the paintRect machinery (rect drag + per-tile validation)
+    // by tagging the tool as 'placeTree'; the endPointer handler reads
+    // live.placeMode for the actual tree id when committing the queue.
+    if (e.button === 0 && e.shiftKey && live.placeMode &&
+        live.placeMode.id && live.placeMode.id.startsWith('tree_') &&
+        !live.placeMode.moving) {
+      live.dragMode = 'paintRect';
+      live.paintRect = {
+        tool: 'placeTree',
+        ix0: startT.ix, iy0: startT.iy,
+        ix1: startT.ix, iy1: startT.iy,
+      };
+      stage.setPointerCapture(e.pointerId);
+      if (e.preventDefault) e.preventDefault();
+      return;
+    }
     // Shift+drag with the Move tool = multi-select rectangle. On
     // release, every movable placed item in the rect enters a "group
     // move" mode — the next click teleports them all to the destination
@@ -12985,6 +13029,72 @@ function bindInput() {
       const r = live.paintRect;
       const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
       const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
+      // Tree placement rect uses isPlaceableTile + affordability
+      // instead of the canActOnTile path. Bail to the tree branch so
+      // the tool dispatch below stays clean.
+      if (r.tool === 'placeTree' && live.placeMode &&
+          live.placeMode.id && live.placeMode.id.startsWith('tree_')) {
+        const candidates = [];
+        for (let iy = y0; iy <= y1; iy++) {
+          for (let ix = x0; ix <= x1; ix++) {
+            if (isPlaceableTile(ix, iy)) candidates.push({ ix, iy });
+          }
+        }
+        // Same greedy nearest-neighbour ordering as the paintRect path.
+        const treeTail = state.player.queue.length
+          ? state.player.queue[state.player.queue.length - 1]
+          : null;
+        let cur = (treeTail && treeTail.ix != null && treeTail.iy != null)
+          ? { ix: treeTail.ix, iy: treeTail.iy }
+          : { ix: state.player.ix, iy: state.player.iy };
+        const ordered = [];
+        while (candidates.length > 0) {
+          let bestI = 0, bestD = Infinity;
+          for (let i = 0; i < candidates.length; i++) {
+            const dx = candidates[i].ix - cur.ix;
+            const dy = candidates[i].iy - cur.iy;
+            const d = dx * dx + dy * dy;
+            if (d < bestD) { bestD = d; bestI = i; }
+          }
+          const next = candidates.splice(bestI, 1)[0];
+          ordered.push(next);
+          cur = next;
+        }
+        // Affordability gate — count the cost of any trees already
+        // queued from previous drags in this placeMode session, then
+        // stop adding once a fresh tree would exceed the wallet.
+        const cost = live.placeMode.cost || 0;
+        let queuedCost = 0;
+        for (const q of state.player.queue) {
+          if (q.tool === 'placeHere' && q.placeData &&
+              q.placeData.id && q.placeData.id.startsWith('tree_') && !q.placeData.moving) {
+            queuedCost += q.placeData.cost || 0;
+          }
+        }
+        let queued = 0;
+        for (const t of ordered) {
+          if (state.coins < queuedCost + cost) break;
+          // De-dupe against tiles already queued so a re-drag that
+          // overlaps a prior rect doesn't double-place.
+          if (state.player.queue.some(q => q.tool === 'placeHere' && q.ix === t.ix && q.iy === t.iy)) continue;
+          state.player.queue.push({
+            tool: 'placeHere',
+            ix: t.ix, iy: t.iy,
+            placeData: { id: live.placeMode.id, name: live.placeMode.name, cost, moving: false },
+          });
+          queuedCost += cost;
+          queued++;
+        }
+        audio.play(queued > 0 ? 'click' : 'error');
+        if (queued > 0) toast(`Queued ${queued} ${live.placeMode.name || 'tree'}${queued === 1 ? '' : 's'}.`, false, 'good');
+        else toast('Nothing to plant in that rect (or out of coins).', true);
+        // Drop out of paintRect cleanup — the tail clears live.paintRect etc.
+        live.dragMode = 'idle';
+        live.draggedTiles.clear();
+        live.paintRect = null;
+        lastPaintTile = null;
+        return;
+      }
       const candidates = [];
       for (let iy = y0; iy <= y1; iy++) {
         for (let ix = x0; ix <= x1; ix++) {
