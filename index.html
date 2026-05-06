@@ -3184,11 +3184,23 @@ function cropFarmerSeedSource(m) {
   }
   return null;
 }
+// Per-farmer task toggles. Defaults to "all on" — a missing taskFlags
+// (older saves, freshly-hired staff) means every gate passes.
+function getCropFarmerTaskFlags(m) {
+  const f = (m && m.taskFlags) || {};
+  return {
+    plow:    f.plow    !== false,
+    plant:   f.plant   !== false,
+    water:   f.water   !== false,
+    harvest: f.harvest !== false,
+  };
+}
 function findCropFarmerTask(m) {
   // Walk the assigned zone for the highest-priority job:
   //   harvest (4) > water (3) > plant (2) > plow (1).
   // Never duplicates another farmer's claimed task.
   const claimed = new Set();
+  const flags = getCropFarmerTaskFlags(m);
   for (const o of state.staff.members) {
     if (o !== m && o.role === 'crop_farmer' && o.task) claimed.add(o.task.key);
   }
@@ -3225,7 +3237,7 @@ function findCropFarmerTask(m) {
     let action = null, priority = 0;
     if (p && p.state === 'planted') {
       const ph = cropPhase(p);
-      if (ph === 'ready') {
+      if (ph === 'ready' && flags.harvest) {
         // Skip silo-bound + coffee-bound harvests when their networks
         // are nearly full so the farmer doesn't waste them. Other
         // ready crops still take priority so the field keeps cycling.
@@ -3238,11 +3250,11 @@ function findCropFarmerTask(m) {
           action = 'harvest'; priority = 4;
         }
       }
-      else if (ph === 'growing' && !p.watered && state.coins >= waterCost()) { action = 'water'; priority = 3; }
+      else if (ph === 'growing' && !p.watered && flags.water && state.coins >= waterCost()) { action = 'water'; priority = 3; }
     } else if (p && p.state === 'plowed') {
-      // Only plant when there's a seed source in the zone.
-      if (seedSource) { action = 'plant'; priority = 2; }
-    } else {
+      // Only plant when there's a seed source AND planting is enabled.
+      if (seedSource && flags.plant) { action = 'plant'; priority = 2; }
+    } else if (flags.plow) {
       // No plot record yet, or stale 'dirt' — needs plowing.
       action = 'plow'; priority = 1;
     }
@@ -8698,11 +8710,46 @@ function openStaffMenu(member, screenX, screenY) {
     const zoneLine = (member.role === 'crop_farmer' && member.zone)
       ? `<div style="font-size:12px;color:#5b3f1f;">Zone: <b>${member.zone.length}</b> tiles</div>`
       : '';
+    // Per-farmer task checkboxes — gate which actions this specific
+    // crop farmer will pick up. All on by default; flipping one off
+    // makes findCropFarmerTask skip that priority for them.
+    let taskChecks = '';
+    if (member.role === 'crop_farmer') {
+      const flags = getCropFarmerTaskFlags(member);
+      const cell = (key, label, emoji) =>
+        `<label style="display:inline-flex;align-items:center;gap:3px;background:#FFF8E1;border:1.5px solid #C7A874;border-radius:6px;padding:3px 6px;font-size:11px;color:#4A2E15;cursor:pointer;user-select:none;">` +
+          `<input type="checkbox" data-staff-task="${key}" ${flags[key] ? 'checked' : ''} style="margin:0;">` +
+          `<span>${emoji} ${label}</span>` +
+        `</label>`;
+      taskChecks = `<div style="margin-top:6px;display:flex;flex-wrap:wrap;gap:4px;">` +
+                   `<span style="font-size:11px;color:#5b3f1f;font-weight:700;align-self:center;margin-right:4px;">Tasks:</span>` +
+                   cell('plow',    'Plow',    '🟫') +
+                   cell('plant',   'Plant',   '🌱') +
+                   cell('water',   'Water',   '💧') +
+                   cell('harvest', 'Harvest', '🌾') +
+                   `</div>`;
+    }
     const seedHint = (member.role === 'crop_farmer')
       ? `<div style="font-size:11px;color:#7a5430;margin-top:4px;">Plants from any <b>Seed Container</b> on the map.</div>`
       : '';
-    desc.innerHTML = (role ? role.desc : '') + zoneLine + wagesLine + seedHint;
+    desc.innerHTML = (role ? role.desc : '') + zoneLine + wagesLine + taskChecks + seedHint;
     desc.style.display = '';
+    // Wire up the task checkboxes (they live inside the desc innerHTML
+    // we just set, so binding has to happen after the assignment).
+    desc.querySelectorAll('input[data-staff-task]').forEach((cb) => {
+      cb.addEventListener('change', (ev) => {
+        ev.stopPropagation();
+        const key = cb.getAttribute('data-staff-task');
+        if (!member.taskFlags) member.taskFlags = { plow: true, plant: true, water: true, harvest: true };
+        member.taskFlags[key] = !!cb.checked;
+        // Drop any in-flight task that's now disabled so the farmer
+        // re-evaluates against the new gates immediately.
+        if (member.task && member.task.action === key) member.task = null;
+        member.nextSearchAt = 0;
+        storage.save();
+        audio.play('click');
+      });
+    });
   }
   const collectBtn = document.getElementById('amCollect');
   const slaughterBtn = document.getElementById('amSlaughter');
@@ -9195,7 +9242,6 @@ function performKeeperHarvest(m, task) {
   bumpStat('staffHarvested');
   bumpStat('harvestedByCrop.' + (y.name || placed.id));
   storage.save(); refreshHud();
-}
 }
 function drawStaff(member, cx, cy, walking, time) {
   ctx.save();
