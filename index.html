@@ -1732,6 +1732,9 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Staff move + work +50% faster across the board.</li>
+        <li>Arborist tree harvests now pay the same +5 XP the player gets manually (was +1).</li>
+        <li>Coyote sprite no longer faces backwards while fleeing the dog.</li>
         <li>Sell button on every building's click menu — including barns, which now drop the pen rect on sell but leave animals + slaughterhouse standing for the next barn-with-pen to round up.</li>
         <li>Per-row Slaughter button in the barn roster for one-click meat runs.</li>
         <li>Fixed a long-standing Y_BASE math bug in tree / building hitboxes — clicks no longer leak onto the tile next to a tree.</li>
@@ -3036,8 +3039,8 @@ function canHireMore(role) {
 }
 // Crop farmer pacing — slow trickle so they're a steady help, not a
 // replacement for the player.
-const CROP_FARMER_SPEED_TILES_S = 1.3;
-const CROP_FARMER_COOLDOWN_MS   = 2000;
+const CROP_FARMER_SPEED_TILES_S = 1.95;   // +50% over the old 1.3
+const CROP_FARMER_COOLDOWN_MS   = 1333;   // cooldown ÷ 1.5 to match the speed bump
 // Container "reach": a container counts as supplying a zone if it sits
 // inside the zone OR within 2 tiles (Chebyshev) of any zone tile. Lets
 // the player drop the container just outside the fence/zone bounds.
@@ -3151,8 +3154,10 @@ function performArboristAction(m, task) {
     if (!f) return;
     const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
     const coins = Math.round(f.coins * yieldMul) + yieldFlatBonus();
-    // Flat +1 XP per tree harvest, scaled only by Cottage XP boost.
-    const xp    = Math.max(1, Math.round(1 * cottageXpMul()));
+    // Match the player's manual tree harvest: flat +5 XP scaled by the
+    // Cottage XP boost. Used to be +1 XP — bumped so auto-harvest pays
+    // the same as doing it by hand.
+    const xp    = Math.max(1, Math.round(5 * cottageXpMul()));
     state.coins += coins;
     grantXp(xp);
     audio.play('harvest');
@@ -4850,7 +4855,10 @@ function drawCoyote(coyote, cx, cy, time) {
   ctx.ellipse(cx, feetY, w0 * 0.40, w0 * 0.16, 0, 0, Math.PI * 2);
   ctx.fill();
   ctx.restore();
-  const facingLeft = coyote.facing < 0;
+  // Coyote sprites follow the same default-direction convention as the
+  // cow/dog: the `_left`-suffixed frame is actually the right-facing one,
+  // so screen-space-positive motion picks that sheet.
+  const facingLeft = coyote.facing > 0;
   const frameTable = facingLeft ? COYOTE_ANIM_FRAMES_L : COYOTE_ANIM_FRAMES_R;
   const frames = frameTable[stateName] || 1;
   const fps = stateName === 'run' ? 12 : (stateName === 'pounce' ? 14 : 8);
@@ -8606,7 +8614,7 @@ function tickStaff(dtMs) {
     }
     // Animal keepers amble around the pen — half-speed compared to the
     // bustling crop-farm staff.
-    const baseSpeed = m.role === 'animal_keeper' ? 0.7 : 1.4;
+    const baseSpeed = m.role === 'animal_keeper' ? 1.05 : 2.1;   // +50%
     const speed = baseSpeed * coffeeSpeedMul();
     const step = Math.min(dist, speed * dt);
     m.ix += (tdx / dist) * step;
