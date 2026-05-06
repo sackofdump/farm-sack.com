@@ -1732,6 +1732,12 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>New <b>🔪 Butcher</b> staff role (Lv 15) — set a minimum slaughter price from the Staff Hall row's Min ¢ button, the butcher walks the farm auto-slaughtering any mature animal at or above that price.</li>
+        <li><b>Animal Keeper</b> now also auto-collects ready yields (eggs, milk, wool) from animals in their pen — same XP / coins / loyalty timer as a manual harvest.</li>
+        <li>Slaughter tool removed from the toolbar (the Slaughterhouse shortcut + barn menu's per-row Slaughter buttons cover the same action).</li>
+        <li>Buildings now stay in placeMode after a placement — chain-place multiple of the same building until you right-click or hit Esc.</li>
+        <li>Mature-animal silo bonus 5¢/day → 10¢/day.</li>
+        <li>Silo grain capacity 100 → 500 per silo (so 5 silos = 2,500 grain instead of 500). Silo harvest-yield bonus capped at +25% so adding silos past 5 boosts storage but not stacking the multiplier indefinitely.</li>
         <li>Bulk-move centroid now uses the actual items' bounding box (not the dragged rect), so the cursor lands on the geometric center of the moved group; ghost preview rounds to the same tiles drop uses; un-bought meadow no longer rejects move drops.</li>
         <li>Move tool walking no longer cancels the farmer's queued harvests / waters / etc. — the walk gets appended.</li>
         <li>Seed Containers no longer need to be near the crop farmer's zone — drop one anywhere on the map and any farmer can pull from any container.</li>
@@ -2599,7 +2605,10 @@ function buildingCount(id) {
   return Math.min(5, n);
 }
 function cottageXpMul()    { return 1 + 0.05 * buildingCount('building_house'); }
-function siloYieldMul()    { return 1 + 0.05 * buildingCount('building_silo'); }
+// Silo yield bonus: +5% per silo, hard-capped at +25% (5 silos worth)
+// so adding silos past 5 still raises grain capacity but doesn't stack
+// the harvest-coin multiplier indefinitely.
+function siloYieldMul()    { return 1 + Math.min(0.25, 0.05 * buildingCount('building_silo')); }
 function marketSellMul()   { return 1 + 0.05 * buildingCount('building_market_stall'); }
 function windmillGrowMul() { return 1 + 0.05 * buildingCount('building_windmill'); }
 // Each placed cow drops manure that fertilises the crop field — +10%
@@ -2617,7 +2626,7 @@ function cowFertilizerMul() { return 1 + 0.05 * cowCount(); }
 // Feed deposits into the silo (capped). While the silo has feed, every
 // animal in the world ages up faster + slaughters for more coins. The
 // silo drains slowly as long as animals are around.
-const SILO_CAPACITY_PER             = 100;     // capacity per placed silo
+const SILO_CAPACITY_PER             = 500;     // capacity per placed silo (was 100 — bumped so storage scales fast with silo count)
 const SILO_FEED_PER_HARVEST         = 8;       // feed units per Animal Feed harvest
 const SILO_DRAIN_PER_ANIMAL_PER_MIN = 0.5;     // 0.5 units per animal per minute
 const SILO_AGE_BONUS                = 0.5;     // +50% age-up speed while feeding
@@ -3113,10 +3122,15 @@ const PET_LOYALTY_GAIN           = 20;                // +20 per pet
 const PET_COOLDOWN_MS            = DAY_MS;            // once per in-game day per animal
 const STAFF_DAILY_UPKEEP         = 50;                // coins/day per staff
 const STAFF_ROLES = {
-  animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen they live in. Need one per pen.', unlock: 15, max: 1 },
+  animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen they live in, and auto-collects ready yields (eggs / milk / wool). Need one per pen.', unlock: 15, max: 1 },
   crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 15, max: 3, levelStep: 3, freeHires: 1 },
   arborist:      { name: 'Arborist',      desc: 'Auto-waters trees and harvests their fruit.',     unlock: 15, max: 1 },
+  butcher:       { name: 'Butcher',       desc: 'Auto-slaughters mature animals whose price is at or above your minimum threshold.', unlock: 15, max: 1 },
 };
+// Default minimum slaughter price for newly-hired butchers — players can
+// raise it from the Staff Hall menu. Starts at 0 so the butcher actually
+// does something on day one; bump it later to gate by price.
+const BUTCHER_DEFAULT_THRESHOLD = 0;
 // Some roles cap dynamically — animal keeper lets you hire one per
 // barn pen so big multi-pen farms can keep every pen happy.
 function maxHires(role) {
@@ -3467,12 +3481,13 @@ function siloTick() {
     drainSiloFeed(drain);
     state.silo.boostMs = (state.silo.boostMs || 0) + dt * SILO_AGE_BONUS;
     // Mature-overtime slaughter bonus: while the silo has feed, every
-    // animal that's already at max age stage accrues +5¢/day toward
+    // animal that's already at max age stage accrues +10¢/day toward
     // its eventual slaughter payout. Stored on the animal so it
-    // survives barn moves / saves.
+    // survives barn moves / saves. Bumped from +5 → +10 to make the
+    // silo + mature combo a noticeably bigger end-game lever.
     const matureIdx = ANIMAL_AGE_STAGES.length - 1;
     const dayFraction = dt / DAY_MS;
-    const SLAUGHTER_OVERTIME_PER_DAY = 5;
+    const SLAUGHTER_OVERTIME_PER_DAY = 10;
     for (const k in state.placed) {
       const a = state.placed[k];
       if (!a || !a.id || !ANIMAL_MEAT[a.id]) continue;
@@ -5989,7 +6004,7 @@ const BUILDING_MENUS = {
       const cap = staffCap();
       const total = (state.staff && state.staff.members) ? state.staff.members.length : 0;
       const keepers = staffCount('animal_keeper');
-      const ROLE_EMOJI = { crop_farmer: '🌾', arborist: '🌳', animal_keeper: '🐮' };
+      const ROLE_EMOJI = { crop_farmer: '🌾', arborist: '🌳', animal_keeper: '🐮', butcher: '🔪' };
       const renderRow = (m) => {
         const r = STAFF_ROLES[m.role];
         const emoji = ROLE_EMOJI[m.role] || '👤';
@@ -6000,12 +6015,18 @@ const BUILDING_MENUS = {
           sub = `Zone: ${z}`;
         } else if (m.role === 'animal_keeper') {
           const pen = findBarnPenAt(Math.round(m.ix), Math.round(m.iy));
-          sub = pen ? `In pen at (${pen.x0},${pen.y0})` : 'Outside any pen';
+          sub = pen ? `In pen at (${pen.x0},${pen.y0}) · auto-collects yields` : 'Outside any pen';
         } else if (m.role === 'arborist') {
           sub = 'Roams the meadow';
+        } else if (m.role === 'butcher') {
+          const t = (typeof m.slaughterThreshold === 'number') ? m.slaughterThreshold : BUTCHER_DEFAULT_THRESHOLD;
+          sub = `Min slaughter price: <b>${t}¢</b>`;
         }
         const editZoneBtn = m.role === 'crop_farmer'
           ? `<button data-staff-action="zone" data-staff-id="${m.id}" style="background:#3F8338;color:#FFF;border:2px solid #1F4C1A;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">🗺️ Zone</button>`
+          : '';
+        const thresholdBtn = m.role === 'butcher'
+          ? `<button data-staff-action="threshold" data-staff-id="${m.id}" style="background:#E5A85B;color:#3a1a08;border:2px solid #7A3F00;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">🔪 Min ¢</button>`
           : '';
         return (
           `<div style="display:flex;align-items:center;gap:6px;background:#FFF7E6;border:1.5px solid #C7A874;border-radius:8px;padding:6px 8px;margin:4px 0;">` +
@@ -6016,6 +6037,7 @@ const BUILDING_MENUS = {
             `<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">` +
               `<button data-staff-action="edit" data-staff-id="${m.id}" style="background:#E0D4FF;color:#4A2E15;border:2px solid #6B4FB0;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Edit</button>` +
               editZoneBtn +
+              thresholdBtn +
               `<button data-staff-action="fire" data-staff-id="${m.id}" style="background:#C04444;color:#FFF;border:2px solid #6B1F1F;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">🚫 Fire</button>` +
             `</div>` +
           `</div>`
@@ -6084,6 +6106,7 @@ const BUILDING_MENUS = {
         mkHireAction('crop_farmer',   '🌾', 'Crop Farmer'),
         mkHireAction('arborist',      '🌳', 'Arborist'),
         mkHireAction('animal_keeper', '🐮', 'Animal Keeper'),
+        mkHireAction('butcher',       '🔪', 'Butcher'),
       ];
     },
   },
@@ -6393,6 +6416,26 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         } else if (action === 'zone') {
           closeAnimalMenu();
           enterCropFarmerZoneEdit(member);
+        } else if (action === 'threshold') {
+          // Butcher: prompt for the new minimum slaughter price. Native
+          // prompt is intentional — the value is a single integer and a
+          // dedicated modal would be overkill for a single field.
+          const cur = (typeof member.slaughterThreshold === 'number') ? member.slaughterThreshold : BUTCHER_DEFAULT_THRESHOLD;
+          const raw = prompt(`Minimum slaughter price for ${member.name || 'this butcher'} (in coins).\n\nThe butcher only auto-slaughters animals whose current price is at or above this number.`, String(cur));
+          if (raw == null) return;
+          const parsed = parseInt(String(raw).trim(), 10);
+          if (!Number.isFinite(parsed) || parsed < 0) {
+            toast('Threshold must be a non-negative number.', true);
+            audio.play('error');
+            return;
+          }
+          member.slaughterThreshold = parsed;
+          member.task = null;          // re-evaluate against the new gate next tick
+          member.nextSearchAt = 0;
+          storage.save();
+          toast(`${member.name || 'Butcher'} now slaughters at ${parsed}¢ or above.`, false, 'good', 4000);
+          audio.play('click');
+          setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
         } else if (action === 'fire') {
           if (!confirm(`Fire ${member.name || 'this staffer'}? They'll leave the farm immediately.`)) return;
           fireStaff(member);
@@ -8303,6 +8346,11 @@ function hireStaff(role, opts) {
     homeIx: spawn.ix, homeIy: spawn.iy,
     zone: opts.zone || null,           // array of "ix,iy" tile keys
     zoneRect: opts.zoneRect || null,   // { x0, y0, x1, y1 } for visualisation
+    // Butcher-specific: minimum slaughter price they'll act on. Player
+    // adjusts via the Staff Hall row's Threshold button. Default is the
+    // role-wide BUTCHER_DEFAULT_THRESHOLD so a fresh butcher starts
+    // working immediately (the player can raise it to gate by price).
+    slaughterThreshold: role === 'butcher' ? BUTCHER_DEFAULT_THRESHOLD : undefined,
   });
   // Hiring an Animal Keeper for a pen that already has animals refills
   // each of those animals' loyalty to 100% — the keeper "settles them in"
@@ -8830,7 +8878,17 @@ function tickStaff(dtMs) {
       m._walking = (Math.abs(m.ix - _bx) + Math.abs(m.iy - _by)) > 0.0005;
       continue;
     }
-    // Default wander loop (animal keeper, future roles).
+    if (m.role === 'animal_keeper') {
+      tickAnimalKeeper(m, dt, now);
+      m._walking = (Math.abs(m.ix - _bx) + Math.abs(m.iy - _by)) > 0.0005;
+      continue;
+    }
+    if (m.role === 'butcher') {
+      tickButcher(m, dt, now);
+      m._walking = (Math.abs(m.ix - _bx) + Math.abs(m.iy - _by)) > 0.0005;
+      continue;
+    }
+    // Default wander loop (future roles).
     if (!m.queue || m.queue.length === 0) {
       if (!m.nextMoveAt) m.nextMoveAt = now + 2000 + Math.random() * 4000;
       if (now >= m.nextMoveAt) {
@@ -8986,6 +9044,233 @@ function tickCropFarmer(m, dt, now) {
   m.ix += (dx / dist) * step;
   m.iy += (dy / dist) * step;
   if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
+}
+// Animal Keeper: keeps decay paused inside the pen (handled in
+// loyaltyTick) AND walks to ready animals to collect their yield.
+// Limited to the keeper's own pen so multi-pen farms route correctly.
+function tickAnimalKeeper(m, dt, now) {
+  if (m.cooldownAt && now < m.cooldownAt) return;
+  if (!m.task) {
+    if (m.nextSearchAt && now < m.nextSearchAt) {
+      // Skip the scan this frame.
+    } else {
+      m.task = findKeeperTask(m);
+      if (!m.task) m.nextSearchAt = now + 300;
+    }
+    if (!m.task) {
+      // Idle — amble around the pen as before.
+      if (!m.queue || m.queue.length === 0) {
+        if (!m.nextMoveAt) m.nextMoveAt = now + 2000 + Math.random() * 4000;
+        if (now >= m.nextMoveAt) {
+          m.queue = [staffWanderTarget(m)];
+          m.nextMoveAt = now + 4000 + Math.random() * 6000;
+        }
+      }
+      if (m.queue && m.queue.length > 0) {
+        const t = m.queue[0];
+        const dx = t.ix - m.ix, dy = t.iy - m.iy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.05) { m.ix = t.ix; m.iy = t.iy; m.queue.shift(); }
+        else {
+          const step = Math.min(dist, 1.05 * coffeeSpeedMul() * staffSpeedMul() * dt);
+          m.ix += (dx / dist) * step; m.iy += (dy / dist) * step;
+          if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
+        }
+      }
+      return;
+    }
+  }
+  const tx = m.task.ix, ty = m.task.iy;
+  const dx = tx - m.ix, dy = ty - m.iy;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.4) {
+    performKeeperHarvest(m, m.task);
+    m.task = null;
+    m.cooldownAt = now + Math.round(CROP_FARMER_COOLDOWN_MS / (coffeeSpeedMul() * staffSpeedMul()));
+    return;
+  }
+  // Drop the task if the animal moved (rare — pens are static) or is
+  // no longer ready.
+  const placed = state.placed[m.task.key];
+  if (!placed || !animalReadyToHarvest(placed)) { m.task = null; return; }
+  const speed = 1.4 * coffeeSpeedMul() * staffSpeedMul();   // a touch faster than ambling
+  const step = Math.min(dist, speed * dt);
+  m.ix += (dx / dist) * step;
+  m.iy += (dy / dist) * step;
+  if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
+}
+// Butcher: walks to the highest-priced slaughter-eligible animal whose
+// price is at or above this butcher's threshold, then slaughters in
+// place. No slaughterhouse round-trip — same one-step flow as
+// queueOneClickSlaughter.
+function tickButcher(m, dt, now) {
+  if (m.cooldownAt && now < m.cooldownAt) return;
+  if (!m.task) {
+    if (m.nextSearchAt && now < m.nextSearchAt) {
+      // Skip the scan this frame.
+    } else {
+      m.task = findButcherTask(m);
+      if (!m.task) m.nextSearchAt = now + 300;
+    }
+    if (!m.task) {
+      // Idle — wander a little so the player can see them.
+      if (!m.queue || m.queue.length === 0) {
+        if (!m.nextMoveAt) m.nextMoveAt = now + 2000 + Math.random() * 3000;
+        if (now >= m.nextMoveAt) {
+          m.queue = [staffWanderTarget(m)];
+          m.nextMoveAt = now + 4000 + Math.random() * 6000;
+        }
+      }
+      if (m.queue && m.queue.length > 0) {
+        const t = m.queue[0];
+        const dx = t.ix - m.ix, dy = t.iy - m.iy;
+        const dist = Math.hypot(dx, dy);
+        if (dist < 0.05) { m.ix = t.ix; m.iy = t.iy; m.queue.shift(); }
+        else {
+          const step = Math.min(dist, 1.2 * coffeeSpeedMul() * staffSpeedMul() * dt);
+          m.ix += (dx / dist) * step; m.iy += (dy / dist) * step;
+          if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
+        }
+      }
+      return;
+    }
+  }
+  const tx = m.task.ix, ty = m.task.iy;
+  const dx = tx - m.ix, dy = ty - m.iy;
+  const dist = Math.hypot(dx, dy);
+  if (dist < 0.4) {
+    performButcherSlaughter(m, m.task);
+    m.task = null;
+    m.cooldownAt = now + Math.round(CROP_FARMER_COOLDOWN_MS / (coffeeSpeedMul() * staffSpeedMul()));
+    return;
+  }
+  // Re-validate — animal may have been slaughtered by the player
+  // mid-walk, dropped below threshold, or sold off.
+  const placed = state.placed[m.task.key];
+  if (!placed || !ANIMAL_MEAT[placed.id] || !canSlaughter(placed.id, placed)) { m.task = null; return; }
+  if (computeSlaughterPrice(placed) < (m.slaughterThreshold || 0)) { m.task = null; return; }
+  const speed = 2.1 * coffeeSpeedMul() * staffSpeedMul();
+  const step = Math.min(dist, speed * dt);
+  m.ix += (dx / dist) * step;
+  m.iy += (dy / dist) * step;
+  if (Math.abs(dx) > 0.01) m.facing = dx >= 0 ? 1 : -1;
+}
+// Look for the closest yield-ready animal in this keeper's pen. The
+// keeper only harvests the pen they're standing in, so multi-pen farms
+// route their own keeper to their own pen.
+function findKeeperTask(m) {
+  const claimed = new Set();
+  for (const o of state.staff.members) {
+    if (o !== m && o.role === 'animal_keeper' && o.task) claimed.add(o.task.key);
+  }
+  const pen = findBarnPenAt(Math.round(m.ix), Math.round(m.iy));
+  if (!pen) return null;
+  const px1 = pen.x0 + pen.w, py1 = pen.y0 + pen.h;
+  let best = null, bestDist = Infinity;
+  for (const k in state.placed) {
+    if (claimed.has(k)) continue;
+    const it = state.placed[k];
+    if (!it || !it.id || !it.id.startsWith('animal_')) continue;
+    if (!animalReadyToHarvest(it)) continue;
+    const [ix, iy] = k.split(',').map(Number);
+    if (ix < pen.x0 || iy < pen.y0 || ix >= px1 || iy >= py1) continue;
+    const d = Math.hypot(ix - m.ix, iy - m.iy);
+    if (d < bestDist) { bestDist = d; best = { ix, iy, key: k }; }
+  }
+  return best;
+}
+// Look for the highest-price slaughter target across all pens whose
+// price meets this butcher's threshold. Tie-break by distance so the
+// butcher doesn't run across the world for a 1¢ premium.
+function findButcherTask(m) {
+  const claimed = new Set();
+  for (const o of state.staff.members) {
+    if (o !== m && o.role === 'butcher' && o.task) claimed.add(o.task.key);
+  }
+  const threshold = m.slaughterThreshold || 0;
+  let best = null, bestScore = -Infinity;
+  for (const k in state.placed) {
+    if (claimed.has(k)) continue;
+    const it = state.placed[k];
+    if (!it || !it.id || !ANIMAL_MEAT[it.id]) continue;
+    if (!canSlaughter(it.id, it)) continue;
+    const price = computeSlaughterPrice(it);
+    if (price < threshold) continue;
+    const [ix, iy] = k.split(',').map(Number);
+    const dist = Math.hypot(ix - m.ix, iy - m.iy);
+    // Bias by price first (we want max coins), then by distance so
+    // ties don't pick the far one.
+    const score = price * 1000 - dist;
+    if (score > bestScore) { bestScore = score; best = { ix, iy, key: k }; }
+  }
+  return best;
+}
+// Shared slaughter price helper — mirrors the formula in the barn
+// menu's slaughterPriceOf so the butcher decides off the same number
+// the player sees in their roster (no yieldFlatBonus — that fires
+// only when the slaughter actually executes, not on the listed price).
+function computeSlaughterPrice(it) {
+  if (!it || !it.id) return 0;
+  const meat = ANIMAL_MEAT[it.id];
+  if (!meat) return 0;
+  const yMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+  const mul = canSlaughter(it.id, it) ? animalAgeMul(it) : 1.5;
+  const matureBonus = Math.round(it.matureBonus || 0);
+  const bonus = canSlaughter(it.id, it) ? (siloSlaughterBonus() + matureBonus) : 0;
+  return Math.round(meat.coins * mul * yMul) + bonus;
+}
+// Run the keeper's harvest action — duplicates the player's manual
+// animal-yield path (state.placed[k] still here, ANIMAL_YIELDS exists)
+// so XP / coins / loyalty timer all match what the player would get.
+function performKeeperHarvest(m, task) {
+  const placed = state.placed[task.key];
+  if (!placed || !animalReadyToHarvest(placed)) return;
+  const y = ANIMAL_YIELDS[placed.id];
+  if (!y) return;
+  const [ix, iy] = task.key.split(',').map(Number);
+  const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+  const coins = Math.round(y.coins * yieldMul) + yieldFlatBonus();
+  const xp    = Math.max(1, Math.round(y.xp * 0.5 * cottageXpMul())) + 1;
+  state.coins += coins;
+  grantXp(xp);
+  audio.play('harvest');
+  fxBurst(ix, iy, '#FFE066', 12);
+  fxFloat(ix, iy, '+' + coins + '¢');
+  fxFloat(ix, iy, '+' + xp + ' XP', 1, '#6CFFB4');
+  placed.yieldAt = Date.now() + Math.round(ANIMAL_YIELD_MS * loyaltyYieldMul(placed) / siloYieldSpeedMul());
+  placed.totalYields = (placed.totalYields || 0) + 1;
+  placed.totalYieldCoins = (placed.totalYieldCoins || 0) + coins;
+  bumpStat('harvested');
+  bumpStat('staffHarvested');
+  bumpStat('harvestedByCrop.' + (y.name || placed.id));
+  storage.save(); refreshHud();
+}
+// Run the butcher's slaughter — mirrors the slaughterAtTile handler
+// in actOnTile so XP / coins / silo bonus / mature overtime all match
+// the player's manual flow.
+function performButcherSlaughter(m, task) {
+  const placed = state.placed[task.key];
+  if (!placed || !ANIMAL_MEAT[placed.id]) return;
+  if (!canSlaughter(placed.id, placed)) return;
+  const aid = placed.id;
+  const meat = ANIMAL_MEAT[aid];
+  const [ix, iy] = task.key.split(',').map(Number);
+  const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+  const ageMul   = animalAgeMul(placed);
+  const matureBonus = Math.round(placed.matureBonus || 0);
+  const coins = Math.round(meat.coins * yieldMul * ageMul) + siloSlaughterBonus() + yieldFlatBonus() + matureBonus;
+  const xp    = Math.max(1, Math.round(meat.xp * cottageXpMul() * ageMul));
+  delete state.placed[task.key];
+  state.coins += coins;
+  grantXp(xp);
+  fxBurst(ix, iy, '#FFE066', 14);
+  fxFloat(ix, iy, '+' + coins + '¢');
+  fxFloat(ix, iy, '+' + xp + ' XP', 1, '#6CFFB4');
+  toast(`Butcher sold ${meat.name} for ${coins}¢ (+${xp} XP).`, false, 'good', 4000);
+  bumpStat('slaughtered');
+  bumpStat('slaughteredByAnimal.' + aid);
+  audio.play('coin');
+  storage.save(); refreshHud();
 }
 function drawStaff(member, cx, cy, walking, time) {
   ctx.save();
@@ -10842,10 +11127,10 @@ const TOOLS = [
   { id: 'plant',     label: 'Plant',     asset: 'tool_plant'   },
   { id: 'water',     label: 'Water',     asset: 'tool_water'   },
   { id: 'harvest',   label: 'Harvest',   asset: 'tool_harvest' },
-  // Slaughter tool — visible by default, greyed out until the
-  // Slaughterhouse becomes available at level 11.
-  { id: 'slaughter', label: 'Slaughter', asset: 'building_slaughterhouse',
-    unlockBuilding: 'building_slaughterhouse' },
+  // Slaughter tool used to live here — removed since the Slaughterhouse
+  // shortcut button on the toolbar covers the same action and the
+  // barn menu has its own per-row Slaughter buttons. The 'slaughter'
+  // tool id is still used internally by those flows.
   // Trees tab — opens the Shop directly on the Trees tab. Acts as a
   // shortcut, not a regular action tool.
   { id: 'tree',      label: 'Trees',     asset: 'tree_oak_4',   shortcut: 'shopTree' },
@@ -12128,12 +12413,13 @@ function bindInput() {
           placeData: { id: live.placeMode.id, name: live.placeMode.name,
                        cost: live.placeMode.cost, moving: !!live.placeMode.moving },
         });
-        // Buildings + barn-moves are one-shot — drop placeMode the moment
-        // the action is queued so the player's hands are empty and they
-        // don't accidentally queue a second placement while walking.
-        // Trees / decor stay in placeMode for bulk planting.
+        // Barn-moves are one-shot — drop placeMode immediately so the
+        // player isn't holding a phantom barn after the move queues.
+        // Buildings now stay in placeMode (matching trees / decor) so
+        // chained purchases of the same building only need one shop
+        // round-trip; right-click or Esc empties hands when done.
         const queuedId = live.placeMode.id;
-        if (live.placeMode.moving || (queuedId && queuedId.startsWith('building_'))) {
+        if (live.placeMode.moving) {
           cancelPlaceMode();
         }
         // Trees: keep placeMode AND enter paint mode so a held drag plants
