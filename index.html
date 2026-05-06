@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Staff Hall menu now shows each hire as its own row with inline <b>Edit</b> / <b>Zone</b> (crop farmer) / <b>Fire</b> buttons — manage the whole roster without chasing each staffer down individually.</li>
         <li>Hiring an Animal Keeper refills every animal in their pen to 100% loyalty on arrival.</li>
         <li>Crop Farmer ships with two hires unlocked at Lv 15 (was one); the third still waits for Lv 18.</li>
         <li><b>Speedy Hands</b> upgrade (unlocks at Lv 15) — three tiers stacking +50% / +75% / +100% staff move + work speed on top of the new baseline.</li>
@@ -5888,17 +5889,46 @@ const BUILDING_MENUS = {
       const cap = staffCap();
       const total = (state.staff && state.staff.members) ? state.staff.members.length : 0;
       const keepers = staffCount('animal_keeper');
-      const roster = (state.staff && state.staff.members && state.staff.members.length)
-        ? state.staff.members.map(m => {
-            const r = STAFF_ROLES[m.role];
-            return `<li>${r ? r.name : m.role} <span style="color:#7a5430;">· ${m.name || ''}</span></li>`;
-          }).join('')
-        : '<li style="color:#7a5430;">No staff hired yet.</li>';
+      const ROLE_EMOJI = { crop_farmer: '🌾', arborist: '🌳', animal_keeper: '🐮' };
+      const renderRow = (m) => {
+        const r = STAFF_ROLES[m.role];
+        const emoji = ROLE_EMOJI[m.role] || '👤';
+        const roleName = r ? r.name : m.role;
+        let sub = '';
+        if (m.role === 'crop_farmer') {
+          const z = (m.zone && m.zone.length) ? `${m.zone.length} tiles` : 'no zone';
+          sub = `Zone: ${z}`;
+        } else if (m.role === 'animal_keeper') {
+          const pen = findBarnPenAt(Math.round(m.ix), Math.round(m.iy));
+          sub = pen ? `In pen at (${pen.x0},${pen.y0})` : 'Outside any pen';
+        } else if (m.role === 'arborist') {
+          sub = 'Roams the meadow';
+        }
+        const editZoneBtn = m.role === 'crop_farmer'
+          ? `<button data-staff-action="zone" data-staff-id="${m.id}" style="background:#3F8338;color:#FFF;border:2px solid #1F4C1A;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">🗺️ Zone</button>`
+          : '';
+        return (
+          `<div style="display:flex;align-items:center;gap:6px;background:#FFF7E6;border:1.5px solid #C7A874;border-radius:8px;padding:6px 8px;margin:4px 0;">` +
+            `<div style="flex:1;min-width:0;">` +
+              `<div style="font-weight:700;color:#4A2E15;font-size:12px;">${emoji} ${roleName} · <span style="color:#7a5430;">${m.name || ''}</span></div>` +
+              `<div style="font-size:10px;color:#7a5430;">${sub}</div>` +
+            `</div>` +
+            `<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">` +
+              `<button data-staff-action="edit" data-staff-id="${m.id}" style="background:#E0D4FF;color:#4A2E15;border:2px solid #6B4FB0;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Edit</button>` +
+              editZoneBtn +
+              `<button data-staff-action="fire" data-staff-id="${m.id}" style="background:#C04444;color:#FFF;border:2px solid #6B1F1F;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">🚫 Fire</button>` +
+            `</div>` +
+          `</div>`
+        );
+      };
+      const rosterHtml = (state.staff && state.staff.members && state.staff.members.length)
+        ? state.staff.members.map(renderRow).join('')
+        : `<div style="text-align:center;color:#7a5430;font-style:italic;padding:8px 0;">No staff hired yet — use the buttons below.</div>`;
       return (
         `<div style="margin-bottom:6px;">Roster: <b>${total}/${cap}</b>` +
         (cap < 2 ? ' <span style="color:#7a5430;">(cap rises when the world is fully expanded)</span>' : '') +
         `</div>` +
-        `<ul style="text-align:left;font-size:12px;color:#4A2E15;line-height:1.5;padding-left:22px;margin:6px 0 8px;">${roster}</ul>` +
+        `<div style="max-height:240px;overflow-y:auto;margin:6px -2px;">${rosterHtml}</div>` +
         `<div style="font-size:12px;color:#5b3f1f;">Wages: <b>${STAFF_DAILY_UPKEEP}¢/day</b> per staffer (auto-deducted; staff quit if you can't pay).</div>` +
         (() => {
           const pens = getAllBarnPens().length;
@@ -6216,6 +6246,32 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         // Refresh the menu so the bulk-button counts + queued badges
         // update on the rows that were just queued.
         setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+      });
+    });
+    // Staff Hall row buttons — Edit (rename + gender), Zone (crop farmer
+    // only), Fire. Each row is keyed by data-staff-id so the handler can
+    // resolve the live member object even after a refresh shuffles the
+    // array.
+    desc.querySelectorAll('[data-staff-action]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const action = btn.getAttribute('data-staff-action');
+        const sid = parseInt(btn.getAttribute('data-staff-id'), 10);
+        if (!state.staff || !Array.isArray(state.staff.members)) return;
+        const member = state.staff.members.find(m => m.id === sid);
+        if (!member) return;
+        if (action === 'edit') {
+          closeAnimalMenu();
+          openWorkerEditModal(member);
+        } else if (action === 'zone') {
+          closeAnimalMenu();
+          enterCropFarmerZoneEdit(member);
+        } else if (action === 'fire') {
+          if (!confirm(`Fire ${member.name || 'this staffer'}? They'll leave the farm immediately.`)) return;
+          fireStaff(member);
+          // Re-render the menu so the row disappears.
+          setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+        }
       });
     });
     desc.querySelectorAll('[data-animal-action]').forEach(btn => {
