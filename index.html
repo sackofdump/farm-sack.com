@@ -1757,6 +1757,8 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Prestige bonus now affects <b>everything</b>: yields + XP (already), plus player walk speed, staff speed, and crop / tree growth speed. One number, applied at every gain or speed call site.</li>
+        <li>Reset Farm bug fix: the in-memory CROP_FARM rect kept its expanded width/height after a reset, so the new run kept "farming" outside the freshly-fenced 6×6 spawn area. Reset path now snaps it back to 6×6.</li>
         <li>Silo menu gets the same per-silo / per-stand layout the coffee stand uses + a green "active" / amber "idle" pill on the network header.</li>
         <li>Trying to place a building over a planted/withered crop is now blocked — tooltip says "Can't put a building on a crop — harvest or sell first" instead of silently destroying the crop.</li>
         <li>Seed Container modal now lists discovered mutations alongside the regular seeds, so crop farmers can plant rare hybrids straight from the network.</li>
@@ -2671,7 +2673,10 @@ const PLAYER_REACH           = 0.45;
 const PLAYER_ACT_MS          = 240;
 function playerSpeed() {
   const lvl = Math.min(PLAYER_SPEED_MAX_LEVEL, (state.player && state.player.speedLevel) || 0);
-  const base = PLAYER_BASE_SPEED + lvl * PLAYER_SPEED_PER_LEVEL;
+  // Prestige bonus also feeds into walk speed so the "everything"
+  // scaling reads consistently across coins / XP / movement /
+  // crop growth.
+  const base = (PLAYER_BASE_SPEED + lvl * PLAYER_SPEED_PER_LEVEL) * prestigeMul();
   // Riding doubles the farmer's effective walk speed.
   if (state.player && state.player.mounted) return base * 2;
   return base;
@@ -2953,6 +2958,14 @@ function resetFarm() {
   state.greenhouse = { tier: 1, book: state.greenhouse?.book || {}, activeRuns: [] };
   state.cropFarmW = 6;
   state.cropFarmH = 6;
+  // CROP_FARM is a `const` BINDING but the object is mutable —
+  // applyExpandArea / Expand-Field bumped its w/h over time. Without
+  // resetting it back to 6×6, defaultWorldBounds() would still return
+  // the giant pre-prestige rect, which is why crop farmers + the
+  // player kept "farming" tiles way outside the freshly-fenced
+  // 6×6 spawn area after a reset.
+  CROP_FARM.w = 6;
+  CROP_FARM.h = 6;
   state.player = {
     ix: CROP_FARM.x0 - 1, iy: CROP_FARM.y0 + CROP_FARM.h,
     queue: [], facing: 1, busy: 0, pending: null,
@@ -2999,7 +3012,7 @@ const STAFF_SPEED_MAX_LEVEL = STAFF_SPEED_M.length - 1;
 const STAFF_SPEED_UNLOCK = 15;
 function staffSpeedMul() {
   const lvl = Math.min(STAFF_SPEED_MAX_LEVEL, (state.player && state.player.staffSpeedLevel) || 0);
-  return (STAFF_SPEED_M[lvl] || 1) * horseStaffSpeedMul();
+  return (STAFF_SPEED_M[lvl] || 1) * horseStaffSpeedMul() * prestigeMul();
 }
 // Horse stable bonus: every placed horse adds +5% to staff speed,
 // capped at +25% (5 horses worth). Stacks multiplicatively with the
@@ -4064,7 +4077,8 @@ function siloTick() {
 }
 // Combined growth-speed multiplier for a plot.
 function growSpeedMul(p) {
-  return (p && p.watered ? wateredSpeedMul() : 1) * windmillGrowMul() * cowFertilizerMul();
+  // Prestige multiplier folds into crop + tree growth too.
+  return (p && p.watered ? wateredSpeedMul() : 1) * windmillGrowMul() * cowFertilizerMul() * prestigeMul();
 }
 function waterCostUpgrade(level) { return Math.round(3840 * Math.pow(2.5, level)); }
 
