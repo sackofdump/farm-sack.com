@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Crop Farmers now skip <b>coffee</b> harvests too when the coffee-stand network is within 8 units of full (matches the silo-feed skip behavior).</li>
@@ -2614,7 +2615,11 @@ function cottageXpMul()    { return 1 + 0.05 * buildingCount('building_house'); 
 // the harvest-coin multiplier indefinitely.
 function siloYieldMul()    { return 1 + Math.min(0.25, 0.05 * buildingCount('building_silo')); }
 function marketSellMul()   { return 1 + 0.05 * buildingCount('building_market_stall'); }
-function windmillGrowMul() { return 1 + 0.05 * buildingCount('building_windmill'); }
+// Windmill: +5% crop growth speed per copy, hard-capped at +25%
+// (5 windmills worth) so the description matches the actual behavior.
+const WINDMILL_MAX_BONUS = 0.25;
+function windmillGrowMul() { return 1 + Math.min(WINDMILL_MAX_BONUS, 0.05 * buildingCount('building_windmill')); }
+function windmillIsMaxed() { return buildingCount('building_windmill') >= 5; }
 // Each placed cow drops manure that fertilises the crop field — +10%
 // crop growth speed per cow, capped at 10 cows (+100%) so the player
 // can't trivialise growth by spamming a megafarm.
@@ -5990,7 +5995,17 @@ const BUILDING_MENUS = {
   },
   building_windmill: {
     title: 'Windmill',
-    desc: '+5% crop growth speed (stacks per copy, capped at +25%).',
+    desc: () => {
+      const count = buildingCount('building_windmill');
+      const cur = Math.round((windmillGrowMul() - 1) * 100);
+      const maxed = windmillIsMaxed();
+      const status = maxed
+        ? `<div style="font-size:12px;color:#3F8338;margin-top:6px;font-weight:700;">&#9989; <b>MAXED</b> — extra windmills won't stack any further.</div>`
+        : `<div style="font-size:11px;color:#7a5430;margin-top:6px;">Build ${5 - count} more for the full +25% bonus.</div>`;
+      return `+5% crop growth speed per copy, capped at +25%.<br>` +
+             `<span style="color:#3F8338;font-weight:700;">Currently +${cur}%</span> from ${count} windmill${count === 1 ? '' : 's'}.` +
+             status;
+    },
   },
   building_silo: {
     title: 'Grain Silo',
@@ -13309,7 +13324,13 @@ function buildTooltipHTML(ix, iy) {
                      : `<br><span style="color:#8a5a1f">Idle — fill it to speed up animal yields.</span>`);
           },
           building_market_stall: () => `<span style="color:#2D6E33">+${Math.round((marketSellMul()-1)*100)}% sell prices</span> · +5% per copy`,
-          building_windmill:     () => `<span style="color:#2D6E33">+${Math.round((windmillGrowMul()-1)*100)}% crop growth speed</span> · +5% per copy`,
+          building_windmill:     () => {
+            const cur = Math.round((windmillGrowMul() - 1) * 100);
+            const tag = windmillIsMaxed()
+              ? ` · <span style="color:#3F8338;font-weight:700;">MAXED</span>`
+              : ` · +5% per copy (cap +25%)`;
+            return `<span style="color:#2D6E33">+${cur}% crop growth speed</span>${tag}`;
+          },
           building_barn:         () => `Opens the fenced animal pen — buy animals in the shop and drop them inside.`,
           building_staff:        () => `Hire farmhands — crop farmers, arborists, animal keepers.`,
           building_seed_container: (p) => {
