@@ -8713,22 +8713,25 @@ function drawAll() {
     if (c.ix < minIx) minIx = c.ix; if (c.ix > maxIx) maxIx = c.ix;
     if (c.iy < minIy) minIy = c.iy; if (c.iy > maxIy) maxIy = c.iy;
   }
-  // Clamp to state.worldBounds + a small decorative margin instead of the
-  // full 72×72 absolute world. At low zoom the cull diamond was filling
-  // the screen with empty meadow tiles outside the bought land — the
-  // player saw a giant blank green expanse around their farm. The margin
-  // still lets a thin grass border peek past the fence so the play area
-  // doesn't read as cut-off against the sky gradient.
+  // Visible-screen range clamped only to the absolute 72×72 world. Used
+  // for placed-item / crop culling so anything sitting on un-bought
+  // meadow (buildings, trees the player put down freely) still renders
+  // even though the ground-meadow fill now stops at the fence.
+  minIx = Math.max(0, minIx - 2); minIy = Math.max(0, minIy - 4);
+  maxIx = Math.min(WORLD_W - 1, maxIx + 2);
+  maxIy = Math.min(WORLD_H - 1, maxIy + 4);
+  // Ground rendering uses a tighter range clamped to state.worldBounds
+  // plus a small decorative margin so the cheap-fill meadow stops near
+  // the fence instead of stretching to the absolute world ceiling. Items
+  // and crops still cull off the wider minIx/maxIx above — clamping
+  // ground+items together hid every building placed outside the bought
+  // land, which is what the previous push regressed.
   const _wb = state.worldBounds || defaultWorldBounds();
   const _MEADOW_MARGIN = 6;
-  const _wbMinX = Math.max(0, _wb.x0 - _MEADOW_MARGIN);
-  const _wbMinY = Math.max(0, _wb.y0 - _MEADOW_MARGIN);
-  const _wbMaxX = Math.min(WORLD_W - 1, _wb.x0 + _wb.w - 1 + _MEADOW_MARGIN);
-  const _wbMaxY = Math.min(WORLD_H - 1, _wb.y0 + _wb.h - 1 + _MEADOW_MARGIN);
-  minIx = Math.max(_wbMinX, minIx - 2);
-  minIy = Math.max(_wbMinY, minIy - 4);
-  maxIx = Math.min(_wbMaxX, maxIx + 2);
-  maxIy = Math.min(_wbMaxY, maxIy + 4);
+  const groundMinIx = Math.max(minIx, Math.max(0, _wb.x0 - _MEADOW_MARGIN));
+  const groundMinIy = Math.max(minIy, Math.max(0, _wb.y0 - _MEADOW_MARGIN));
+  const groundMaxIx = Math.min(maxIx, Math.min(WORLD_W - 1, _wb.x0 + _wb.w - 1 + _MEADOW_MARGIN));
+  const groundMaxIy = Math.min(maxIy, Math.min(WORLD_H - 1, _wb.y0 + _wb.h - 1 + _MEADOW_MARGIN));
 
   // -------- Pass A: ground tiles, sorted by *rotated* depth --------
   // (Sorting matters once the camera rotates; otherwise grass tile thickness
@@ -8760,10 +8763,10 @@ function drawAll() {
     // green area outside the actual playable world. Trace the diamond
     // formed by the four visible cull-box corners and fill that
     // polygon instead so the meadow stays the right shape.
-    const c00 = isoCenter(minIx - 1, minIy - 1);
-    const c10 = isoCenter(maxIx + 1, minIy - 1);
-    const c11 = isoCenter(maxIx + 1, maxIy + 1);
-    const c01 = isoCenter(minIx - 1, maxIy + 1);
+    const c00 = isoCenter(groundMinIx - 1, groundMinIy - 1);
+    const c10 = isoCenter(groundMaxIx + 1, groundMinIy - 1);
+    const c11 = isoCenter(groundMaxIx + 1, groundMaxIy + 1);
+    const c01 = isoCenter(groundMinIx - 1, groundMaxIy + 1);
     const yTop = Math.min(c00.y, c10.y, c11.y, c01.y);
     const yBot = Math.max(c00.y, c10.y, c11.y, c01.y);
     const grd = ctx.createLinearGradient(0, yTop, 0, yBot);
@@ -8778,8 +8781,8 @@ function drawAll() {
     ctx.fill();
   }
   const groundList = [];
-  for (let ix = minIx; ix <= maxIx; ix++) {
-    for (let iy = minIy; iy <= maxIy; iy++) {
+  for (let ix = groundMinIx; ix <= groundMaxIx; ix++) {
+    for (let iy = groundMinIy; iy <= groundMaxIy; iy++) {
       groundList.push({ depth: depthOf(ix, iy), ix, iy });
     }
   }
