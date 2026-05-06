@@ -2434,6 +2434,13 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
       <button type="button" class="splashGenderBtn" data-gender="boy">&#128104;&#8205;&#127806; Boy</button>
       <button type="button" class="splashGenderBtn" data-gender="girl">&#128105;&#8205;&#127806; Girl</button>
     </div>
+    <!-- Crop-farmer-only task toggles. The wrapper is shown / hidden in
+         openWorkerEditModal based on the member's role; checkboxes
+         render off the live taskFlags. -->
+    <div id="workerEditTaskRow" style="display:none;margin-top:10px;">
+      <label style="display:block;font-size:12px;font-weight:800;color:#6A4A22;margin-bottom:4px;">Tasks</label>
+      <div id="workerEditTaskChecks" style="display:flex;flex-wrap:wrap;gap:6px;"></div>
+    </div>
     <div class="modal-foot" style="justify-content:flex-end;gap:8px;margin-top:14px;">
       <button class="splashBtn" id="workerEditCancel" style="width:auto;padding:7px 14px;font-size:13px;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border-color:var(--wood-3);box-shadow:0 3px 0 var(--wood-3);">Cancel</button>
       <button class="splashBtn primary" id="workerEditSave" style="width:auto;padding:7px 14px;font-size:13px;">Save</button>
@@ -8707,6 +8714,41 @@ function openWorkerEditModal(member) {
       chips.forEach(c => c.classList.toggle('active', c === b));
     };
   });
+  // Crop-farmer-only Tasks row — render the four toggle pills directly
+  // here so the player can flip what this farmer will do without
+  // having to chase down their sprite on the field. Rest of the modal
+  // (name + gender) is shared with all roles.
+  const taskRow = document.getElementById('workerEditTaskRow');
+  const taskWrap = document.getElementById('workerEditTaskChecks');
+  if (taskRow && taskWrap) {
+    if (member.role === 'crop_farmer') {
+      taskRow.style.display = '';
+      const flags = getCropFarmerTaskFlags(member);
+      const cell = (key, label, emoji) =>
+        `<label style="display:inline-flex;align-items:center;gap:4px;background:#FFF8E1;border:1.5px solid #C7A874;border-radius:6px;padding:4px 8px;font-size:12px;color:#4A2E15;cursor:pointer;user-select:none;">` +
+          `<input type="checkbox" data-task="${key}" ${flags[key] ? 'checked' : ''} style="margin:0;">` +
+          `<span>${emoji} ${label}</span>` +
+        `</label>`;
+      taskWrap.innerHTML =
+        cell('plow',    'Plow',    '🟫') +
+        cell('plant',   'Plant',   '🌱') +
+        cell('water',   'Water',   '💧') +
+        cell('harvest', 'Harvest', '🌾');
+      taskWrap.querySelectorAll('input[data-task]').forEach((cb) => {
+        cb.onchange = () => {
+          const key = cb.getAttribute('data-task');
+          if (!member.taskFlags) member.taskFlags = { plow: true, plant: true, water: true, harvest: true };
+          member.taskFlags[key] = !!cb.checked;
+          if (member.task && member.task.action === key) member.task = null;
+          member.nextSearchAt = 0;
+          storage.save();
+          audio.play('click');
+        };
+      });
+    } else {
+      taskRow.style.display = 'none';
+    }
+  }
   document.getElementById('workerEditCancel').onclick = () => modal.classList.add('hidden');
   document.getElementById('workerEditSave').onclick = () => {
     const trimmed = (nameInput.value || '').trim().slice(0, 20);
