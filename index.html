@@ -8606,6 +8606,34 @@ function drawAll() {
     ? `hue-rotate(${(presCount * 25) % 360}deg) saturate(${1 + Math.min(0.4, presCount * 0.04)})`
     : '';
   if (presFilter) ctx.filter = presFilter;
+  // Low-zoom ground pass shortcut — at low zoom the per-tile grass
+  // sprite blits dominate frame time (4-5k drawImage calls every
+  // paint when the camera fits the whole world). Below the
+  // threshold, we paint a single flat grass rect covering the
+  // visible cull box first, then only iso-render tiles that AREN'T
+  // plain meadow grass (path / farm interior / cleared wild). Saves
+  // the bulk of the blits without changing what the player sees.
+  const cheapGround = state.zoom <= 0.55;
+  if (cheapGround) {
+    // Compute the iso bounding rect of the visible cull box and fill
+    // it with a flat grass gradient. Slight padding so the corners
+    // don't show un-painted gaps after rotation.
+    const corners = [
+      isoCenter(minIx - 1, minIy - 1),
+      isoCenter(maxIx + 1, minIy - 1),
+      isoCenter(minIx - 1, maxIy + 1),
+      isoCenter(maxIx + 1, maxIy + 1),
+    ];
+    let bxMin = Infinity, bxMax = -Infinity, byMin = Infinity, byMax = -Infinity;
+    for (const c of corners) {
+      if (c.x < bxMin) bxMin = c.x; if (c.x > bxMax) bxMax = c.x;
+      if (c.y < byMin) byMin = c.y; if (c.y > byMax) byMax = c.y;
+    }
+    const grd = ctx.createLinearGradient(0, byMin, 0, byMax);
+    grd.addColorStop(0, '#7DC159'); grd.addColorStop(1, '#5DA940');
+    ctx.fillStyle = grd;
+    ctx.fillRect(bxMin - TILE_W, byMin - TILE_H, (bxMax - bxMin) + TILE_W * 2, (byMax - byMin) + TILE_H * 2);
+  }
   const groundList = [];
   for (let ix = minIx; ix <= maxIx; ix++) {
     for (let iy = minIy; iy <= maxIy; iy++) {
@@ -8615,9 +8643,12 @@ function drawAll() {
   groundList.sort((a, b) => a.depth - b.depth);
   for (const g of groundList) {
     const ix = g.ix, iy = g.iy;
+    const tk = tileKey(ix, iy);
+    const inFarm = inCropFarm(ix, iy);
+    const isPath = PATH_TILES.has(tk);
     const c = isoCenter(ix, iy);
-    if (inCropFarm(ix, iy)) {
-      const p = state.plots[tileKey(ix, iy)];
+    if (inFarm) {
+      const p = state.plots[tk];
       if      (p && (p.state === 'plowed' || p.state === 'planted')) {
         // Once a crop is fully grown (stage 4 / ready), the wet sheen
         // dries off and the soil reads as plain dirt again.
@@ -8625,9 +8656,12 @@ function drawAll() {
         drawPlowedTile(ix, iy, c.x, c.y, p.watered && !dry, p.state === 'planted');
       }
       else if (p && p.state === 'dirt')                              drawDirtTile(ix, iy, c.x, c.y);
+      else if (cheapGround)                                          { /* covered by flat fill */ }
       else                                                            drawGrassTile(ix, iy, c.x, c.y);
-    } else if (PATH_TILES.has(tileKey(ix, iy))) {
+    } else if (isPath) {
       drawPathTile(ix, iy, c.x, c.y);
+    } else if (cheapGround) {
+      // Plain meadow grass — the flat fill above already painted it.
     } else {
       drawGrassTile(ix, iy, c.x, c.y);
     }
