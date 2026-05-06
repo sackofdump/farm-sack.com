@@ -8605,7 +8605,11 @@ function drawAll() {
   const presFilter = presCount > 0
     ? `hue-rotate(${(presCount * 25) % 360}deg) saturate(${1 + Math.min(0.4, presCount * 0.04)})`
     : '';
-  if (presFilter) ctx.filter = presFilter;
+  // Prestige tint disabled — ctx.filter (hue-rotate + saturate) was
+  // tanking frame time on prestige saves. Kept the variable above so
+  // a future opt-in (cached offscreen tinted layer instead of a
+  // live filter) can be wired without re-introducing the math.
+  // if (presFilter) ctx.filter = presFilter;
   // Low-zoom ground pass shortcut — at low zoom the per-tile grass
   // sprite blits dominate frame time (4-5k drawImage calls every
   // paint when the camera fits the whole world). Below the
@@ -8666,9 +8670,9 @@ function drawAll() {
       drawGrassTile(ix, iy, c.x, c.y);
     }
   }
-  // Restore the canvas filter after the ground pass so trees / animals /
-  // buildings render at their natural colours.
-  if (presFilter) ctx.filter = 'none';
+  // No filter restore — disabled above for perf. Re-enable here if
+  // the offscreen tinted-layer variant lands later.
+  // if (presFilter) ctx.filter = 'none';
 
   // Drag-paint trail (under crops/objects). Skip tiles already occupied
   // by trees / buildings / animals — the player isn't trying to act on
