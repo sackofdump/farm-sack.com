@@ -16347,7 +16347,11 @@ const cloud = {
       const p = state.placed[k];
       if (p && p.id && p.id.startsWith('animal_')) animals++;
     }
-    const { error } = await sb.from('leaderboard').upsert({
+    // Two-phase upsert: try with the prestige columns first, fall
+    // back to a column subset if the table schema doesn't have them
+    // yet. Prevents an "unknown column" error from rejecting the
+    // whole row push and leaving the leaderboard stale.
+    const baseRow = {
       user_id: this.user.id,
       farmer_name: (state.farmer && state.farmer.name) || meta.farmer_name || 'Anonymous',
       level: state.level || 1,
@@ -16361,20 +16365,31 @@ const cloud = {
       animals_owned:      animals,
       animals_slaughtered: s.slaughtered || 0,
       staff_harvested: s.staffHarvested || 0,
-      prestige_count:     (state.prestige && state.prestige.count)      || 0,
-      prestige_bonus_pct: Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100),
       daily_streak: state.dailyStreak || 0,
       quests_done:  state.questsCompleted || 0,
       dailies_done: state.dailiesCompleted || 0,
       updated_at: new Date().toISOString(),
-    }, { onConflict: 'user_id' });
+    };
+    const fullRow = Object.assign({}, baseRow, {
+      prestige_count:     (state.prestige && state.prestige.count)      || 0,
+      prestige_bonus_pct: Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100),
+    });
+    let { error } = await sb.from('leaderboard').upsert(fullRow, { onConflict: 'user_id' });
+    if (error && /column .* (prestige|does not exist)/i.test(error.message || '')) {
+      // Schema doesn't have the prestige columns yet — retry without.
+      ({ error } = await sb.from('leaderboard').upsert(baseRow, { onConflict: 'user_id' }));
+    }
     if (error) console.warn('cloud.pushLeaderboard:', error);
   },
   // Fetch the top N rows from the leaderboard, sorted by level then coins.
   async fetchLeaderboard(limit = 10) {
     if (!sb) return [];
+    // SELECT * is intentional — the table may or may not have the
+    // prestige_count / prestige_bonus_pct columns yet (added later
+    // than the rest). Naming them explicitly was failing the whole
+    // query when they were missing, leaving the board blank.
     const { data, error } = await sb.from('leaderboard')
-      .select('user_id, farmer_name, level, coins, day_count, harvested, planted, plowed, watered, trees_placed, animals_owned, animals_slaughtered, staff_harvested, prestige_count, prestige_bonus_pct, daily_streak, quests_done, dailies_done, updated_at')
+      .select('*')
       .order('level', { ascending: false })
       .order('coins', { ascending: false })
       .limit(limit);
