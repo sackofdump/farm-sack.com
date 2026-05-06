@@ -726,6 +726,18 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
   font-weight: 900; font-size: 15px; color: #6E4D0A;
   display: inline-flex; align-items: center; gap: 4px;
 }
+.seed-card .seed-sell {
+  font-weight: 800; font-size: 12px; color: #4A2E15;
+  display: flex; align-items: center; gap: 4px;
+  line-height: 1.1; text-align: center;
+}
+.seed-card .seed-sell .sellBase { color: #7a5430; }
+.seed-card .seed-sell .sellBoost { color: #1f6b1a; font-weight: 900; }
+.seed-card .seed-sell .sellPct {
+  font-size: 11px; color: #1f6b1a; font-weight: 900;
+  background: #d6f3c6; border: 1px solid #5fa64a;
+  border-radius: 8px; padding: 1px 5px;
+}
 .seed-card .seed-owned {
   position: absolute;
   bottom: -8px; right: -8px;
@@ -8624,24 +8636,27 @@ function drawAll() {
   // the bulk of the blits without changing what the player sees.
   const cheapGround = state.zoom <= 0.55;
   if (cheapGround) {
-    // Compute the iso bounding rect of the visible cull box and fill
-    // it with a flat grass gradient. Slight padding so the corners
-    // don't show un-painted gaps after rotation.
-    const corners = [
-      isoCenter(minIx - 1, minIy - 1),
-      isoCenter(maxIx + 1, minIy - 1),
-      isoCenter(minIx - 1, maxIy + 1),
-      isoCenter(maxIx + 1, maxIy + 1),
-    ];
-    let bxMin = Infinity, bxMax = -Infinity, byMin = Infinity, byMax = -Infinity;
-    for (const c of corners) {
-      if (c.x < bxMin) bxMin = c.x; if (c.x > bxMax) bxMax = c.x;
-      if (c.y < byMin) byMin = c.y; if (c.y > byMax) byMax = c.y;
-    }
-    const grd = ctx.createLinearGradient(0, byMin, 0, byMax);
+    // The world's tile grid projects to a diamond in screen space, not
+    // a rect — filling the bounding rect at low zoom paints a huge
+    // green area outside the actual playable world. Trace the diamond
+    // formed by the four visible cull-box corners and fill that
+    // polygon instead so the meadow stays the right shape.
+    const c00 = isoCenter(minIx - 1, minIy - 1);
+    const c10 = isoCenter(maxIx + 1, minIy - 1);
+    const c11 = isoCenter(maxIx + 1, maxIy + 1);
+    const c01 = isoCenter(minIx - 1, maxIy + 1);
+    const yTop = Math.min(c00.y, c10.y, c11.y, c01.y);
+    const yBot = Math.max(c00.y, c10.y, c11.y, c01.y);
+    const grd = ctx.createLinearGradient(0, yTop, 0, yBot);
     grd.addColorStop(0, '#7DC159'); grd.addColorStop(1, '#5DA940');
     ctx.fillStyle = grd;
-    ctx.fillRect(bxMin - TILE_W, byMin - TILE_H, (bxMax - bxMin) + TILE_W * 2, (byMax - byMin) + TILE_H * 2);
+    ctx.beginPath();
+    ctx.moveTo(c00.x, c00.y);
+    ctx.lineTo(c10.x, c10.y);
+    ctx.lineTo(c11.x, c11.y);
+    ctx.lineTo(c01.x, c01.y);
+    ctx.closePath();
+    ctx.fill();
   }
   const groundList = [];
   for (let ix = minIx; ix <= maxIx; ix++) {
@@ -12774,6 +12789,11 @@ function buildShopGrid() {
     .filter(i => i.cat === activeShopTab)
     .slice()
     .sort((a, b) => (a.unlock || 1) - (b.unlock || 1));
+  // Same combined sell multiplier the harvest path uses, so tree-fruit
+  // and animal-yield cards can show what their printed coin numbers
+  // actually pay out with the player's current bonuses applied.
+  const shopSellMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+  const shopBonusPct = Math.max(0, Math.round((shopSellMul - 1) * 100));
   for (const it of items) {
     const locked = state.level < (it.unlock || 1);
     const card = document.createElement('div');
@@ -12796,12 +12816,34 @@ function buildShopGrid() {
     sub.innerHTML = locked
       ? `Unlocks at <b>Lv ${it.unlock}</b><br>${it.sub || ''}`
       : (it.sub || '');
+    // Yield-bonus chip for tree fruit and animal yields. Shows base →
+    // boosted on a single line so the player can see how much extra
+    // their current Bigger Baskets / silo / market / prestige stack pays.
+    let yieldChip = null;
+    if (!locked && shopBonusPct > 0) {
+      let baseCoins = 0, label = '';
+      if (it.cat === 'tree') {
+        const tf = TREE_FRUITS[it.id];
+        if (tf) { baseCoins = tf.coins; label = 'fruit'; }
+      } else if (it.cat === 'animal') {
+        const ay = ANIMAL_YIELDS[it.id];
+        if (ay) { baseCoins = ay.coins; label = ay.name; }
+      }
+      if (baseCoins > 0) {
+        const boosted = Math.round(baseCoins * shopSellMul);
+        yieldChip = document.createElement('div');
+        yieldChip.style.cssText = 'font-size:11px;font-weight:900;color:#1f6b1a;background:#d6f3c6;border:1px solid #5fa64a;border-radius:8px;padding:2px 6px;margin-top:4px;display:inline-block;';
+        yieldChip.innerHTML = `${baseCoins}¢ → <b>${boosted}¢</b> +${shopBonusPct}% yield`;
+      }
+    }
     const price = document.createElement('div'); price.className = 'price';
     price.innerHTML = `<span class="iconDot coin" style="width:18px;height:18px;font-size:11px;"></span>${formatCoins(it.cost)}`;
     const buy = document.createElement('button'); buy.className = 'buy'; buy.disabled = locked;
     buy.innerHTML = `<img src="${imgPath('ui_buy')}">`;
     buy.addEventListener('click', () => onShopBuy(it));
-    card.appendChild(wrap); card.appendChild(nm); card.appendChild(sub); card.appendChild(price); card.appendChild(buy);
+    card.appendChild(wrap); card.appendChild(nm); card.appendChild(sub);
+    if (yieldChip) card.appendChild(yieldChip);
+    card.appendChild(price); card.appendChild(buy);
     // "Owned" badge — count how many of this id the player has placed.
     if (!locked) {
       let owned = 0;
@@ -12828,6 +12870,12 @@ function buildSeedGrid(grid) {
   const seeds = SHOP_ITEMS.filter(i => i.cat === 'seed')
     .slice()
     .sort((a, b) => (a.unlock || 1) - (b.unlock || 1) || (a.cost || 0) - (b.cost || 0));
+  // Combined sell multiplier matches harvest payout: Bigger Baskets +
+  // prestige + silo + market stall. We render this on each card so the
+  // player can see how much extra a seed is worth with their current
+  // bonuses applied.
+  const sellMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+  const bonusPct = Math.max(0, Math.round((sellMul - 1) * 100));
   for (const it of seeds) {
     const c = CROPS[it.id];
     const locked = state.level < (it.unlock || 1);
@@ -12836,6 +12884,14 @@ function buildSeedGrid(grid) {
     card.style.border = 'none';
     card.style.cursor = locked ? 'not-allowed' : 'pointer';
     const owned = locked ? 0 : ownedCount(it.id);
+    const baseSell = c.sell || 0;
+    const boostedSell = Math.round(baseSell * sellMul);
+    let sellLine = '';
+    if (!locked && baseSell > 0) {
+      sellLine = bonusPct > 0
+        ? `<div class="seed-sell"><span class="sellBase">${baseSell}¢</span> → <span class="sellBoost">${boostedSell}¢</span> <span class="sellPct">+${bonusPct}%</span></div>`
+        : `<div class="seed-sell"><span class="sellBase">sells ${baseSell}¢</span></div>`;
+    }
     // Locked seeds show the same card layout but the sprite is grayscaled
     // and the price/time are replaced by the unlock-level hint.
     card.innerHTML =
@@ -12846,6 +12902,7 @@ function buildSeedGrid(grid) {
         ? `<div class="seed-time">Lv ${it.unlock}</div>` +
           `<div class="seed-price">Locked</div>`
         : `<div class="seed-time">${formatTime(c.time)}</div>` +
+          sellLine +
           `<div class="seed-price"><span class="iconDot coin" style="width:18px;height:18px;font-size:11px;"></span>${formatCoins(it.cost)}</div>`) +
       (owned > 0 ? `<div class="seed-owned">${owned}</div>` : '');
     if (!locked) card.addEventListener('click', () => onShopBuy(it));
@@ -12876,10 +12933,18 @@ function buildSeedGrid(grid) {
       const fallbackToParent = parent
         ? `this.src='${imgPath('crop_'+parent+'_4')}';this.onerror=function(){this.style.display='none';this.parentNode.innerHTML='<div class=&quot;mutIconPh&quot; style=&quot;background:${color};margin:0 auto;&quot;>${initial}</div>';};`
         : `this.style.display='none';this.parentNode.innerHTML='<div class=&quot;mutIconPh&quot; style=&quot;background:${color};margin:0 auto;&quot;>${initial}</div>';`;
+      const mBase = c.sell || 0;
+      const mBoost = Math.round(mBase * sellMul);
+      const mLine = mBase > 0
+        ? (bonusPct > 0
+            ? `<div class="seed-sell"><span class="sellBase">${mBase}¢</span> → <span class="sellBoost">${mBoost}¢</span> <span class="sellPct">+${bonusPct}%</span></div>`
+            : `<div class="seed-sell"><span class="sellBase">sells ${mBase}¢</span></div>`)
+        : '';
       card.innerHTML =
         `<div class="seed-name" style="color:${color};">${c.name}</div>` +
         `<div class="seed-img"><img src="${imgPath('crop_' + id + '_4')}" alt="${c.name}" style="${glowFilter}" onerror="${fallbackToParent}"></div>` +
         `<div class="seed-time">${formatTime(c.time)} &middot; ${MUT_RARITY[c.rarity || 'common'].label}</div>` +
+        mLine +
         `<div class="seed-price"><span class="iconDot coin" style="width:18px;height:18px;font-size:11px;"></span>${formatCoins(c.cost)}</div>` +
         (owned > 0 ? `<div class="seed-owned">${owned}</div>` : '');
       card.addEventListener('click', () => onShopBuy({ cat:'seed', id, name: c.name, cost: c.cost, unlock: 1 }));
