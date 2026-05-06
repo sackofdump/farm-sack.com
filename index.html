@@ -1757,6 +1757,7 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Grass tint shifts a little with each prestige (hue rotates +25° per reset, slight saturation bump) so a veteran farm reads visibly different from a fresh one. Trees / animals / buildings stay their normal colours.</li>
         <li>Animals can now be placed in <b>bulk</b> too — shift+drag a rect with an animal staged from the shop and the bounding box fills with one click (skips occupied tiles + tiles outside the pen, stops when you run out of coins).</li>
         <li>Reset Farm now re-rolls the Quest + Daily slates immediately, so the panel doesn't sit empty after a prestige.</li>
         <li>Prestige bonus now affects <b>everything</b>: yields + XP (already), plus player walk speed, staff speed, and crop / tree growth speed. One number, applied at every gain or speed call site.</li>
@@ -8357,6 +8358,15 @@ function drawAll() {
   // -------- Pass A: ground tiles, sorted by *rotated* depth --------
   // (Sorting matters once the camera rotates; otherwise grass tile thickness
   // can paint over neighboring tiles in the wrong order.)
+  // Prestige tint: each reset shifts the hue + slight saturation so a
+  // veteran farm reads visibly different from a fresh one. Applied
+  // canvas-wide for the ground pass only, then reset before objects
+  // render so animals / sprites stay their normal colours.
+  const presCount = (state.prestige && state.prestige.count) || 0;
+  const presFilter = presCount > 0
+    ? `hue-rotate(${(presCount * 25) % 360}deg) saturate(${1 + Math.min(0.4, presCount * 0.04)})`
+    : '';
+  if (presFilter) ctx.filter = presFilter;
   const groundList = [];
   for (let ix = minIx; ix <= maxIx; ix++) {
     for (let iy = minIy; iy <= maxIy; iy++) {
@@ -8383,6 +8393,9 @@ function drawAll() {
       drawGrassTile(ix, iy, c.x, c.y);
     }
   }
+  // Restore the canvas filter after the ground pass so trees / animals /
+  // buildings render at their natural colours.
+  if (presFilter) ctx.filter = 'none';
 
   // Drag-paint trail (under crops/objects). Skip tiles already occupied
   // by trees / buildings / animals — the player isn't trying to act on
