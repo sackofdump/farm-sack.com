@@ -1737,6 +1737,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Windmill bonus is now properly hard-capped at +25% (was uncapped despite the description), and the click-menu + hover both show "MAXED" when you've built five windmills.</li>
         <li>New <b>Horse</b> button on the toolbar (right of the Staff Hall button) — click to walk to your nearest horse and mount, click again to dismount. Greyed out until Lv 15.</li>
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
+        <li>Crop Farmer silo + coffee skip thresholds now scale with the network — the resume cutoff is "25% empty" of whatever the current cap is, so adding more silos/stands grows the trigger room with them.</li>
         <li>Shift+drag a rectangle while holding a tree from the shop now plants the whole rect (skips occupied tiles, stops when you run out of coins).</li>
         <li>Arborist now also does the early-water +50% growth boost on saplings, in addition to the level-up watering.</li>
         <li>Coffee Stand capacity 100 → 200 per stand.</li>
@@ -3241,25 +3242,31 @@ function findCropFarmerTask(m) {
   const seedSource = cropFarmerSeedSource(m);
   // Hysteresis-style gate for the storage networks: once a network
   // tops out, the farmer stops feeding it. They don't resume until
-  // the network has drained meaningfully (silo: 99+ free units;
-  // coffee: 49+ free units). The latch flag lives on the existing
-  // state.silo / state.coffeeStand records so the decision survives
-  // across staff scans + page reloads.
+  // the network has drained to ≥25% empty (i.e., room is at least
+  // a quarter of the cap). The fraction scales naturally as the
+  // player adds silos / coffee stands, instead of staying parked
+  // at a single hardcoded threshold that becomes a tiny slice of
+  // a much bigger cap. The latch flag lives on the existing
+  // state.silo / state.coffeeStand records so the decision
+  // survives across staff scans + page reloads.
+  const STORAGE_RESUME_FRACTION = 0.25;
   const silCap = siloCapacity();
   const silRoom = silCap - siloFeed();
   if (silCap > 0) {
     if (!state.silo) state.silo = { feed: 0, lastTickAt: Date.now(), boostMs: 0 };
-    if (silRoom <= 0)        state.silo.feedSkip = true;     // hit the cap — pause harvest
-    else if (silRoom >= 99)  state.silo.feedSkip = false;    // drained enough — resume
-    // values in between (1..98) preserve whichever side last triggered
+    const silResume = silCap * STORAGE_RESUME_FRACTION;
+    if (silRoom <= 0)              state.silo.feedSkip = true;     // hit the cap — pause harvest
+    else if (silRoom >= silResume) state.silo.feedSkip = false;    // drained enough — resume
+    // values between (0, silResume) preserve whichever side last triggered
   }
   const skipFeedHarvest = silCap > 0 && !!state.silo && state.silo.feedSkip;
   const cofCap = coffeeStandCapacity();
   const cofRoom = cofCap - coffeeStored();
   if (cofCap > 0) {
     if (!state.coffeeStand) state.coffeeStand = { coffee: 0, lastTickAt: Date.now() };
-    if (cofRoom <= 0)        state.coffeeStand.coffeeSkip = true;
-    else if (cofRoom >= 49)  state.coffeeStand.coffeeSkip = false;
+    const cofResume = cofCap * STORAGE_RESUME_FRACTION;
+    if (cofRoom <= 0)              state.coffeeStand.coffeeSkip = true;
+    else if (cofRoom >= cofResume) state.coffeeStand.coffeeSkip = false;
   }
   const skipCoffeeHarvest = cofCap > 0 && !!state.coffeeStand && state.coffeeStand.coffeeSkip;
   let best = null, bestScore = -Infinity;
