@@ -3150,6 +3150,21 @@ function resetFarm() {
   // into a corner of the meadow.
   state.camX = 0; state.camY = 0;
   storage.save();
+  // Force the cloud push to fire NOW instead of waiting for the
+  // 1.5s debounce — without this, a player who resets and then
+  // immediately logs out / closes the tab loses the prestige
+  // because the next login pulls the still-stale cloud save.
+  try {
+    if (storage._cloudPushTimer) {
+      clearTimeout(storage._cloudPushTimer);
+      storage._cloudPushTimer = null;
+    }
+    if (cloud && cloud.user) {
+      const payload = {};
+      for (const k of storage.KEEP_FIELDS) if (k in state) payload[k] = state[k];
+      cloud.pushSave(payload).catch(() => {});
+    }
+  } catch (e) {}
   if (typeof refreshHud === 'function') refreshHud();
   if (typeof buildToolbar === 'function') buildToolbar();
   // Dismount banner stays visible from the previous run if we don't
@@ -3281,7 +3296,7 @@ function cowFertilizerMul() { return 1 + 0.05 * cowCount(); }
 // animal in the world ages up faster + slaughters for more coins. The
 // silo drains slowly as long as animals are around.
 const SILO_CAPACITY_PER             = 500;     // capacity per placed silo (was 100 — bumped so storage scales fast with silo count)
-const SILO_FEED_PER_HARVEST         = 8;       // feed units per Animal Feed harvest
+const SILO_FEED_PER_HARVEST         = 20;      // feed units per Animal Feed harvest (was 8)
 const SILO_DRAIN_PER_ANIMAL_PER_MIN = 0.5;     // 0.5 units per animal per minute
 const SILO_AGE_BONUS                = 0.5;     // +50% age-up speed while feeding
 const SILO_YIELD_SPEED_BONUS        = 0.25;    // +25% faster yield timers while feeding
@@ -3366,6 +3381,21 @@ function clampSiloFeed() {
 // companions. Both still benefit from age-up boost like everything else,
 // they just don't pull feed from the stockpile.
 const SILO_NON_FEED_ANIMALS = new Set(['animal_horse', 'animal_dog']);
+// Per-species feed multiplier. Cow stays at the original 1.0 baseline;
+// smaller livestock eat in tiny increments below it so a chicken pen
+// doesn't drain a silo as fast as a cow pen. Anything missing from the
+// table defaults to 1.0.
+const SILO_FEED_MUL = {
+  animal_chicken: 0.50,
+  animal_duck:    0.55,
+  animal_sheep:   0.75,
+  animal_goat:    0.80,
+  animal_pig:     0.85,
+  animal_cow:     1.00,
+};
+function siloFeedMulFor(id) {
+  return (id in SILO_FEED_MUL) ? SILO_FEED_MUL[id] : 1.0;
+}
 function countAnimalsPlaced() {
   let n = 0;
   for (const k in state.placed) {
@@ -3375,6 +3405,19 @@ function countAnimalsPlaced() {
     n++;
   }
   return n;
+}
+// Drain "load" — the sum of per-species multipliers across the whole
+// farm. Used by the silo tick + display so a pen of 10 chickens uses
+// 5× drain, while 10 cows still uses 10×.
+function siloDrainLoad() {
+  let load = 0;
+  for (const k in state.placed) {
+    const id = state.placed[k].id || '';
+    if (!id.startsWith('animal_')) continue;
+    if (SILO_NON_FEED_ANIMALS.has(id)) continue;
+    load += siloFeedMulFor(id);
+  }
+  return load;
 }
 // ----- Coffee stand -----
 // Each Coffee Stand adds capacity for harvested Coffee Beans. While the
@@ -4237,7 +4280,7 @@ function siloTick() {
   clampSiloFeed();
   if (cap === 0) return;
   if (siloFeed() > 0) {
-    const drain = countAnimalsPlaced() * SILO_DRAIN_PER_ANIMAL_PER_MIN * dt / 60000;
+    const drain = siloDrainLoad() * SILO_DRAIN_PER_ANIMAL_PER_MIN * dt / 60000;
     drainSiloFeed(drain);
     state.silo.boostMs = (state.silo.boostMs || 0) + dt * SILO_AGE_BONUS;
     // Mature-overtime slaughter bonus: while the silo has feed, every
@@ -4408,6 +4451,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
   { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
   { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations for XP + coins — click to open the greenhouse', unlock: 12 },
+  { cat: 'building', id: 'building_sprinkler',      name: 'Sprinkler',      cost: 4200, sub: 'Auto-waters every planted crop in a 5×5 radius. Pours every 6 sec.', unlock: 11 },
 ];
 
 // ============================================================
@@ -5678,7 +5722,11 @@ function drawLivestock(id, placed, cx, cy, time) {
   );
   const seed = (placed && placed.placedAt) || (cx * 13 + cy * 17);
   let facingLeft;
-  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX > 0;
+  // Duck / goat / pig / sheep sprite sheets follow the standard
+  // "_left suffix = left-facing" naming, so a negative screen-x
+  // velocity should pick the _left frame. (Cow / dog use the
+  // inverted convention and live in their own draw functions.)
+  if (placed && typeof placed._facingX === 'number') facingLeft = placed._facingX < 0;
   else facingLeft = ((seed | 0) & 1) === 0;
   const stateName = moving ? 'walk' : 'idle';
   const fps = moving ? 5 : 2.5;
@@ -6151,6 +6199,7 @@ const ITEM_RENDER_W = {
   building_slaughterhouse: 170, building_staff: 168, building_seed_container: 84,
   building_coffee_stand: 130,
   building_greenhouse: 218,
+  building_sprinkler: 64,
 };
 // Trees grow from sapling → mature in four stages. Each stage runs a
 // timer; when the timer expires the tree is "ready to water" and the
@@ -6280,7 +6329,7 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
       const matureBonus = Math.round(animal.matureBonus || 0);
       const price = Math.round(meat.coins * animalAgeMul(animal)) + matureBonus;
       const stageLbl = matureBonus > 0
-        ? `${animalAgeStage(animal)} +${matureBonus}¢ weight`
+        ? `${animalAgeStage(animal)} +${matureBonus}¢ weight from silo`
         : animalAgeStage(animal);
       slaughterBtn.disabled = false;
       slaughterBtn.textContent = `Slaughter for ${price}¢ (${stageLbl})`;
@@ -6478,7 +6527,7 @@ const BUILDING_MENUS = {
         const cows = cowCount();
         const cur = cows * 5, cap = 50;
         const bonusColor = cur >= cap ? '#3F8338' : (cur > 0 ? '#5C7A1F' : '#8a5a1f');
-        html += `<div style="font-size:11px;color:${bonusColor};margin-bottom:4px;">` +
+        html += `<div style="font-size:11px;color:${bonusColor};margin-bottom:4px;text-align:center;">` +
                 `&#128004; <b>Cow Dung +${cur}%</b> growth speed · max +${cap}% (${cows}/10 cows)` +
                 `</div>`;
       }
@@ -6495,8 +6544,8 @@ const BUILDING_MENUS = {
           : (hasFeed
               ? `<b>Active</b> — silo has feed.`
               : `<b>Idle</b> — silo network is empty.`);
-        html += `<div style="font-size:11px;color:${tipColor};margin-bottom:4px;">` +
-                `&#127806; Mature animals gain <b>+${SLAUGHTER_OVERTIME_PER_DAY}¢/day weight</b> at slaughter while silo has feed. ${status}` +
+        html += `<div style="font-size:11px;color:${tipColor};margin-bottom:4px;text-align:center;">` +
+                `&#127806; Mature animals gain <b>+${SLAUGHTER_OVERTIME_PER_DAY}¢/day weight from silo</b> at slaughter while silo has feed. ${status}` +
                 `</div>`;
       }
       // Horse stable tally — every placed horse adds +5% staff speed,
@@ -6508,7 +6557,7 @@ const BUILDING_MENUS = {
         const cur = Math.round((horseStaffSpeedMul() - 1) * 100);
         const cap = Math.round(HORSE_STAFF_SPEED_CAP * 100);
         const bonusColor = cur >= cap ? '#3F8338' : (cur > 0 ? '#5C7A1F' : '#8a5a1f');
-        html += `<div style="font-size:11px;color:${bonusColor};margin-bottom:8px;">` +
+        html += `<div style="font-size:11px;color:${bonusColor};margin-bottom:8px;text-align:center;">` +
                 `&#128014; <b>Stable +${cur}%</b> staff speed · max +${cap}% (${horses}/5 horses)` +
                 `</div>`;
       }
@@ -6637,7 +6686,7 @@ const BUILDING_MENUS = {
               const matureBonus = Math.round(it.matureBonus || 0);
               const price = Math.round(meat.coins * mul * yMul) + matureBonus;
               const tag = matureBonus > 0
-                ? `<b>${price}¢</b> <span style="color:#3F8338;font-size:10px;">(+${matureBonus} weight)</span>`
+                ? `<b>${price}¢</b> <span style="color:#3F8338;font-size:10px;">(+${matureBonus} weight from silo)</span>`
                 : `<b>${price}¢</b>`;
               slaughterCell = tag;
             }
@@ -6761,7 +6810,9 @@ const BUILDING_MENUS = {
       const cap = siloCapacity();
       const feed = Math.floor(siloFeed());
       const animals = countAnimalsPlaced();
-      const drainPerMin = animals * SILO_DRAIN_PER_ANIMAL_PER_MIN;
+      // Drain rate uses the per-species load sum, not a flat count, so
+      // a pen of chickens drains at half a pen of cows.
+      const drainPerMin = +(siloDrainLoad() * SILO_DRAIN_PER_ANIMAL_PER_MIN).toFixed(2);
       const pct = cap > 0 ? Math.max(0, Math.min(100, Math.round((feed / cap) * 100))) : 0;
       const active = feed > 0 && cap > 0;
       // "Depletes in" — only meaningful when feed > 0 and animals are
