@@ -7957,6 +7957,14 @@ function drawPlacedItem(id, cx, cy, placed) {
     ctx.filter = 'none';
     ctx.restore();
   }
+  // Sprinkler is a short single-tile prop — anchor it like decor / animals
+  // (sprite bottom at the tile center) instead of bottom-of-diamond, so
+  // the sprinkler reads as sitting in the middle of its tile rather than
+  // tipped onto the front corner.
+  if (id === 'building_sprinkler') {
+    drawObjectSprite(id, cx, cy, w0, -TILE_H / 2);
+    return;
+  }
   drawObjectSprite(id, cx, cy, w0, 4);
 }
 
@@ -10843,8 +10851,12 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     // Buildings are expensive one-offs — drop placeMode after placing
     // one so the player doesn't accidentally buy a second copy by
     // clicking again. Trees / decor stay in placeMode for bulk placing.
-    if (data.id.startsWith('building_') && live.placeMode &&
-        live.placeMode.id === data.id) {
+    // Sprinklers are also bulk-placed: laying out a 5×5 grid of them
+    // across a big crop field is the normal case, and the placement
+    // ghost already shows existing coverage so accidental doubles are
+    // visible. The cost check on the next click still gates affordability.
+    if (data.id.startsWith('building_') && data.id !== 'building_sprinkler' &&
+        live.placeMode && live.placeMode.id === data.id) {
       cancelPlaceMode();
     }
     storage.save(); refreshHud();
