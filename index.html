@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Crop Farmer ships with two hires unlocked at Lv 15 (was one); the third still waits for Lv 18.</li>
         <li><b>Speedy Hands</b> upgrade (unlocks at Lv 15) — three tiers stacking +50% / +75% / +100% staff move + work speed on top of the new baseline.</li>
         <li>Staff move + work +50% faster across the board.</li>
         <li>Arborist tree harvests now pay the same +5 XP the player gets manually (was +1).</li>
@@ -3031,7 +3032,7 @@ const PET_COOLDOWN_MS            = DAY_MS;            // once per in-game day pe
 const STAFF_DAILY_UPKEEP         = 50;                // coins/day per staff
 const STAFF_ROLES = {
   animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen they live in. Need one per pen.', unlock: 15, max: 1 },
-  crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 15, max: 3, levelStep: 3 },
+  crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 15, max: 3, levelStep: 3, freeHires: 1 },
   arborist:      { name: 'Arborist',      desc: 'Auto-waters trees and harvests their fruit.',     unlock: 15, max: 1 },
 };
 // Some roles cap dynamically — animal keeper lets you hire one per
@@ -3042,11 +3043,15 @@ function maxHires(role) {
   return r.max || 1;
 }
 // Required level to hire the Nth member of a role (0-indexed): a base
-// unlock plus an optional per-extra-slot ramp.
+// unlock plus an optional per-extra-slot ramp. `freeHires` lets a role
+// open multiple slots at the unlock level before the levelStep ramp
+// kicks in — used so Crop Farmer ships with 2 hires at Lv 15 and the
+// 3rd waits until Lv 18.
 function nextHireLevel(role) {
   const r = STAFF_ROLES[role]; if (!r) return Infinity;
   const have = staffCount(role);
-  return (r.unlock || 1) + (r.levelStep || 0) * have;
+  const ramp = Math.max(0, have - (r.freeHires || 0)) * (r.levelStep || 0);
+  return (r.unlock || 1) + ramp;
 }
 function canHireMore(role) {
   const r = STAFF_ROLES[role]; if (!r) return false;
