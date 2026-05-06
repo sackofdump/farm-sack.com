@@ -1732,6 +1732,8 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Fixed Staff Hall <b>Edit</b> / <b>Zone</b> / <b>Fire</b> buttons doing nothing — live refresh was wiping click handlers each frame; menus with interactive buttons now re-open through the throttled path that preserves handlers.</li>
+        <li>Bulk-move drop click is now the <b>center</b> of the moved group instead of the NW corner — twice the available drop room, and the off-edge error tells you which direction is overflowing.</li>
         <li>Zoom-out range extended (min 0.5× → 0.25×) so a fully expanded farm fits on one screen.</li>
         <li>Edge-pan: while dragging a bulk-select rectangle (paint, move, zone, buy-land), push the cursor against any screen edge to scroll the camera that direction — selection follows past what's visible.</li>
         <li>Riding banner moved to the bottom-right corner so it stops overlapping the tool tooltip strip.</li>
@@ -6626,14 +6628,17 @@ function refreshLiveBuildingMenu() {
   if (!cfg || typeof cfg.desc !== 'function') return;
   const desc = document.getElementById('amDesc');
   if (!desc) return;
-  // Barn menu has interactive buttons (rows + dropdown + bulk). Doing
-  // a full re-open here lets us refresh the timers + counts without
-  // dropping click handlers; the sameMenu check inside openBuildingMenu
-  // preserves the dragged position. Throttled to ~4 refreshes / sec
-  // (250ms) so countdown timers tick smoothly without thrashing the
-  // DOM at 60fps.
-  const isBarn = desc.querySelector('[data-animal-action]');
-  if (isBarn) {
+  // Menus with interactive buttons (barn rows / staff rows / bulk
+  // dropdowns) need a full re-open so the click handlers re-bind —
+  // a plain innerHTML rewrite would silently drop every handler that
+  // the openBuildingMenu post-render scan attaches. Throttled to
+  // ~4 refreshes / sec (250ms) so countdown timers tick smoothly
+  // without thrashing the DOM at 60fps.
+  const hasInteractive = desc.querySelector('[data-animal-action]') ||
+                         desc.querySelector('[data-staff-action]') ||
+                         desc.querySelector('[data-barn-roster-mode]') ||
+                         desc.querySelector('[data-barn-bulk]');
+  if (hasInteractive) {
     const now = Date.now();
     if (now - _liveBuildingMenuLastTick < 250) return;
     // Skip refresh while the player is actively interacting with the
@@ -10646,7 +10651,15 @@ function finishGroupMoveAt(destIx, destIy) {
   const movingKeys = new Set(grp.items.map(it => it.srcKey));
   for (const t of targets) {
     if (!inWorld(t.dstIx, t.dstIy)) {
-      toast('Destination would push items past the world edge.', true);
+      // Surface which edge so the player knows which way to nudge the
+      // drop click instead of guessing.
+      let dir = '';
+      if (t.dstIx < 0)            dir = ' (extends past the west edge)';
+      else if (t.dstIx >= WORLD_W) dir = ' (extends past the east edge)';
+      else if (t.dstIy < 0)        dir = ' (extends past the north edge)';
+      else if (t.dstIy >= WORLD_H) dir = ' (extends past the south edge)';
+      else                         dir = ' (lands on un-bought meadow)';
+      toast('Destination would push items past the world' + dir + '.', true);
       audio.play('error'); return;
     }
     const dstKey = tileKey(t.dstIx, t.dstIy);
@@ -12486,6 +12499,12 @@ function bindInput() {
       const r = live.moveRect;
       const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
       const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
+      // Anchor to the rect's center, not its NW corner. The drop click
+      // becomes the centroid of the moved group, which is what the
+      // player visually expects and gives twice the available drop room
+      // before any item would push past the world edge.
+      const cx = Math.floor((x0 + x1) / 2);
+      const cy = Math.floor((y0 + y1) / 2);
       const items = [];
       for (let iy = y0; iy <= y1; iy++) {
         for (let ix = x0; ix <= x1; ix++) {
@@ -12495,7 +12514,7 @@ function bindInput() {
           if (!placed.id) continue;
           if (!(placed.id.startsWith('building_') || placed.id.startsWith('tree_') ||
                 placed.id.startsWith('animal_') || placed.id.startsWith('decor_'))) continue;
-          items.push({ srcKey: k, ix, iy, dx: ix - x0, dy: iy - y0, record: placed });
+          items.push({ srcKey: k, ix, iy, dx: ix - cx, dy: iy - cy, record: placed });
         }
       }
       if (items.length === 0) {
@@ -12503,13 +12522,13 @@ function bindInput() {
         audio.play('error');
       } else {
         // Stage the group — cursor banner + next click teleports.
-        live.moveGroup = { originIx: x0, originIy: y0, items };
+        live.moveGroup = { originIx: cx, originIy: cy, items };
         const banner = document.getElementById('placeBanner');
         if (banner) {
           banner.classList.remove('hidden');
           const im = document.getElementById('placeBannerImg'); if (im) im.src = imgPath(items[0].record.id);
           const tx = document.getElementById('placeBannerText');
-          if (tx) tx.textContent = `Moving ${items.length} item${items.length === 1 ? '' : 's'} — click a destination tile (anchor lands at the click)`;
+          if (tx) tx.textContent = `Moving ${items.length} item${items.length === 1 ? '' : 's'} — click a destination tile (group centers on the click)`;
         }
         document.getElementById('stage').classList.add('placeMode');
         audio.play('click');
