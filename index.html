@@ -3039,12 +3039,43 @@ function openResetFarmModal() {
   const cur = (state.prestige && state.prestige.totalBonus) || 0;
   const preview = document.getElementById('resetFarmPreview');
   if (preview) {
+    const total   = cur + earned;
+    const curPct  = Math.round(cur * 100);
+    const earnPct = Math.round(earned * 100);
+    const totalPct= Math.round(total * 100);
+    const presCnt = (state.prestige && state.prestige.count) || 0;
+    const STARTING_BASE = 12;
+    const curLot = Math.max(STARTING_BASE, Math.round(STARTING_BASE * (1 + cur)));
+    const newLot = Math.max(STARTING_BASE, Math.round(STARTING_BASE * (1 + total)));
     preview.innerHTML =
-      `Coins on hand: <b>${formatCoins(state.coins || 0)}¢</b><br>` +
-      `Bonus this reset will bank: <b style="color:#3F8338;">+${(earned * 100).toFixed(0)}%</b>` +
-      ` <span style="color:#7a5430;">(1% per 1,000,000¢)</span><br>` +
-      `Permanent bonus afterward: <b style="color:#3F8338;">+${((cur + earned) * 100).toFixed(0)}%</b>` +
-      ` <span style="color:#7a5430;">(currently +${(cur * 100).toFixed(0)}%)</span>`;
+      // Current standing — banked bonus + reset count.
+      `<div style="background:#FFF8E1;border:2px solid #C7A874;border-radius:8px;padding:8px 10px;margin-bottom:8px;">` +
+        `<div style="font-size:11px;color:#7a5430;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;">Current bonus</div>` +
+        `<div style="font-size:18px;font-weight:800;color:#3F8338;">+${curPct}%</div>` +
+        `<div style="font-size:11px;color:#5b3f1f;">${presCnt} reset${presCnt === 1 ? '' : 's'} so far · starting lot is <b>${curLot}×${curLot}</b></div>` +
+      `</div>` +
+      // What this reset will change.
+      `<div style="display:flex;justify-content:space-between;margin-bottom:6px;">` +
+        `<span>Coins on hand</span><b>${formatCoins(state.coins || 0)}¢</b>` +
+      `</div>` +
+      `<div style="display:flex;justify-content:space-between;margin-bottom:6px;">` +
+        `<span>Bonus this reset banks</span><b style="color:#3F8338;">+${earnPct}% <span style="color:#7a5430;font-weight:400;">(1% / 1M¢)</span></b>` +
+      `</div>` +
+      `<div style="display:flex;justify-content:space-between;margin-bottom:6px;border-bottom:1px solid rgba(74,46,21,0.18);padding-bottom:6px;">` +
+        `<span>Permanent bonus afterward</span><b style="color:#3F8338;">+${totalPct}%</b>` +
+      `</div>` +
+      // Full bonus scope.
+      `<div style="margin-bottom:4px;font-weight:800;color:#4A2E15;">A +${totalPct}% prestige bonus will apply to:</div>` +
+      `<ul style="margin:0 0 6px 18px;padding:0;font-size:12px;line-height:1.5;color:#4A2E15;">` +
+        `<li>All coin gains: harvests, animal yields, slaughter, tree fruit</li>` +
+        `<li>All XP gains</li>` +
+        `<li>Player walk speed</li>` +
+        `<li>Staff move + work speed</li>` +
+        `<li>Crop + tree growth speed</li>` +
+        `<li>Watered base bonus (+${totalPct}% added to the level-0 +50%, upgrades stack on top)</li>` +
+        `<li>Starting fenced lot: <b>${newLot}×${newLot}</b> (was ${curLot}×${curLot} from your current bonus)</li>` +
+        `<li>Farm grass tint shifts a hue per reset</li>` +
+      `</ul>`;
   }
   openModal('resetFarmConfirmModal');
   const cancel = document.getElementById('resetFarmCancel');
