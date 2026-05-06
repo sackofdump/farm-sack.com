@@ -8720,32 +8720,16 @@ function drawAll() {
   minIx = Math.max(0, minIx - 2); minIy = Math.max(0, minIy - 4);
   maxIx = Math.min(WORLD_W - 1, maxIx + 2);
   maxIy = Math.min(WORLD_H - 1, maxIy + 4);
-  // Ground rendering covers the union of state.worldBounds and the
-  // bounding box of every placed item, plus a small decorative margin.
-  // Clamping to worldBounds alone left buildings sitting on un-bought
-  // meadow visually stranded on the dark sky-gradient background; the
-  // placed-bounds union ensures the meadow polygon always wraps under
-  // the player's content. Items / crops still cull off the wider
-  // minIx/maxIx above so they render correctly past the meadow.
-  const _wb = state.worldBounds || defaultWorldBounds();
-  const _MEADOW_MARGIN = 6;
-  let _gMinX = _wb.x0;
-  let _gMinY = _wb.y0;
-  let _gMaxX = _wb.x0 + _wb.w - 1;
-  let _gMaxY = _wb.y0 + _wb.h - 1;
-  for (const k in state.placed) {
-    const ci = k.indexOf(',');
-    if (ci <= 0) continue;
-    const ix = +k.slice(0, ci), iy = +k.slice(ci + 1);
-    if (ix < _gMinX) _gMinX = ix;
-    if (iy < _gMinY) _gMinY = iy;
-    if (ix > _gMaxX) _gMaxX = ix;
-    if (iy > _gMaxY) _gMaxY = iy;
-  }
-  const groundMinIx = Math.max(minIx, Math.max(0, _gMinX - _MEADOW_MARGIN));
-  const groundMinIy = Math.max(minIy, Math.max(0, _gMinY - _MEADOW_MARGIN));
-  const groundMaxIx = Math.min(maxIx, Math.min(WORLD_W - 1, _gMaxX + _MEADOW_MARGIN));
-  const groundMaxIy = Math.min(maxIy, Math.min(WORLD_H - 1, _gMaxY + _MEADOW_MARGIN));
+  // Ground rendering uses the full 72×72 absolute world diamond — same
+  // size as a fresh new-game start — so the meadow always reads as a
+  // clean symmetric shape regardless of where the player has placed
+  // buildings or how far they've expanded the fence. Earlier attempts
+  // to tighten this around state.worldBounds (or the placed-item
+  // bounding box) produced an asymmetric warped polygon at low zoom.
+  const groundMinIx = Math.max(minIx, 0);
+  const groundMinIy = Math.max(minIy, 0);
+  const groundMaxIx = Math.min(maxIx, WORLD_W - 1);
+  const groundMaxIy = Math.min(maxIy, WORLD_H - 1);
 
   // -------- Pass A: ground tiles, sorted by *rotated* depth --------
   // (Sorting matters once the camera rotates; otherwise grass tile thickness
@@ -13392,15 +13376,29 @@ function applyExpandPen(pen) {
 // edges instead of being told "Already at the world edge" the moment
 // any one side runs out of room.
 function expandedRect(b) {
-  const growW = b.x0 > 0;            // can grow west
-  const growE = b.x0 + b.w < WORLD_W; // can grow east
-  const growN = b.y0 > 0;            // can grow north
-  const growS = b.y0 + b.h < WORLD_H; // can grow south
-  const newX0 = growW ? b.x0 - 1 : b.x0;
-  const newY0 = growN ? b.y0 - 1 : b.y0;
-  const newW  = b.w + (growW ? 1 : 0) + (growE ? 1 : 0);
-  const newH  = b.h + (growN ? 1 : 0) + (growS ? 1 : 0);
-  const grew  = growW || growE || growN || growS;
+  // Cap per-axis growth to whatever both axes can match, so the rect
+  // stays the same shape (square stays square) instead of warping
+  // asymmetrically when one side hits the world edge. Without this, a
+  // 12×12 farm pushed against the east edge grew to 13×14 — a non-square
+  // bounds that warped the meadow diamond and broke "expand in a perfect
+  // square" behavior.
+  const growW = b.x0 > 0;
+  const growE = b.x0 + b.w < WORLD_W;
+  const growN = b.y0 > 0;
+  const growS = b.y0 + b.h < WORLD_H;
+  const xPossible = (growW ? 1 : 0) + (growE ? 1 : 0);
+  const yPossible = (growN ? 1 : 0) + (growS ? 1 : 0);
+  const matched = Math.min(xPossible, yPossible);
+  let dxW = 0, dxE = 0, dyN = 0, dyS = 0;
+  if (matched >= 2) { dxW = 1; dxE = 1; }
+  else if (matched === 1) { if (growW) dxW = 1; else dxE = 1; }
+  if (matched >= 2) { dyN = 1; dyS = 1; }
+  else if (matched === 1) { if (growN) dyN = 1; else dyS = 1; }
+  const newX0 = b.x0 - dxW;
+  const newY0 = b.y0 - dyN;
+  const newW  = b.w + dxW + dxE;
+  const newH  = b.h + dyN + dyS;
+  const grew  = (dxW + dxE + dyN + dyS) > 0;
   return { newX0, newY0, newW, newH, grew };
 }
 function expandAreaInfo() {
