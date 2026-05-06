@@ -12513,8 +12513,21 @@ function refreshSeedStrip() {
     });
     strip.appendChild(toggle);
   }
+  // Sort seeds low → high. Primary key: unlock level (so the player's
+  // earliest-available crops sit on the left). Secondary key: cost
+  // (so within the same unlock tier the cheapest seed leads). Tertiary
+  // key: sell value, then crop id, so the order is fully deterministic
+  // across browsers regardless of insertion order in CROPS.
   const sourceIds = (seedStripPage === 'mutation' ? mutIds : normalIds).slice()
-    .sort((a, b) => (CROPS[a].unlock || 1) - (CROPS[b].unlock || 1));
+    .sort((a, b) => {
+      const ua = CROPS[a].unlock || 1, ub = CROPS[b].unlock || 1;
+      if (ua !== ub) return ua - ub;
+      const ca = CROPS[a].cost || 0,  cb = CROPS[b].cost || 0;
+      if (ca !== cb) return ca - cb;
+      const sa = CROPS[a].sell || 0,  sb = CROPS[b].sell || 0;
+      if (sa !== sb) return sa - sb;
+      return a < b ? -1 : a > b ? 1 : 0;
+    });
   // If the active page is 'mutation' but selectedSeed is normal (or vice versa),
   // don't auto-swap — the player's last pick is preserved across page flips.
   for (const id of sourceIds) {
