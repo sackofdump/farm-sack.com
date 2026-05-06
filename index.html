@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Greenhouse Claim button visibly greys out + reads "Brewing…" while the timer is running, so the disabled state actually reads as disabled.</li>
         <li>Render throttle scales with zoom: ~45 FPS at moderate zoom, ~30 FPS at low, ~20 FPS at min — sprite blits per frame dominate when the entire farm is on screen, so we just skip a frame instead of letting it stutter. Logic ticks (sim, walks, harvest) still run every frame.</li>
         <li>Late-game perf: refreshHud + quest-panel rebuild throttled to ~5Hz from the loop (inline callers still fire instantly), and the quest-panel innerHTML write is skipped when the markup hasn't actually changed.</li>
         <li>Late-game perf: tooltip rebuild throttled to 250ms + cached, drawAll now culls off-screen state.placed + state.plots before sorting, and tickPlacedAnimals throttled to 10Hz. Should noticeably cut frame time on big farms.</li>
@@ -14357,7 +14358,7 @@ function renderMutationLab() {
             </div>
           </div>
           <div style="display:flex;gap:6px;margin-top:6px;">
-            <button class="splashBtn primary" data-claim="${r.id}" style="width:auto;padding:6px 12px;font-size:12px;" ${ready?'':'disabled'}>Claim</button>
+            <button class="splashBtn primary" data-claim="${r.id}" style="width:auto;padding:6px 12px;font-size:12px;${ready ? '' : 'opacity:0.45;filter:grayscale(0.6);cursor:not-allowed;'}" ${ready?'':'disabled'}>${ready ? 'Claim' : 'Brewing…'}</button>
           </div>
         </div>
       `;
