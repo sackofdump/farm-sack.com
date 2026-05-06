@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Barn menu now shows the pen's <b>animal count vs total tiles</b> at a glance, with the pen size and a "pen full — expand" hint when you've hit the cap.</li>
         <li>Fixed Staff Hall <b>Edit</b> / <b>Zone</b> / <b>Fire</b> buttons doing nothing — live refresh was wiping click handlers each frame; menus with interactive buttons now re-open through the throttled path that preserves handlers.</li>
         <li>Bulk-move drop click is now the <b>center</b> of the moved group instead of the NW corner — twice the available drop room, and the off-edge error tells you which direction is overflowing. Right-click cancels the move; ghost preview now appears over un-bought meadow too.</li>
         <li>Zoom-out range extended (min 0.5× → 0.25×) so a fully expanded farm fits on one screen.</li>
@@ -5676,6 +5677,18 @@ const BUILDING_MENUS = {
       let html = '<div style="width:min(660px,86vw);min-height:420px;display:flex;flex-direction:column;">';
       html += '<div style="font-size:12px;color:#5b3f1f;margin-bottom:4px;">' +
                  'Buy farm animals and stable them in the pen.</div>';
+      // Pen capacity readout — every tile inside the pen rect is a
+      // valid stand spot for one animal, so pen.w*pen.h is the cap.
+      {
+        const penCap   = pen.w * pen.h;
+        const penUsed  = allRows.length;
+        const penFull  = penUsed >= penCap;
+        const penColor = penFull ? '#A03423' : (penUsed >= penCap * 0.85 ? '#8a5a1f' : '#3F8338');
+        html += `<div style="font-size:11px;color:${penColor};margin-bottom:6px;">` +
+                `&#128081; <b>Animals: ${penUsed} / ${penCap}</b> (${pen.w}×${pen.h} pen)` +
+                (penFull ? ' &middot; <span style="color:#A03423;">pen full — expand the pen to add more</span>' : '') +
+                `</div>`;
+      }
       // Cow Dung tally — every cow in the world adds +5% crop / tree
       // growth speed via cowFertilizerMul, capped at 10 cows / +50%.
       {
