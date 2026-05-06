@@ -1732,6 +1732,9 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Coffee Stand storage now works like silos: each placed stand holds its own coffee, harvests cascade into the next when one tops out, and the menu / hover shows "this stand vs network".</li>
+        <li>Crop Farmer harvesting Coffee Beans now actually fills the stand (was silently dropping the harvest into the regular sell branch for 0¢).</li>
+        <li>Riding banner shrunk down so it doesn't dominate the screen.</li>
         <li>Staff Hall menu now shows each hire as its own row with inline <b>Edit</b> / <b>Zone</b> (crop farmer) / <b>Fire</b> buttons — manage the whole roster without chasing each staffer down individually.</li>
         <li>Hiring an Animal Keeper refills every animal in their pen to 100% loyalty on arrival.</li>
         <li>Crop Farmer ships with two hires unlocked at Lv 15 (was one); the third still waits for Lv 18.</li>
@@ -2418,9 +2421,9 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 <!-- Floating Dismount banner — only visible while the farmer is mounted.
      Initial display:none beats inline overrides; refreshDismountBanner
      flips to flex when state.player.mounted becomes true. -->
-<div id="dismountBanner" style="display:none;position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:60;background:linear-gradient(to bottom,#FFE7A8,#F5C95B);border:3px solid #8C5E32;border-radius:14px;padding:8px 16px;align-items:center;gap:10px;box-shadow:0 4px 0 rgba(0,0,0,.15);">
-  <span style="font-weight:800;color:#4A2E15;">&#127948; Riding (2&times; speed)</span>
-  <button class="splashBtn" id="dismountBtn" style="width:auto;padding:6px 14px;font-size:13px;">Dismount</button>
+<div id="dismountBanner" style="display:none;position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:60;background:linear-gradient(to bottom,#FFE7A8,#F5C95B);border:2px solid #8C5E32;border-radius:10px;padding:4px 10px;align-items:center;gap:6px;box-shadow:0 2px 0 rgba(0,0,0,.15);font-size:11px;">
+  <span style="font-weight:800;color:#4A2E15;">&#127948; Riding (2&times;)</span>
+  <button class="splashBtn" id="dismountBtn" style="width:auto;padding:3px 9px;font-size:11px;">Dismount</button>
 </div>
 <div id="particles"></div>
 <div id="toasts"></div>
@@ -2697,7 +2700,60 @@ const COFFEE_SPEED_BONUS              = 0.5;     // base +50% from the first sta
 const COFFEE_SPEED_BONUS_PER_EXTRA    = 0.25;    // +25% per additional stand
 const COFFEE_SPEED_BONUS_MAX          = 1.0;     // hard-capped at +100%
 function coffeeStandCapacity() { return COFFEE_CAPACITY_PER * buildingCount('building_coffee_stand'); }
-function coffeeStored()        { return (state.coffeeStand && state.coffeeStand.coffee) || 0; }
+// Per-stand coffee lives on each placed stand record (state.placed[k].coffee),
+// matching how silos store feed. The global state.coffeeStand only keeps the
+// drain timer + a legacy total used once for migration on first load.
+function eachCoffeeStand(fn) {
+  for (const k in state.placed) {
+    const p = state.placed[k];
+    if (p && p.id === 'building_coffee_stand') fn(p, k);
+  }
+}
+function coffeeStored() {
+  let total = 0;
+  eachCoffeeStand(p => { total += (typeof p.coffee === 'number' ? p.coffee : 0); });
+  return total;
+}
+// Cascade fill — fills the first stand to its individual cap, spills into
+// the next one, etc. Returns the amount actually deposited (0 if every
+// stand is full or no stand exists).
+function addCoffee(amount) {
+  if (amount <= 0) return 0;
+  let remaining = amount, added = 0;
+  eachCoffeeStand(p => {
+    if (remaining <= 0) return;
+    if (typeof p.coffee !== 'number') p.coffee = 0;
+    const room = COFFEE_CAPACITY_PER - p.coffee;
+    if (room <= 0) return;
+    const fill = Math.min(remaining, room);
+    p.coffee += fill;
+    remaining -= fill;
+    added += fill;
+  });
+  return added;
+}
+// Cascade drain — pulls from the first stand with coffee, then the next.
+function drainCoffee(amount) {
+  if (amount <= 0) return 0;
+  let remaining = amount, drained = 0;
+  eachCoffeeStand(p => {
+    if (remaining <= 0) return;
+    if (typeof p.coffee !== 'number') p.coffee = 0;
+    if (p.coffee <= 0) return;
+    const take = Math.min(remaining, p.coffee);
+    p.coffee -= take;
+    remaining -= take;
+    drained += take;
+  });
+  return drained;
+}
+function clampCoffee() {
+  eachCoffeeStand(p => {
+    if (typeof p.coffee !== 'number') p.coffee = 0;
+    if (p.coffee > COFFEE_CAPACITY_PER) p.coffee = COFFEE_CAPACITY_PER;
+    if (p.coffee < 0) p.coffee = 0;
+  });
+}
 function coffeeActive()        { return coffeeStandCapacity() > 0 && coffeeStored() > 0; }
 function coffeeBonusFraction() {
   if (!coffeeActive()) return 0;
@@ -2716,11 +2772,19 @@ function coffeeStandTick() {
   const last = state.coffeeStand.lastTickAt || now;
   const dt = Math.max(0, Math.min(10000, now - last));
   state.coffeeStand.lastTickAt = now;
+  // Migrate any legacy global coffee total into the placed stands once on
+  // first tick so old saves don't stash coffee in a now-unused slot.
+  if (typeof state.coffeeStand.coffee === 'number' && state.coffeeStand.coffee > 0) {
+    addCoffee(state.coffeeStand.coffee);
+    state.coffeeStand.coffee = 0;
+  }
+  clampCoffee();
   const cap = coffeeStandCapacity();
-  if (state.coffeeStand.coffee > cap) state.coffeeStand.coffee = cap;
-  if (cap === 0 || state.coffeeStand.coffee <= 0) return;
+  if (cap === 0) return;
+  const stored = coffeeStored();
+  if (stored <= 0) return;
   const drain = totalStaffCount() * COFFEE_DRAIN_PER_STAFF_PER_MIN * dt / 60000;
-  state.coffeeStand.coffee = Math.max(0, state.coffeeStand.coffee - drain);
+  if (drain > 0) drainCoffee(drain);
 }
 // ----- Pen animal wander -----
 // Placed animals (excluding dog + horse) drift within the barn pen so
@@ -3256,6 +3320,18 @@ function performCropFarmerAction(m, task) {
       // partial fill that tops it off can land at e.g. 0.3999999 feed.
       // Floor + min(1) keeps the toast a clean integer.
       if (added > 0) fxFloat(ix, iy, '+' + Math.max(1, Math.round(added)) + ' feed', 0, '#F5C84B');
+      fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
+    } else if (c.coffee) {
+      // Coffee Beans: cascade into the coffee-stand network so a staff
+      // harvest fills the stand the same way the player's manual harvest
+      // does. Used to fall through to the regular sell branch and award
+      // 0¢ + 0 coffee — actual brewing was being silently dropped.
+      const yieldQty = c.coffeeYield || COFFEE_PER_HARVEST;
+      const added = Math.round(addCoffee(yieldQty));
+      const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul())) + 2;
+      grantXp(xpGain);
+      fxBurst(ix, iy, '#7A4A23', 10);
+      if (added > 0) fxFloat(ix, iy, '+' + added + ' coffee', 0, '#C2884A');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
     } else {
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
@@ -6006,13 +6082,24 @@ const BUILDING_MENUS = {
   },
   building_coffee_stand: {
     title: 'Coffee Stand',
-    desc: () => {
+    desc: ({ ix, iy } = {}) => {
       const cap = coffeeStandCapacity();
       const stored = Math.floor(coffeeStored());
       const staffN = totalStaffCount();
       const drainPerMin = staffN * COFFEE_DRAIN_PER_STAFF_PER_MIN;
       const pct = cap > 0 ? Math.max(0, Math.min(100, Math.round((stored / cap) * 100))) : 0;
       const active = stored > 0 && cap > 0;
+      // Per-stand reading for the stand the player actually clicked on,
+      // so multi-stand farms can see "this stand vs. network" the same
+      // way the silo menu does.
+      let thisLine = '';
+      if (typeof ix === 'number' && typeof iy === 'number') {
+        const placed = state.placed[ix + ',' + iy];
+        if (placed && placed.id === 'building_coffee_stand') {
+          const own = Math.floor(typeof placed.coffee === 'number' ? placed.coffee : 0);
+          thisLine = `<div style="font-size:12px;color:#5b3f1f;margin:0 0 4px;">This stand: <b>${own} / ${COFFEE_CAPACITY_PER}</b></div>`;
+        }
+      }
       let depleteStr = '';
       if (active && drainPerMin > 0) {
         const mins = Math.max(1, Math.ceil(stored / drainPerMin));
@@ -6024,15 +6111,16 @@ const BUILDING_MENUS = {
         ? `<b>${staffN}</b> staff · sips <b>${drainPerMin}</b>/min` + (depleteStr ? ` · empties in <b>${depleteStr}</b>` : '')
         : `No staff hired — coffee isn't being consumed.`;
       return (
-        `<div style="margin-bottom:6px;">Coffee: <b>${stored} / ${cap}</b></div>` +
+        thisLine +
+        `<div style="margin-bottom:6px;">Network: <b>${stored} / ${cap}</b></div>` +
         `<div style="background:#3a2818;height:9px;border-radius:5px;overflow:hidden;margin:4px 0 8px;">` +
         `<div style="width:${pct}%;height:100%;background:linear-gradient(180deg,#C2884A,#5C3A1F);"></div></div>` +
         `<div style="font-size:12px;color:#5b3f1f;">` +
         `${drainLine}<br>` +
-        `Harvest <b>Coffee Beans</b> to refill (each harvest = +${COFFEE_PER_HARVEST}).<br>` +
+        `Harvest <b>Coffee Beans</b> to refill (each harvest = +${COFFEE_PER_HARVEST}). Excess cascades into the next stand.<br>` +
         (active
           ? `<span style="color:#7A3F00;">Active: +${Math.round(coffeeBonusFraction() * 100)}% staff speed (movement + cooldowns)</span>`
-          : `<span style="color:#8a5a1f;">Idle — fill the stand to caffeinate the staff.</span>`) +
+          : `<span style="color:#8a5a1f;">Idle — fill a stand to caffeinate the staff.</span>`) +
         `</div>`
       );
     },
@@ -9520,18 +9608,17 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       bumpStat('harvestedByCrop.' + p.crop);
       p.state = 'dirt'; p.crop = null; p.plantedAt = null; p.watered = false;
     } else if (c.coffee) {
-      // Coffee Beans: deposit into the Coffee Stand. No coins, only XP.
-      if (!state.coffeeStand) state.coffeeStand = { coffee: 0, lastTickAt: Date.now() };
+      // Coffee Beans: deposit across the coffee-stand network. Cascades
+      // into the next stand whenever one tops out so a partial harvest
+      // is never lost. No coins, only XP.
       const cap = coffeeStandCapacity();
-      const before = state.coffeeStand.coffee;
       const yieldQty = c.coffeeYield || COFFEE_PER_HARVEST;
-      state.coffeeStand.coffee = Math.min(cap, state.coffeeStand.coffee + yieldQty);
-      const added = Math.round(state.coffeeStand.coffee - before);
+      const added = Math.round(addCoffee(yieldQty));
       const xpGain = Math.max(1, Math.round((c.cost / 5) * cottageXpMul())) + 2;
       fxBurst(ix, iy, '#7A4A23', 14);
       if (cap === 0) fxFloat(ix, iy, 'No coffee stand!', 0, '#FF9966');
       else if (added > 0) fxFloat(ix, iy, '+' + added + ' coffee', 0, '#C2884A');
-      else fxFloat(ix, iy, 'Stand full!', 0, '#FF9966');
+      else fxFloat(ix, iy, 'Stands full!', 0, '#FF9966');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
       audio.play('harvest');
       grantXp(xpGain);
@@ -12706,12 +12793,15 @@ function buildTooltipHTML(ix, iy) {
           building_barn:         () => `Opens the fenced animal pen — buy animals in the shop and drop them inside.`,
           building_staff:        () => `Hire farmhands — crop farmers, arborists, animal keepers.`,
           building_seed_container: (p) => `Stockpile up to <b>200</b> seeds for crop farmers to plant.<br>Stocked: <b>${seedContainerTotal(p)} / 200</b>`,
-          building_coffee_stand:   () => {
+          building_coffee_stand:   (p) => {
+            const own = Math.floor((p && typeof p.coffee === 'number') ? p.coffee : 0);
+            const total = Math.floor(coffeeStored());
             const cap = coffeeStandCapacity();
-            const stored = Math.floor(coffeeStored());
-            const active = stored > 0 && cap > 0;
-            return `<span style="color:#7A3F00">+${Math.round(COFFEE_SPEED_BONUS*100)}% staff speed</span> while it has coffee.<br>` +
-                   `Coffee: <b>${stored} / ${cap}</b>${active ? ' · <span style="color:#1f7a3e;">active</span>' : ''}`;
+            const active = total > 0 && cap > 0;
+            return `<span style="color:#7A3F00">+${Math.round(COFFEE_SPEED_BONUS*100)}% staff speed</span> while it has coffee.` +
+                   `<br>This stand: <b>${own} / ${COFFEE_CAPACITY_PER}</b>` +
+                   `<br>Network: <b>${total} / ${cap}</b>` +
+                   (active ? ' · <span style="color:#1f7a3e;">active</span>' : '');
           },
           building_greenhouse:   () => `Click to open — <b>mutate seeds</b> into rare hybrids for XP + coins.`,
         };
