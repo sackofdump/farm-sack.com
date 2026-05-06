@@ -12783,12 +12783,20 @@ function buildToolbar() {
     ? `Reset Farm — unlocks at Lv ${PRESTIGE_UNLOCK_LEVEL}`
     : `Reset Farm · current permanent bonus: +${Math.round(curBonus * 100)}% · resetting now would add +${Math.round(earnedNow * 100)}% (1% per 1M¢ on hand) for a total of +${Math.round((curBonus + earnedNow) * 100)}%`;
   rstBtn.disabled = rstLocked;
-  // Match the other toolbar buttons' visual weight — an inner span
-  // sized to the same 60px footprint the sprites use, with the emoji
-  // scaled up to fill it.
+  // Stack the prestige icon over a small "PRESTIGE" label so the
+  // toolbar button reads as more than a generic refresh — players
+  // were missing it / mistaking it for a UI reset. Emoji shrinks to
+  // make room without changing the 60px footprint.
   const rstInner = document.createElement('span');
-  rstInner.style.cssText = 'display:flex;align-items:center;justify-content:center;width:60px;height:60px;font-size:54px;line-height:1;';
-  rstInner.textContent = '🔄';
+  rstInner.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;line-height:1;';
+  const rstIcon = document.createElement('span');
+  rstIcon.style.cssText = 'font-size:34px;line-height:1;';
+  rstIcon.textContent = '🔄';
+  const rstLabel = document.createElement('span');
+  rstLabel.style.cssText = 'font-size:9px;font-weight:900;letter-spacing:0.5px;color:#FFE066;text-shadow:0 1px 0 rgba(0,0,0,0.55);margin-top:2px;';
+  rstLabel.textContent = 'PRESTIGE';
+  rstInner.appendChild(rstIcon);
+  rstInner.appendChild(rstLabel);
   rstBtn.appendChild(rstInner);
   rstBtn.addEventListener('click', () => {
     if (rstLocked) return;
