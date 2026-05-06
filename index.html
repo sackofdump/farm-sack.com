@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Riding banner moved to the bottom-right corner so it stops overlapping the tool tooltip strip.</li>
         <li>Late-game perf: idle staff now throttle their "find next task" scan to once every 300ms instead of every frame — biggest fix for end-game lag with full crop farms.</li>
         <li>Leaderboard: new <b>Staff Hvst</b> column counting harvests done by your crop farmers + arborist.</li>
         <li>Seed Container menu + hover now show "This container vs network" totals like silos / coffee stands.</li>
@@ -2428,7 +2429,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 <!-- Floating Dismount banner — only visible while the farmer is mounted.
      Initial display:none beats inline overrides; refreshDismountBanner
      flips to flex when state.player.mounted becomes true. -->
-<div id="dismountBanner" style="display:none;position:fixed;top:78px;left:50%;transform:translateX(-50%);z-index:60;background:linear-gradient(to bottom,#FFE7A8,#F5C95B);border:2px solid #8C5E32;border-radius:10px;padding:4px 10px;align-items:center;gap:6px;box-shadow:0 2px 0 rgba(0,0,0,.15);font-size:11px;">
+<div id="dismountBanner" style="display:none;position:fixed;bottom:18px;right:18px;z-index:60;background:linear-gradient(to bottom,#FFE7A8,#F5C95B);border:2px solid #8C5E32;border-radius:10px;padding:4px 10px;align-items:center;gap:6px;box-shadow:0 2px 0 rgba(0,0,0,.15);font-size:11px;">
   <span style="font-weight:800;color:#4A2E15;">&#127948; Riding (2&times;)</span>
   <button class="splashBtn" id="dismountBtn" style="width:auto;padding:3px 9px;font-size:11px;">Dismount</button>
 </div>
