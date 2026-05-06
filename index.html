@@ -1757,6 +1757,8 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Sidebar gets a new <b>Center on farmer</b> button (next to "Center on farm") so you can snap the camera back to wherever your farmer is.</li>
+        <li>Leaderboard adds <b>Resets</b> + <b>Prestige %</b> columns so prestige progress is visible to everyone. (Backend: requires <code>prestige_count</code> + <code>prestige_bonus_pct</code> integer columns on the <code>leaderboard</code> table.)</li>
         <li>Settings → <b>Controls</b>: rebind every toolbar shortcut (the seven tool digits + Shop/Barn/Staff/Greenhouse/Reset/Horse buttons). Click a key cell, press a new key, done. Reset to defaults button included.</li>
         <li>Settings → <b>Layout</b>: turn on edit mode and drag the toolbar, quest panel, and dismount banner anywhere you want. Positions persist; "Reset positions" snaps everything back.</li>
         <li>Seed Containers now share a single <b>network view</b> — clicking any container opens a unified menu showing the total stocked across all of them. Buying / removing seeds cascades across containers, so you can stock the whole farm from one place.</li>
@@ -1963,6 +1965,7 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
   <button class="iconBtn sidebarBtn" id="zoomOutBtn" title="Zoom out (-)">&minus;</button>
   <button class="iconBtn sidebarBtn" id="rotateBtn"  title="Rotate camera (R)">&#8635;</button>
   <button class="iconBtn sidebarBtn" id="centerBtn"  title="Center on farm (Space)">&#127968;</button>
+  <button class="iconBtn sidebarBtn" id="centerPlayerBtn" title="Center on farmer">&#128105;&#8205;&#127806;</button>
 </div>
 
 <div id="actionTipBanner" class="hidden"><span id="actionTipText"></span></div>
@@ -5274,6 +5277,10 @@ const camera = {
     const c = isoCenter(ix, iy);
     state.camX = window.innerWidth / 2 - c.x * state.zoom;
     state.camY = window.innerHeight / 2 - c.y * state.zoom;
+  },
+  centerOnPlayer() {
+    if (!state.player) return;
+    this.centerOnTile(state.player.ix, state.player.iy);
   },
 };
 
@@ -11391,6 +11398,8 @@ async function renderLeaderboardTab(wrap) {
     { key: 'animals_owned',       label: 'Animals' },
     { key: 'animals_slaughtered', label: 'Slaughtered' },
     { key: 'staff_harvested',     label: 'Staff Hvst' },
+    { key: 'prestige_count',      label: 'Resets' },
+    { key: 'prestige_bonus_pct',  label: 'Prestige %', fmt: 'pct' },
     { key: 'daily_streak',        label: 'Streak'  },
     { key: 'quests_done',         label: 'Quests'  },
     { key: 'dailies_done',        label: 'Daily'   },
@@ -11411,7 +11420,15 @@ async function renderLeaderboardTab(wrap) {
     html += `<td style="padding:5px 8px;">${(r.farmer_name || 'Anonymous').replace(/[<>&]/g, '')}${isMe ? ' <span style="color:#4F8C2D;">(you)</span>' : ''}</td>`;
     for (const c of cols) {
       const v = r[c.key] ?? 0;
-      html += `<td style="padding:5px 8px;text-align:right;">${typeof v === 'number' ? v.toLocaleString() : v}</td>`;
+      let cell;
+      if (c.fmt === 'pct') {
+        cell = `+${(typeof v === 'number' ? v : 0).toLocaleString()}%`;
+      } else if (typeof v === 'number') {
+        cell = v.toLocaleString();
+      } else {
+        cell = v;
+      }
+      html += `<td style="padding:5px 8px;text-align:right;">${cell}</td>`;
     }
     html += '</tr>';
   });
@@ -15593,6 +15610,8 @@ async function startGame() {
   document.getElementById('zoomOutBtn').onclick   = () => { camera.setZoom(state.zoom - ZOOM_STEP); audio.play('click'); };
   document.getElementById('rotateBtn').onclick    = () => { camera.rotate(1);  audio.play('click'); };
   document.getElementById('centerBtn').onclick    = () => { camera.centerOnFarm(); audio.play('click'); };
+  const centerPlayerBtn = document.getElementById('centerPlayerBtn');
+  if (centerPlayerBtn) centerPlayerBtn.onclick = () => { camera.centerOnPlayer(); audio.play('click'); };
   document.getElementById('placeCancelBtn').onclick = cancelPlaceMode;
   // Zone-select banner buttons (crop farmer hire flow).
   const zsConfirm = document.getElementById('zoneSelectConfirm');
@@ -15833,6 +15852,8 @@ const cloud = {
       animals_owned:      animals,
       animals_slaughtered: s.slaughtered || 0,
       staff_harvested: s.staffHarvested || 0,
+      prestige_count:     (state.prestige && state.prestige.count)      || 0,
+      prestige_bonus_pct: Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100),
       daily_streak: state.dailyStreak || 0,
       quests_done:  state.questsCompleted || 0,
       dailies_done: state.dailiesCompleted || 0,
@@ -15844,7 +15865,7 @@ const cloud = {
   async fetchLeaderboard(limit = 10) {
     if (!sb) return [];
     const { data, error } = await sb.from('leaderboard')
-      .select('user_id, farmer_name, level, coins, day_count, harvested, planted, plowed, watered, trees_placed, animals_owned, animals_slaughtered, staff_harvested, daily_streak, quests_done, dailies_done, updated_at')
+      .select('user_id, farmer_name, level, coins, day_count, harvested, planted, plowed, watered, trees_placed, animals_owned, animals_slaughtered, staff_harvested, prestige_count, prestige_bonus_pct, daily_streak, quests_done, dailies_done, updated_at')
       .order('level', { ascending: false })
       .order('coins', { ascending: false })
       .limit(limit);
