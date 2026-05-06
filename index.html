@@ -9267,15 +9267,42 @@ function drawAll() {
     }
     // Sprinkler ghost: paint the 5×5 watering radius the sprinkler will
     // cover from this tile so the player can position it without
-    // guessing which crops it'll reach.
+    // guessing which crops it'll reach. Existing sprinklers' coverage
+    // is painted first in a muted teal so the player can see which area
+    // is already watered and avoid wasting a placement on overlap.
     if (live.placeMode.id === 'building_sprinkler') {
+      const cursorCovers = new Set();
       for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
         for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
           const tx = ix + dx, ty = iy + dy;
           if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
-          const cc = isoCenter(tx, ty);
-          drawHoverHighlight(cc.x, cc.y, '#6CC8FF');
+          cursorCovers.add(tx + ',' + ty);
         }
+      }
+      // Existing sprinkler footprints — drawn first so the cursor's
+      // bright highlight sits on top wherever the new one overlaps.
+      for (const k in state.placed) {
+        const it = state.placed[k];
+        if (!it || it.id !== 'building_sprinkler') continue;
+        const ci = k.indexOf(',');
+        const sIx = +k.slice(0, ci), sIy = +k.slice(ci + 1);
+        for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
+          for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
+            const tx = sIx + dx, ty = sIy + dy;
+            if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
+            const cc = isoCenter(tx, ty);
+            drawHoverHighlight(cc.x, cc.y, '#3F8FB5');
+          }
+        }
+      }
+      // Cursor preview on top — bright cyan, painted on every cursor
+      // tile (including ones already covered) so the new ghost stays
+      // visually distinct from existing footprints.
+      for (const tk of cursorCovers) {
+        const ci = tk.indexOf(',');
+        const tx = +tk.slice(0, ci), ty = +tk.slice(ci + 1);
+        const cc = isoCenter(tx, ty);
+        drawHoverHighlight(cc.x, cc.y, '#6CC8FF');
       }
     }
   }
