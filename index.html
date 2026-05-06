@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Late-game perf: <b>buildingCount / placedHorseCount / siloFeed / coffeeStored</b> are now 200-250ms cached. With 20 crop farmers each calling staffSpeedMul → horseStaffSpeedMul → state.placed walk per frame, the cumulative cost was a real lag source on big farms.</li>
         <li>Coyote sprite faces the right way again (was inverted after the last facing pass).</li>
         <li>Mature-animal weight bonus 1¢/day → 5¢/day, partially restoring the silo-bonus power that was removed.</li>
         <li>World grows by one more ring: WORLD_W/H bumped 70 → 72, so the Expand Play Area upgrade is purchasable again for one final outer band of tiles.</li>
@@ -2622,12 +2623,22 @@ function staffSpeedMul() {
 // multiply through.
 const HORSE_STAFF_SPEED_PER  = 0.05;
 const HORSE_STAFF_SPEED_CAP  = 0.25;
+// Memoised: walking state.placed every staffer × every frame was the
+// dominant late-game cost once the crop-farmer cap was raised to 20.
+// Cache for one animation frame (~16ms) so multiple staff ticks in
+// the same loop iteration reuse the same number. Storing the cache
+// on a module-scope object keeps it fresh across save/load too.
+const _horseCountCache = { value: 0, expiresAt: 0 };
 function placedHorseCount() {
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (now < _horseCountCache.expiresAt) return _horseCountCache.value;
   let n = 0;
   for (const k in state.placed) {
     const it = state.placed[k];
     if (it && it.id === 'animal_horse') n++;
   }
+  _horseCountCache.value = n;
+  _horseCountCache.expiresAt = now + 250;
   return n;
 }
 function horseStaffSpeedMul() {
@@ -2645,10 +2656,24 @@ function waterCost()       { return WATER_COSTS[state.player.waterLevel || 0] ??
 function wateredSpeedMul() { return WATER_SPEED_M[state.player.waterLevel || 0] ?? 1.5; }
 // Building bonus counters. Each placed building of a given kind stacks
 // its +5% bonus, capped at +25% (5 copies).
+// Memoised: hot path called many times per frame (cottageXpMul,
+// siloYieldMul, marketSellMul, windmillGrowMul, siloCapacity,
+// coffeeStandCapacity all read it). 250ms TTL is well below any
+// player-visible UI tick.
+const _buildingCountCache = new Map();
+let   _buildingCountCacheExpires = 0;
 function buildingCount(id) {
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (now >= _buildingCountCacheExpires) {
+    _buildingCountCache.clear();
+    _buildingCountCacheExpires = now + 250;
+  }
+  if (_buildingCountCache.has(id)) return _buildingCountCache.get(id);
   let n = 0;
   for (const k in state.placed) if (state.placed[k].id === id) n++;
-  return Math.min(5, n);
+  const capped = Math.min(5, n);
+  _buildingCountCache.set(id, capped);
+  return capped;
 }
 function cottageXpMul()    { return 1 + 0.05 * buildingCount('building_house'); }
 // Silo yield bonus: +5% per silo, hard-capped at +25% (5 silos worth)
@@ -2700,11 +2725,19 @@ function eachSilo(fn) {
     if (p && p.id === 'building_silo') fn(p, k);
   }
 }
+// Memoised — called inside findCropFarmerTask + the silo / barn UI
+// readouts, all of which can fire per-frame for many staff.
+const _siloFeedCache = { value: 0, expiresAt: 0 };
 function siloFeed() {
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (now < _siloFeedCache.expiresAt) return _siloFeedCache.value;
   let total = 0;
   eachSilo(p => { total += (typeof p.feed === 'number' ? p.feed : 0); });
+  _siloFeedCache.value = total;
+  _siloFeedCache.expiresAt = now + 200;
   return total;
 }
+function invalidateSiloFeedCache() { _siloFeedCache.expiresAt = 0; }
 function siloHasFeed()   { return siloCapacity() > 0 && siloFeed() > 0; }
 // Add `amount` units of feed across placed silos. Cascades into the next
 // silo once one is full so a partial harvest is never lost while there's
@@ -2783,11 +2816,18 @@ function eachCoffeeStand(fn) {
     if (p && p.id === 'building_coffee_stand') fn(p, k);
   }
 }
+// Memoised; same justification as siloFeed.
+const _coffeeStoredCache = { value: 0, expiresAt: 0 };
 function coffeeStored() {
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (now < _coffeeStoredCache.expiresAt) return _coffeeStoredCache.value;
   let total = 0;
   eachCoffeeStand(p => { total += (typeof p.coffee === 'number' ? p.coffee : 0); });
+  _coffeeStoredCache.value = total;
+  _coffeeStoredCache.expiresAt = now + 200;
   return total;
 }
+function invalidateCoffeeStoredCache() { _coffeeStoredCache.expiresAt = 0; }
 // Cascade fill — fills the first stand to its individual cap, spills into
 // the next one, etc. Returns the amount actually deposited (0 if every
 // stand is full or no stand exists).
