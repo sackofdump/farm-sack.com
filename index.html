@@ -12070,12 +12070,18 @@ function buildToolbar() {
   rstBtn.className = 'tool toolReset' + (rstLocked ? ' toolLocked' : '');
   rstBtn.id = 'toolResetFarmBtn';
   const earnedNow = prestigeBonusFromCoins(state.coins || 0);
+  const curBonus  = ((state.prestige && state.prestige.totalBonus) || 0);
   rstBtn.title = rstLocked
     ? `Reset Farm — unlocks at Lv ${PRESTIGE_UNLOCK_LEVEL}`
-    : `Reset Farm — wipe + bank +${Math.round(earnedNow * 100)}% permanent bonus (currently +${Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100)}%)`;
+    : `Reset Farm · current permanent bonus: +${Math.round(curBonus * 100)}% · resetting now would add +${Math.round(earnedNow * 100)}% (1% per 1M¢ on hand) for a total of +${Math.round((curBonus + earnedNow) * 100)}%`;
   rstBtn.disabled = rstLocked;
-  rstBtn.style.cssText = 'display:flex;align-items:center;justify-content:center;font-size:32px;line-height:1;';
-  rstBtn.textContent = '🔄';
+  // Match the other toolbar buttons' visual weight — an inner span
+  // sized to the same 60px footprint the sprites use, with the emoji
+  // scaled up to fill it.
+  const rstInner = document.createElement('span');
+  rstInner.style.cssText = 'display:flex;align-items:center;justify-content:center;width:60px;height:60px;font-size:54px;line-height:1;';
+  rstInner.textContent = '🔄';
+  rstBtn.appendChild(rstInner);
   rstBtn.addEventListener('click', () => {
     if (rstLocked) return;
     openResetFarmModal();
