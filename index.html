@@ -1739,6 +1739,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
         <li>Barn menu now shows a <b>Silo weight</b> tip explaining the +10¢/day mature-animal bonus and whether it's currently active.</li>
         <li>Barn menu now shows the live <b>Stable +N%</b> staff-speed tally next to Cow Dung and the silo-weight tip.</li>
         <li>Hiring a new Crop Farmer no longer shows the previously-highlighted staffer's zone faded in the background — fresh hire = clean slate.</li>
+        <li>Staff Hall row now shows each Crop Farmer's enabled <b>Jobs</b> (Plow / Plant / Water / Harvest icons) inline next to the zone size — at-a-glance status without opening Edit.</li>
         <li>Expand Play Area now grows whichever sides still have room — used to refuse the whole purchase if any one edge had hit the world boundary, leaving 2 sides unfilled when the world bounds bumped from 70 → 72.</li>
         <li>Coffee Stand capacity 200 → 500 per stand.</li>
         <li>Mutation greenhouse no longer collapses your open dropdown when a worker action fires — auto-rerender pauses while the modal has focus or recent pointer activity.</li>
@@ -6235,7 +6236,21 @@ const BUILDING_MENUS = {
         let sub = '';
         if (m.role === 'crop_farmer') {
           const z = (m.zone && m.zone.length) ? `${m.zone.length} tiles` : 'no zone';
-          sub = `Zone: ${z}`;
+          // Glance-line of what tasks this farmer is currently set to
+          // do — pulled from member.taskFlags via the same helper the
+          // search uses, so the row stays in sync with the actual gate.
+          const tf = getCropFarmerTaskFlags(m);
+          const enabled = [];
+          if (tf.plow)    enabled.push('🟫');
+          if (tf.plant)   enabled.push('🌱');
+          if (tf.water)   enabled.push('💧');
+          if (tf.harvest) enabled.push('🌾');
+          const jobs = enabled.length === 4
+            ? `<span style="color:#3F8338;">all jobs</span>`
+            : enabled.length
+              ? enabled.join(' ')
+              : `<span style="color:#A03423;">no jobs</span>`;
+          sub = `Zone: ${z} · Jobs: ${jobs}`;
         } else if (m.role === 'animal_keeper') {
           const pen = findBarnPenAt(Math.round(m.ix), Math.round(m.iy));
           sub = pen ? `In pen at (${pen.x0},${pen.y0}) · auto-collects yields` : 'Outside any pen';
