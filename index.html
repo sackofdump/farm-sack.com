@@ -1732,6 +1732,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     <div class="patchEntry">
       <div class="patchDate">2026-05-05</div>
       <ul>
+        <li>Seed Containers no longer need to be near the crop farmer's zone — drop one anywhere on the map and any farmer can pull from any container.</li>
         <li>Barn menu now shows the pen's <b>animal count vs total tiles</b> at a glance, with the pen size and a "pen full — expand" hint when you've hit the cap.</li>
         <li>Fixed Staff Hall <b>Edit</b> / <b>Zone</b> / <b>Fire</b> buttons doing nothing — live refresh was wiping click handlers each frame; menus with interactive buttons now re-open through the throttled path that preserves handlers.</li>
         <li>Bulk-move drop click is now the <b>center</b> of the moved group instead of the NW corner — twice the available drop room, and the off-edge error tells you which direction is overflowing. Right-click cancels the move; ghost preview now appears over un-bought meadow too.</li>
@@ -2034,7 +2035,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
   <div class="modal-body" style="width:auto;max-width:min(440px,92vw);padding:20px 24px;text-align:center;">
     <h2>&#127793; Don't forget a Seed Container!</h2>
     <p style="color:#4A2E15;font-size:14px;line-height:1.5;text-align:left;">
-      Your new <b>Crop Farmer</b> needs seeds to plant. Drop a <b>Seed Container</b> inside their work zone (or within <b>2 tiles</b> of it) and stock it with seeds — until then they'll only harvest and water.
+      Your new <b>Crop Farmer</b> needs seeds to plant. Drop a <b>Seed Container</b> anywhere on the map and stock it with seeds — until then they'll only harvest and water.
     </p>
     <p style="color:#7a5430;font-size:12px;line-height:1.5;text-align:left;">
       Open the shop's <b>Buildings</b> tab to grab one (600&cent;).
@@ -2152,7 +2153,7 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
     </p>
     <ol style="text-align:left;color:#4A2E15;font-size:13px;line-height:1.6;padding-left:22px;">
       <li><b>Staff Hall</b> — click it to hire a <b>Crop Farmer</b> (auto-plows, plants, waters, harvests in a zone you draw), an <b>Arborist</b> (auto-tends trees), or an <b>Animal Keeper</b> (stops loyalty decay). Wages: 50¢/day per staffer.</li>
-      <li><b>Seed Container</b> — drop one inside (or within 2 tiles of) a Crop Farmer's zone, click to open the buy menu, and queue up to 1,000 seeds for them to plant.</li>
+      <li><b>Seed Container</b> — drop one anywhere on the map, click to open the buy menu, and queue up to 1,000 seeds for any Crop Farmer to plant from.</li>
       <li><b>Coffee Stand</b> — harvest <b>Coffee Beans</b> to fill it. While there's coffee, every staffer moves + works <b>+50% faster</b>. Each extra stand stacks +25%, capped at +100%.</li>
     </ol>
     <p style="color:#6E4D22;font-size:12px;margin-top:8px;">Crop Farmer slots open at Lv 18 / 21 / 24. Arborist at 19, Animal Keeper at 20.</p>
@@ -3141,19 +3142,13 @@ function canHireMore(role) {
 // replacement for the player.
 const CROP_FARMER_SPEED_TILES_S = 1.95;   // +50% over the old 1.3
 const CROP_FARMER_COOLDOWN_MS   = 1333;   // cooldown ÷ 1.5 to match the speed bump
-// Container "reach": a container counts as supplying a zone if it sits
-// inside the zone OR within 2 tiles (Chebyshev) of any zone tile. Lets
-// the player drop the container just outside the fence/zone bounds.
-const CONTAINER_REACH_TILES = 2;
+// Container "reach": any container anywhere on the map supplies any
+// zone — the proximity gate was just friction. Kept as a function (vs
+// inlining `true`) so the call sites stay readable and the constraint
+// can be reintroduced without touching every caller.
 function containerSuppliesZone(zone, containerKey) {
   if (!zone || !zone.length) return false;
-  const [cx, cy] = containerKey.split(',').map(Number);
-  for (const k of zone) {
-    const [zx, zy] = k.split(',').map(Number);
-    const d = Math.max(Math.abs(cx - zx), Math.abs(cy - zy));
-    if (d <= CONTAINER_REACH_TILES) return true;
-  }
-  return false;
+  return true;
 }
 function cropFarmerSeedSource(m) {
   // Returns the first seed container that supplies the farmer's zone
@@ -6043,7 +6038,7 @@ const BUILDING_MENUS = {
           }
           return `<div style="font-size:12px;color:#8a5a1f;margin-top:6px;">${keepers}/${pens} pens have a keeper — others lose 1 loyalty every 3 min. Hire a keeper per pen to lock the bonus.</div>`;
         })() +
-        `<div style="font-size:11px;color:#7a5430;margin-top:6px;">Crop Farmers plant from a <b>Seed Container</b> placed inside their zone.</div>`
+        `<div style="font-size:11px;color:#7a5430;margin-top:6px;">Crop Farmers plant from any <b>Seed Container</b> on the map.</div>`
       );
     },
     actions: () => {
@@ -6111,7 +6106,7 @@ const BUILDING_MENUS = {
       return thisLine +
              `<div style="margin-bottom:6px;">Network: <b>${total.toLocaleString()} / ${netCap.toLocaleString()}</b></div>` +
              `<div style="font-size:12px;color:#5b3f1f;">Stockpile up to <b>${SEED_CONTAINER_CAP.toLocaleString()}</b> seeds per container for crop farmers to plant.</div>` +
-             `<span style="color:#7a5430;font-size:11px;">Tip: place inside a crop farmer's zone so they can plant from it.</span>`;
+             `<span style="color:#7a5430;font-size:11px;">Drop one anywhere — every crop farmer can pull seeds from any container.</span>`;
     },
     actions: [{
       // Open the buy menu immediately — there's nothing the farmer needs
@@ -8524,7 +8519,7 @@ function enterCropFarmerZoneSelect() {
   if (banner) banner.style.display = 'flex';
   const msg = document.getElementById('zoneSelectMsg');
   if (msg) msg.innerHTML = 'Drag a rectangle over the crops to set the work zone. ' +
-    '<span style="opacity:0.85;">Place a <b>Seed Container</b> inside the zone so the farmer has seeds to plant.</span>';
+    '<span style="opacity:0.85;">Drop a <b>Seed Container</b> anywhere on the map — the farmer can pull from any container.</span>';
 }
 function enterCropFarmerZoneEdit(member) {
   live.zoneSelect = { role: 'crop_farmer', rect: null, dragging: false, editingMember: member };
@@ -8533,7 +8528,7 @@ function enterCropFarmerZoneEdit(member) {
   if (banner) banner.style.display = 'flex';
   const msg = document.getElementById('zoneSelectMsg');
   if (msg) msg.innerHTML = `Drag a new zone for ${member.name}. ` +
-    '<span style="opacity:0.85;">A <b>Seed Container</b> inside the zone keeps them planting.</span>';
+    '<span style="opacity:0.85;">A <b>Seed Container</b> anywhere on the map keeps them planting.</span>';
 }
 function staffAtTile(ix, iy) {
   if (!state.staff || !Array.isArray(state.staff.members)) return null;
@@ -8599,7 +8594,7 @@ function openStaffMenu(member, screenX, screenY) {
       ? `<div style="font-size:12px;color:#5b3f1f;">Zone: <b>${member.zone.length}</b> tiles</div>`
       : '';
     const seedHint = (member.role === 'crop_farmer')
-      ? `<div style="font-size:11px;color:#7a5430;margin-top:4px;">Plants from a <b>Seed Container</b> placed inside the zone.</div>`
+      ? `<div style="font-size:11px;color:#7a5430;margin-top:4px;">Plants from any <b>Seed Container</b> on the map.</div>`
       : '';
     desc.innerHTML = (role ? role.desc : '') + zoneLine + wagesLine + seedHint;
     desc.style.display = '';
@@ -8700,9 +8695,9 @@ function confirmZoneSelect() {
     toast(`Crop Farmer hired — ${tiles.length} tiles assigned.`, false, 'good', 4000);
     audio.play('coin');
   }
-  // Friendly reminder: if no Seed Container is inside the zone OR within
-  // 2 tiles of it, the farmer can't actually plant. Pop a small modal so
-  // the player knows before they wonder why nothing's getting planted.
+  // Friendly reminder: any Seed Container anywhere on the map will feed
+  // this farmer, but if the player has zero containers placed, the
+  // farmer just won't plant. Pop the reminder so they don't wonder why.
   let hasContainer = false;
   for (const k in state.placed) {
     if (state.placed[k].id === 'building_seed_container' && containerSuppliesZone(tiles, k)) {
