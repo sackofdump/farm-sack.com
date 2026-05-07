@@ -9413,13 +9413,57 @@ function drawAll() {
     // single-click placement uses) since canActOnTile doesn't know
     // about placeMode targets.
     const isTreeRect = r.tool === 'placeTree';
+    const isSprinklerRect = isTreeRect && live.placeMode &&
+                            live.placeMode.id === 'building_sprinkler';
     let valid = 0;
-    for (let iy = y0; iy <= y1; iy++) {
-      for (let ix = x0; ix <= x1; ix++) {
-        const ok = isTreeRect ? isPlaceableTile(ix, iy) : canActOnTile(r.tool, ix, iy);
-        const c = isoCenter(ix, iy);
-        drawHoverHighlight(c.x, c.y, ok ? '#FFE066' : '#FF7B6B');
-        if (ok) valid++;
+    if (isSprinklerRect) {
+      // Sprinkler bulk-place strides every SPRINKLER_SNAP_STEP tiles
+      // (so coverage zones tile flush) — preview only the snap-grid
+      // positions, not every tile under the rect, so the player can
+      // see exactly where each sprinkler will land.
+      let anchorX = x0, anchorY = y0;
+      for (const sk in state.placed) {
+        const it = state.placed[sk];
+        if (it && it.id === 'building_sprinkler') {
+          const ci = sk.indexOf(',');
+          anchorX = +sk.slice(0, ci); anchorY = +sk.slice(ci + 1);
+          break;
+        }
+      }
+      const STEP = SPRINKLER_SNAP_STEP;
+      const startX = anchorX + Math.ceil((x0 - anchorX) / STEP) * STEP;
+      const startY = anchorY + Math.ceil((y0 - anchorY) / STEP) * STEP;
+      for (let iy = startY; iy <= y1; iy += STEP) {
+        for (let ix = startX; ix <= x1; ix += STEP) {
+          if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) continue;
+          const ok = isPlaceableTile(ix, iy);
+          // Paint the full 5×5 footprint each sprinkler will cover so
+          // the player sees the watering coverage too, not just the
+          // anchor tile.
+          for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
+            for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
+              const tx = ix + dx, ty = iy + dy;
+              if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
+              const cc = isoCenter(tx, ty);
+              drawHoverHighlight(cc.x, cc.y, ok ? '#6CC8FF' : '#FF7B6B');
+            }
+          }
+          // Anchor tile gets a brighter outline so the player can
+          // pick out the actual sprinkler positions inside the
+          // coverage tint.
+          const c = isoCenter(ix, iy);
+          drawHoverHighlight(c.x, c.y, ok ? '#FFE066' : '#FF6B5C');
+          if (ok) valid++;
+        }
+      }
+    } else {
+      for (let iy = y0; iy <= y1; iy++) {
+        for (let ix = x0; ix <= x1; ix++) {
+          const ok = isTreeRect ? isPlaceableTile(ix, iy) : canActOnTile(r.tool, ix, iy);
+          const c = isoCenter(ix, iy);
+          drawHoverHighlight(c.x, c.y, ok ? '#FFE066' : '#FF7B6B');
+          if (ok) valid++;
+        }
       }
     }
     const cMid = isoCenter((x0 + x1) / 2, (y0 + y1) / 2);
