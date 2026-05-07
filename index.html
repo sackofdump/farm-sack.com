@@ -7292,21 +7292,33 @@ const BUILDING_MENUS = {
         let sub = '';
         if (m.role === 'crop_farmer') {
           const z = (m.zone && m.zone.length) ? `${m.zone.length} tiles` : 'no zone';
-          // Glance-line of what tasks this farmer is currently set to
-          // do — pulled from member.taskFlags via the same helper the
-          // search uses, so the row stays in sync with the actual gate.
+          // Inline task toggles — flip the per-farmer taskFlags right
+          // from the roster row instead of forcing the player to open
+          // the worker edit modal. Each chip is a real button styled
+          // as a checkbox; the data-staff-action handler routes the
+          // click through the same task-flag write the worker menu
+          // uses, so everything stays in sync.
           const tf = getCropFarmerTaskFlags(m);
-          const enabled = [];
-          if (tf.plow)    enabled.push('🟫');
-          if (tf.plant)   enabled.push('🌱');
-          if (tf.water)   enabled.push('💧');
-          if (tf.harvest) enabled.push('🌾');
-          const jobs = enabled.length === 4
-            ? `<span style="color:#3F8338;">all jobs</span>`
-            : enabled.length
-              ? enabled.join(' ')
-              : `<span style="color:#A03423;">no jobs</span>`;
-          sub = `Zone: ${z} · Jobs: ${jobs}`;
+          const taskChip = (key, label, emoji) => {
+            const on = tf[key];
+            const bg = on ? 'linear-gradient(to bottom,#FFF8E1,#E5C77A)' : '#D8D2C2';
+            const border = on ? '#5C3F1A' : '#7E7666';
+            const color = on ? '#3a2410' : '#7E7666';
+            const opacity = on ? '1' : '0.55';
+            const check = on ? '☑' : '☐';
+            return `<button data-staff-action="task" data-staff-id="${m.id}" data-staff-task="${key}" ` +
+                   `title="${label}: ${on ? 'on' : 'off'} — click to toggle" ` +
+                   `style="background:${bg};border:1.5px solid ${border};border-radius:5px;` +
+                   `padding:2px 5px;font-size:11px;color:${color};opacity:${opacity};` +
+                   `cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:2px;">` +
+                   `<span style="font-size:10px;">${check}</span>${emoji}</button>`;
+          };
+          const taskLine =
+            taskChip('plow',    'Plow',    '🟫') +
+            taskChip('plant',   'Plant',   '🌱') +
+            taskChip('water',   'Water',   '💧') +
+            taskChip('harvest', 'Harvest', '🌾');
+          sub = `Zone: ${z}<div style="margin-top:3px;display:flex;gap:3px;flex-wrap:wrap;">${taskLine}</div>`;
         } else if (m.role === 'animal_keeper') {
           const pen = findBarnPenAt(Math.round(m.ix), Math.round(m.iy));
           sub = pen ? `In pen at (${pen.x0},${pen.y0}) · auto-collects yields` : 'Outside any pen';
@@ -7773,6 +7785,22 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           // walk first.
           member.task = null;
           member.queue = [];
+          member.nextSearchAt = 0;
+          audio.play('click');
+          storage.save();
+          setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+          return;
+        }
+        if (action === 'task') {
+          // Inline task-flag toggle from the roster row. Routes through
+          // the same taskFlags object the worker menu writes to, so
+          // changes from either UI stay in sync.
+          const taskKey = btn.getAttribute('data-staff-task');
+          if (!member.taskFlags) {
+            member.taskFlags = { plow: true, plant: true, water: true, harvest: true };
+          }
+          member.taskFlags[taskKey] = !member.taskFlags[taskKey];
+          if (member.task && member.task.action === taskKey) member.task = null;
           member.nextSearchAt = 0;
           audio.play('click');
           storage.save();
