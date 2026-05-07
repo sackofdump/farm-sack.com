@@ -3371,25 +3371,28 @@ function windmillGrowMul() { return 1 + Math.min(WINDMILL_MAX_BONUS, 0.05 * buil
 function windmillIsMaxed() { return buildingCount('building_windmill') >= 5; }
 // Greenhouse "lucky harvest" — each placed greenhouse adds +5% chance
 // (capped at +25% / 5 greenhouses) that any given per-tile harvest
-// drops one extra unit on top of the normal payout. Stacks alongside
-// the flat yield multipliers (Bigger Baskets / Silo / Market Stall),
-// applied at the per-harvest site rather than as a multiplier so the
-// roll is a discrete "lucky" event the player can see. Magnitude was
-// originally a 1-3× multiple of the base sellAmount per proc, but
-// that produced runaway bonuses on rect-paint harvests (8 tiles with
-// 25% chance each, each potentially +300%). Capping the proc at +1
-// unit keeps the headline behaviour intact ("a row of 8 sometimes
-// yields 9-11") without warping coin scaling.
+// is multiplied by 1.10–1.30× (a +10–30% bonus). Stacks on top of
+// the flat yield multipliers (Bigger Baskets / Silo / Market Stall);
+// rolled at the per-harvest site so the proc reads as a discrete
+// "lucky" event the player can see. Earlier versions paid out
+// +100–300% per proc (one full extra crop, or even three) and that
+// warped coin scaling on rect-paint harvests, so the magnitude was
+// dialed down to a percent bump while keeping the same proc rate.
 const GREENHOUSE_BONUS_PER     = 0.05;
 const GREENHOUSE_BONUS_MAX_PCT = 0.25;
+const GREENHOUSE_LUCKY_MIN_MUL = 0.10;   // +10% on a low-end proc
+const GREENHOUSE_LUCKY_MAX_MUL = 0.30;   // +30% on a high-end proc
 function greenhouseExtraYieldChance() {
   return Math.min(GREENHOUSE_BONUS_MAX_PCT, GREENHOUSE_BONUS_PER * buildingCount('building_greenhouse'));
 }
-// Returns 0 (no bonus) or 1 (one extra unit on this harvest).
+// Returns 0 (no proc) or a fraction in [0.10, 0.30] — caller multiplies
+// the per-tile yield by this to get the bonus amount, then rounds.
 function rollGreenhouseExtraYield() {
   const ch = greenhouseExtraYieldChance();
   if (ch <= 0) return 0;
-  return Math.random() < ch ? 1 : 0;
+  if (Math.random() >= ch) return 0;
+  return GREENHOUSE_LUCKY_MIN_MUL +
+         Math.random() * (GREENHOUSE_LUCKY_MAX_MUL - GREENHOUSE_LUCKY_MIN_MUL);
 }
 // Building-menu MAXED chip: predicate per id that returns true when the
 // building's primary stacking bonus has hit its hard cap. Storage-only
@@ -4223,9 +4226,11 @@ function performArboristAction(m, task) {
     // Greenhouse lucky-harvest also applies to tree fruit.
     const extra = rollGreenhouseExtraYield();
     if (extra > 0) {
-      const bonusCoins = coins * extra;
-      state.coins += bonusCoins;
-      fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+      const bonusCoins = Math.round(coins * extra);
+      if (bonusCoins > 0) {
+        state.coins += bonusCoins;
+        fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+      }
     }
     placed.fruitAt = Date.now() + TREE_FRUIT_MS;
     bumpStat('harvested');
@@ -4300,7 +4305,10 @@ function performCropFarmerAction(m, task) {
       // Floor + min(1) keeps the toast a clean integer.
       if (added > 0) fxFloat(ix, iy, '+' + Math.max(1, Math.round(added)) + ' feed', 0, '#F5C84B');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
-      if (extra > 0) fxFloat(ix, iy, '🍀 +' + (baseFeed * extra) + ' lucky feed', 2, '#A6FF6C');
+      if (extra > 0) {
+        const luckyFeed = Math.round(baseFeed * extra);
+        if (luckyFeed > 0) fxFloat(ix, iy, '🍀 +' + luckyFeed + ' lucky feed', 2, '#A6FF6C');
+      }
     } else if (c.coffee) {
       // Coffee Beans: cascade into the coffee-stand network so a staff
       // harvest fills the stand the same way the player's manual harvest
@@ -4314,7 +4322,10 @@ function performCropFarmerAction(m, task) {
       fxBurst(ix, iy, '#7A4A23', 10);
       if (added > 0) fxFloat(ix, iy, '+' + added + ' coffee', 0, '#C2884A');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
-      if (extra > 0) fxFloat(ix, iy, '🍀 +' + (baseQty * extra) + ' lucky coffee', 2, '#A6FF6C');
+      if (extra > 0) {
+        const luckyCoffee = Math.round(baseQty * extra);
+        if (luckyCoffee > 0) fxFloat(ix, iy, '🍀 +' + luckyCoffee + ' lucky coffee', 2, '#A6FF6C');
+      }
     } else {
       const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
       const sellAmount = Math.round(c.sell * yieldMul) + yieldFlatBonus();
@@ -4324,13 +4335,15 @@ function performCropFarmerAction(m, task) {
       fxBurst(ix, iy, '#FFE066', 10);
       fxFloat(ix, iy, '+' + sellAmount + '¢');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
-      // Greenhouse lucky-harvest: +5%/copy (cap +25%) chance for an
-      // extra 1-3 crops worth of coins on top of the standard payout.
+      // Greenhouse lucky-harvest: +5%/copy (cap +25%) chance to multiply
+      // this harvest's payout by 1.10–1.30× (extra fraction = 0.10–0.30).
       const extra = rollGreenhouseExtraYield();
       if (extra > 0) {
-        const bonusCoins = sellAmount * extra;
-        state.coins += bonusCoins;
-        fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+        const bonusCoins = Math.round(sellAmount * extra);
+        if (bonusCoins > 0) {
+          state.coins += bonusCoins;
+          fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+        }
       }
     }
     audio.play('harvest');
@@ -4612,7 +4625,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile unlimited seeds for your crop farmer to plant', unlock: 15 },
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
   { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
-  { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations · +5% lucky-harvest chance per copy (cap +25%) for a bonus crop', unlock: 12 },
+  { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations · +5% lucky-harvest chance per copy (cap +25%) — proc adds +10–30% to the yield', unlock: 12 },
   { cat: 'building', id: 'building_sprinkler',      name: 'Sprinkler',      cost: 4200, sub: 'Auto-waters crops + growing trees in a 5×5 radius. Pours every 6 sec.', unlock: 11 },
 ];
 // Sprinkler radius: 5×5 means 2 tiles in each direction from the
@@ -11386,10 +11399,12 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       // Greenhouse lucky-harvest applies to animal yields too.
       const extra = rollGreenhouseExtraYield();
       if (extra > 0) {
-        const bonusCoins = coins * extra;
-        state.coins += bonusCoins;
-        placed.totalYieldCoins = (placed.totalYieldCoins || 0) + bonusCoins;
-        fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+        const bonusCoins = Math.round(coins * extra);
+        if (bonusCoins > 0) {
+          state.coins += bonusCoins;
+          placed.totalYieldCoins = (placed.totalYieldCoins || 0) + bonusCoins;
+          fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+        }
       }
       placed.yieldAt = Date.now() + Math.round(ANIMAL_YIELD_MS * loyaltyYieldMul(placed) / siloYieldSpeedMul());
       // Track per-animal lifetime stats so the barn menu can show how
@@ -11422,9 +11437,11 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       // Greenhouse lucky-harvest also applies to manual tree harvests.
       const extra = rollGreenhouseExtraYield();
       if (extra > 0) {
-        const bonusCoins = coins * extra;
-        state.coins += bonusCoins;
-        fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+        const bonusCoins = Math.round(coins * extra);
+        if (bonusCoins > 0) {
+          state.coins += bonusCoins;
+          fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+        }
       }
       placed.fruitAt = Date.now() + TREE_FRUIT_MS;
       bumpStat('harvested');
@@ -11558,7 +11575,10 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       else if (added > 0) fxFloat(ix, iy, '+' + Math.max(1, Math.round(added)) + ' feed', 0, '#F5C84B');
       else fxFloat(ix, iy, 'Silos full!', 0, '#FF9966');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
-      if (extra > 0) fxFloat(ix, iy, '🍀 +' + (baseFeed * extra) + ' lucky feed', 2, '#A6FF6C');
+      if (extra > 0) {
+        const luckyFeed = Math.round(baseFeed * extra);
+        if (luckyFeed > 0) fxFloat(ix, iy, '🍀 +' + luckyFeed + ' lucky feed', 2, '#A6FF6C');
+      }
       audio.play('harvest');
       grantXp(xpGain);
       bumpStat('harvested');
@@ -11578,7 +11598,10 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       else if (added > 0) fxFloat(ix, iy, '+' + added + ' coffee', 0, '#C2884A');
       else fxFloat(ix, iy, 'Stands full!', 0, '#FF9966');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
-      if (extra > 0) fxFloat(ix, iy, '🍀 +' + (baseQty * extra) + ' lucky coffee', 2, '#A6FF6C');
+      if (extra > 0) {
+        const luckyCoffee = Math.round(baseQty * extra);
+        if (luckyCoffee > 0) fxFloat(ix, iy, '🍀 +' + luckyCoffee + ' lucky coffee', 2, '#A6FF6C');
+      }
       audio.play('harvest');
       grantXp(xpGain);
       bumpStat('harvested');
@@ -11596,13 +11619,15 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       fxBurst(ix, iy, '#FFE066', 14);
       fxFloat(ix, iy, '+' + sellAmount + '¢');
       fxFloat(ix, iy, '+' + xpGain + ' XP', 1, '#6CFFB4');
-      // Greenhouse lucky-harvest: +5%/copy (cap +25%) chance for an extra
-      // 1-3 crops worth of coins on top of the standard payout.
+      // Greenhouse lucky-harvest: +5%/copy (cap +25%) chance to multiply
+      // this harvest's payout by 1.10–1.30× (extra fraction = 0.10–0.30).
       const extra = rollGreenhouseExtraYield();
       if (extra > 0) {
-        const bonusCoins = sellAmount * extra;
-        state.coins += bonusCoins;
-        fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+        const bonusCoins = Math.round(sellAmount * extra);
+        if (bonusCoins > 0) {
+          state.coins += bonusCoins;
+          fxFloat(ix, iy, '🍀 +' + bonusCoins + '¢ lucky', 2, '#A6FF6C');
+        }
       }
       audio.play('harvest');
       grantXp(xpGain);
@@ -15438,7 +15463,7 @@ function buildTooltipHTML(ix, iy) {
             const maxed = buildingCount('building_greenhouse') >= 5;
             const tag = maxed ? _maxedTag : ` · +5% per copy (cap +25%)`;
             return `Click to open — <b>mutate seeds</b> into rare hybrids for XP + coins.` +
-                   `<br><span style="color:#2D6E33">${ch}% chance per harvest for +1 bonus crop</span>${tag}`;
+                   `<br><span style="color:#2D6E33">${ch}% chance per harvest to add +10–30% to that yield</span>${tag}`;
           },
         };
         const hover = placed.id && BUILDING_HOVER[placed.id];
