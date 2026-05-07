@@ -8635,24 +8635,28 @@ function fenceRect(list, x0, y0, w, h, isInside, gate, skipNeighbor) {
   }
 }
 function drawFencePost(cx, cy, h=18) {
-  // Tall slim wooden post, slightly tapered cap.
-  ctx.fillStyle = '#A06A37'; ctx.strokeStyle = '#4A2810'; ctx.lineWidth = 1;
-  rrect(cx - 1.6, cy - h, 3.2, h + 6, 1, '#A06A37', '#4A2810', 1);
+  // Tall slim wooden post, slightly tapered cap. Wood tone is pulled
+  // a couple of steps darker than the dirt sprite (~#8C5A2E) so a
+  // fence running along plowed soil reads cleanly instead of melting
+  // into the dirt.
+  ctx.fillStyle = '#6E4520'; ctx.strokeStyle = '#2C1608'; ctx.lineWidth = 1;
+  rrect(cx - 1.6, cy - h, 3.2, h + 6, 1, '#6E4520', '#2C1608', 1);
   // Pointed cap so it reads as a picket post not a brick.
-  ctx.fillStyle = '#7A4A23';
+  ctx.fillStyle = '#4F2E14';
   ctx.beginPath();
   ctx.moveTo(cx - 2, cy - h + 1);
   ctx.lineTo(cx, cy - h - 3);
   ctx.lineTo(cx + 2, cy - h + 1);
   ctx.closePath();
-  ctx.fill(); ctx.strokeStyle = '#4A2810'; ctx.lineWidth = 0.8; ctx.stroke();
+  ctx.fill(); ctx.strokeStyle = '#2C1608'; ctx.lineWidth = 0.8; ctx.stroke();
 }
 function drawFenceRail(x1, y1, x2, y2) {
   // Thinner two-tone plank rail — narrower than before so it reads as a
-  // wooden plank instead of a brick wall.
-  ctx.strokeStyle = '#4A2810'; ctx.lineWidth = 3.2;
+  // wooden plank instead of a brick wall. Body kept darker than the
+  // dirt tile so plowed-edge segments still pop.
+  ctx.strokeStyle = '#2C1608'; ctx.lineWidth = 3.2;
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-  ctx.strokeStyle = '#A06A37'; ctx.lineWidth = 1.8;
+  ctx.strokeStyle = '#6E4520'; ctx.lineWidth = 1.8;
   ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
 }
 // Skipped — the old solid kickplate read as a brick wall. The pickets +
