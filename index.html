@@ -16764,21 +16764,39 @@ function renderMutationLab() {
       <span style="font-size:14px;">&#127807;</span> TIER ${tierNum}
     </div>
   `;
+  // failMul scales the per-tier multiplier on the instability fail
+  // chance: T1 = 1× (no help), T10 = 0.08× (max-instability brew under
+  // 5% fail). Surface it as a chip in the tier strip + as a delta on
+  // the Upgrade button so the player can see what each tier buys
+  // beyond slots / cross-breed.
+  const failMulPct = Math.round((t.failMul || 1) * 100);
+  const failColor = failMulPct >= 80 ? '#4A2E15' : (failMulPct >= 40 ? '#5A7A2A' : '#2D6E33');
   const chipsHtml = [
     chip(`<span style="opacity:.7;">SLOTS</span> ${t.slots}`),
     chip(`<span style="opacity:.7;">BREW</span> ${t.brewMin}m`),
+    chip(`<span style="opacity:.7;">FAIL</span> ×${(t.failMul || 1).toFixed(2)}`, failColor),
     t.allowsCrossBreed ? chip(`&#129528; Cross-breed`, '#A335EE') : '',
   ].filter(Boolean).join('');
+  const upgradeFailNote = next
+    ? ` (fail ×${(t.failMul || 1).toFixed(2)} → ×${(next.failMul || 1).toFixed(2)})`
+    : '';
   const rightSide = next
-    ? `<button class="splashBtn" id="ghUpgradeBtn" style="width:auto;padding:8px 14px;font-size:12px;font-weight:800;letter-spacing:.5px;">Upgrade T${tierNum+1} &middot; ${formatCoins(next.upgradeCost)}&cent;</button>`
+    ? `<button class="splashBtn" id="ghUpgradeBtn" title="Each tier multiplies the instability fail chance${upgradeFailNote}." style="width:auto;padding:8px 14px;font-size:12px;font-weight:800;letter-spacing:.5px;">Upgrade T${tierNum+1} &middot; ${formatCoins(next.upgradeCost)}&cent;</button>`
     : `<span style="display:inline-flex;align-items:center;gap:4px;background:linear-gradient(160deg,#FFD27F,#C98E4F);color:#4A2E15;border:2px solid #B7944D;border-radius:8px;padding:6px 14px;font-weight:900;letter-spacing:1.5px;font-size:12px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.15);">&#9733; MAX TIER</span>`;
   const headerHtml = `
-    <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;background:linear-gradient(160deg,#FFFAE5,#F7E8C8);border:2px solid #B7944D;border-radius:10px;padding:10px 12px;margin-bottom:10px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.04);">
-      <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
-        ${tierTopBadge}
-        ${chipsHtml}
+    <div style="background:linear-gradient(160deg,#FFFAE5,#F7E8C8);border:2px solid #B7944D;border-radius:10px;padding:10px 12px;margin-bottom:10px;box-shadow:inset 0 -3px 0 rgba(0,0,0,.04);">
+      <div style="display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:10px;">
+        <div style="display:flex;flex-wrap:wrap;align-items:center;gap:8px;">
+          ${tierTopBadge}
+          ${chipsHtml}
+        </div>
+        <div>${rightSide}</div>
       </div>
-      <div>${rightSide}</div>
+      <div style="font-size:11px;color:#6E4D22;margin-top:6px;">
+        Each tier multiplies the instability fail chance &mdash; <b>×1.00</b> at T1,
+        <b>×0.08</b> at T10 (max-instability brew under 5% fail).
+        Tiers also stack rarity bonus + slot count.
+      </div>
     </div>
   `;
 
