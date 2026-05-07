@@ -536,6 +536,9 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 .tool.toolBarn {
   background: linear-gradient(to bottom, #C25C3F 0%, #7E3320 100%);
 }
+.tool.toolSlaughterhouse {
+  background: linear-gradient(to bottom, #A03423 0%, #6A1A12 100%);
+}
 .tool.toolLocked {
   filter: grayscale(1) brightness(0.65);
   cursor: not-allowed;
@@ -3367,22 +3370,26 @@ const WINDMILL_MAX_BONUS = 0.25;
 function windmillGrowMul() { return 1 + Math.min(WINDMILL_MAX_BONUS, 0.05 * buildingCount('building_windmill')); }
 function windmillIsMaxed() { return buildingCount('building_windmill') >= 5; }
 // Greenhouse "lucky harvest" — each placed greenhouse adds +5% chance
-// (capped at +25% / 5 greenhouses) that any given harvest pays out an
-// extra 1-3 yields on top of the normal payout. Stacks alongside the
-// flat yield multipliers (Bigger Baskets / Silo / Market Stall),
+// (capped at +25% / 5 greenhouses) that any given per-tile harvest
+// drops one extra unit on top of the normal payout. Stacks alongside
+// the flat yield multipliers (Bigger Baskets / Silo / Market Stall),
 // applied at the per-harvest site rather than as a multiplier so the
-// roll is a discrete "lucky" event the player can see.
+// roll is a discrete "lucky" event the player can see. Magnitude was
+// originally a 1-3× multiple of the base sellAmount per proc, but
+// that produced runaway bonuses on rect-paint harvests (8 tiles with
+// 25% chance each, each potentially +300%). Capping the proc at +1
+// unit keeps the headline behaviour intact ("a row of 8 sometimes
+// yields 9-11") without warping coin scaling.
 const GREENHOUSE_BONUS_PER     = 0.05;
 const GREENHOUSE_BONUS_MAX_PCT = 0.25;
 function greenhouseExtraYieldChance() {
   return Math.min(GREENHOUSE_BONUS_MAX_PCT, GREENHOUSE_BONUS_PER * buildingCount('building_greenhouse'));
 }
-// Roll once per harvest. Returns 0 (no bonus) or 1-3 (extra units).
+// Returns 0 (no bonus) or 1 (one extra unit on this harvest).
 function rollGreenhouseExtraYield() {
   const ch = greenhouseExtraYieldChance();
   if (ch <= 0) return 0;
-  if (Math.random() >= ch) return 0;
-  return 1 + Math.floor(Math.random() * 3);
+  return Math.random() < ch ? 1 : 0;
 }
 // Building-menu MAXED chip: predicate per id that returns true when the
 // building's primary stacking bonus has hit its hard cap. Storage-only
@@ -4605,7 +4612,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile unlimited seeds for your crop farmer to plant', unlock: 15 },
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
   { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
-  { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations · +5% lucky-harvest chance per copy (cap +25%) for 1-3 bonus yields', unlock: 12 },
+  { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations · +5% lucky-harvest chance per copy (cap +25%) for a bonus crop', unlock: 12 },
   { cat: 'building', id: 'building_sprinkler',      name: 'Sprinkler',      cost: 4200, sub: 'Auto-waters crops + growing trees in a 5×5 radius. Pours every 6 sec.', unlock: 11 },
 ];
 // Sprinkler radius: 5×5 means 2 tiles in each direction from the
@@ -13048,10 +13055,14 @@ function buildToolbar() {
   shopBtn.appendChild(sicon);
   shopBtn.addEventListener('click', () => { openShop(); audio.play('click'); });
   tb.appendChild(shopBtn);
-  // Barn shortcut — sits to the RIGHT of the Shop button. Greyed out until
-  // the Big Red Barn unlocks (or until the player has built at least one
-  // barn). Clicking it pops the first placed barn's menu directly so the
-  // player can see the pen roster without hunting for the building.
+  // Shortcut buttons — ordered by unlock level so they appear in the
+  // same sequence the player encounters them in the shop:
+  //   Barn (8) → Slaughterhouse (11) → Greenhouse (12) → Staff (15) → Horse (15)
+  // ...then a one-button gap, then the Prestige button at the right
+  // edge so the destructive reset is visually quarantined from the
+  // everyday-use shortcuts.
+
+  // ---- Barn shortcut ----
   const barnItem = SHOP_ITEMS.find(i => i.id === 'building_barn');
   const barnUnlockLv = barnItem ? (barnItem.unlock || 1) : 8;
   const firstBarnKey = Object.keys(state.placed || {}).find(k =>
@@ -13071,8 +13082,6 @@ function buildToolbar() {
   barnBtn.appendChild(bIcon);
   barnBtn.addEventListener('click', () => {
     if (barnLocked) return;
-    // No barn yet → drop the player into the shop's Buildings tab so they
-    // can grab one. Mirrors the Staff Hall button's first-time flow.
     if (!firstBarnKey) {
       activeShopTab = 'building';
       openShop();
@@ -13084,48 +13093,53 @@ function buildToolbar() {
     audio.play('click');
   });
   tb.appendChild(barnBtn);
-  // Staff Hall shortcut — sits to the right of the Shop button. Greyed
-  // out until the player hits the Staff Hall unlock level (or builds one).
-  const staffItem = SHOP_ITEMS.find(i => i.id === 'building_staff');
-  const staffUnlockLv = staffItem ? (staffItem.unlock || 1) : 18;
-  const staffLocked = state.level < staffUnlockLv;
-  const staffBuilt = !!Object.keys(state.placed || {}).find(k =>
-    state.placed[k] && state.placed[k].id === 'building_staff'
+
+  // ---- Slaughterhouse shortcut ----
+  // Skips the marked-target deliver flow and pops the barn roster
+  // pre-filtered to slaughter-eligible animals, the same way clicking
+  // a placed slaughterhouse on the map does. Without one built yet:
+  // drop the player into the shop's Buildings tab.
+  const slaughterItem = SHOP_ITEMS.find(i => i.id === 'building_slaughterhouse');
+  const slaughterUnlockLv = slaughterItem ? (slaughterItem.unlock || 1) : 11;
+  const firstSlaughterKey = Object.keys(state.placed || {}).find(k =>
+    state.placed[k] && state.placed[k].id === 'building_slaughterhouse'
   );
-  const staffBtn = document.createElement('button');
-  staffBtn.className = 'tool toolStaff' + (staffLocked ? ' toolLocked' : '');
-  staffBtn.id = 'toolStaffBtn';
-  staffBtn.title = staffLocked
-    ? `Staff Hall — unlocks at Lv ${staffUnlockLv}`
-    : (staffBuilt ? 'Staff Hall — manage hires' : 'Staff Hall — build one in the shop');
-  staffBtn.disabled = staffLocked;
-  const stIcon = document.createElement('img');
-  stIcon.src = imgPath('building_staff'); stIcon.alt = 'Staff';
-  stIcon.style.cssText = 'object-fit:contain;width:60px;height:60px;';
-  staffBtn.appendChild(stIcon);
-  staffBtn.addEventListener('click', () => {
-    if (staffLocked) return;   // greyed-out: hover tooltip only, no click feedback
-    if (!staffBuilt) {
+  const slaughterLocked = state.level < slaughterUnlockLv;
+  const slaughterBtn = document.createElement('button');
+  slaughterBtn.className = 'tool toolSlaughterhouse' + (slaughterLocked ? ' toolLocked' : '');
+  slaughterBtn.id = 'toolSlaughterhouseBtn';
+  slaughterBtn.title = slaughterLocked
+    ? `Slaughterhouse — unlocks at Lv ${slaughterUnlockLv}`
+    : (firstSlaughterKey ? 'Slaughterhouse — open the mature roster' : 'Slaughterhouse — build one in the shop');
+  slaughterBtn.disabled = slaughterLocked;
+  const slaughterIcon = document.createElement('img');
+  slaughterIcon.src = imgPath('building_slaughterhouse'); slaughterIcon.alt = 'Slaughterhouse';
+  slaughterIcon.style.cssText = 'object-fit:contain;width:60px;height:60px;';
+  slaughterBtn.appendChild(slaughterIcon);
+  slaughterBtn.addEventListener('click', () => {
+    if (slaughterLocked) return;
+    if (!firstSlaughterKey) {
       activeShopTab = 'building';
       openShop();
       audio.play('click');
       return;
     }
-    // Find the placed Staff Hall and pop its menu directly.
-    for (const k in state.placed) {
-      if (state.placed[k].id !== 'building_staff') continue;
-      const [bx, by] = k.split(',').map(Number);
-      openBuildingMenu('building_staff', window.innerWidth/2 - 200, window.innerHeight/2 - 200, bx, by);
+    const [sx, sy] = firstSlaughterKey.split(',').map(Number);
+    const pen = findPenForSlaughterhouse(sx, sy);
+    if (pen && typeof pen.barnIx === 'number') {
+      state._barnRosterMode = 'mature';
+      openBuildingMenu('building_barn', window.innerWidth/2 - 200, window.innerHeight/2 - 200, pen.barnIx, pen.barnIy);
       audio.play('click');
       return;
     }
+    // No pen association — fall back to the slaughterhouse's own
+    // building menu so Move / Sell are still reachable.
+    openBuildingMenu('building_slaughterhouse', window.innerWidth/2 - 200, window.innerHeight/2 - 200, sx, sy);
+    audio.play('click');
   });
-  tb.appendChild(staffBtn);
-  // Greenhouse shortcut — between Staff Hall and Horse. Greyed until
-  // the building's unlock level. Click while built: pop the lab
-  // modal directly (no walking required). Without one yet: drop the
-  // player into the shop's Buildings tab. Same UX pattern as Barn /
-  // Staff Hall.
+  tb.appendChild(slaughterBtn);
+
+  // ---- Greenhouse shortcut ----
   const ghItem = SHOP_ITEMS.find(i => i.id === 'building_greenhouse');
   const ghUnlockLv = ghItem ? (ghItem.unlock || 1) : 12;
   const ghLocked = state.level < ghUnlockLv;
@@ -13155,40 +13169,42 @@ function buildToolbar() {
     audio.play('click');
   });
   tb.appendChild(ghBtn);
-  // Reset Farm prestige button — between Greenhouse and Horse.
-  // Greyed out until Lv 20 (PRESTIGE_UNLOCK_LEVEL). Click pops a
-  // confirm modal that previews the bonus the wipe will earn.
-  const rstLocked = !canResetFarm();
-  const rstBtn = document.createElement('button');
-  rstBtn.className = 'tool toolReset' + (rstLocked ? ' toolLocked' : '');
-  rstBtn.id = 'toolResetFarmBtn';
-  const earnedNow = prestigeBonusFromCoins(state.coins || 0);
-  const curBonus  = ((state.prestige && state.prestige.totalBonus) || 0);
-  rstBtn.title = rstLocked
-    ? `Reset Farm — unlocks at Lv ${PRESTIGE_UNLOCK_LEVEL}`
-    : `Reset Farm · current permanent bonus: +${formatPrestigePct(curBonus)}% · resetting now would add +${formatPrestigePct(earnedNow)}% (1% per 1M¢ on hand) for a total of +${formatPrestigePct(curBonus + earnedNow)}%`;
-  rstBtn.disabled = rstLocked;
-  // Stack the prestige icon over a small "PRESTIGE" label so the
-  // toolbar button reads as more than a generic refresh — players
-  // were missing it / mistaking it for a UI reset. Emoji shrinks to
-  // make room without changing the 60px footprint.
-  const rstInner = document.createElement('span');
-  rstInner.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;line-height:1;';
-  const rstIcon = document.createElement('span');
-  rstIcon.style.cssText = 'font-size:34px;line-height:1;';
-  rstIcon.textContent = '🔄';
-  const rstLabel = document.createElement('span');
-  rstLabel.style.cssText = 'font-size:9px;font-weight:900;letter-spacing:0.5px;color:#FFE066;text-shadow:0 1px 0 rgba(0,0,0,0.55);margin-top:2px;';
-  rstLabel.textContent = 'PRESTIGE';
-  rstInner.appendChild(rstIcon);
-  rstInner.appendChild(rstLabel);
-  rstBtn.appendChild(rstInner);
-  rstBtn.addEventListener('click', () => {
-    if (rstLocked) return;
-    openResetFarmModal();
-    audio.play('click');
+
+  // ---- Staff Hall shortcut ----
+  const staffItem = SHOP_ITEMS.find(i => i.id === 'building_staff');
+  const staffUnlockLv = staffItem ? (staffItem.unlock || 1) : 18;
+  const staffLocked = state.level < staffUnlockLv;
+  const staffBuilt = !!Object.keys(state.placed || {}).find(k =>
+    state.placed[k] && state.placed[k].id === 'building_staff'
+  );
+  const staffBtn = document.createElement('button');
+  staffBtn.className = 'tool toolStaff' + (staffLocked ? ' toolLocked' : '');
+  staffBtn.id = 'toolStaffBtn';
+  staffBtn.title = staffLocked
+    ? `Staff Hall — unlocks at Lv ${staffUnlockLv}`
+    : (staffBuilt ? 'Staff Hall — manage hires' : 'Staff Hall — build one in the shop');
+  staffBtn.disabled = staffLocked;
+  const stIcon = document.createElement('img');
+  stIcon.src = imgPath('building_staff'); stIcon.alt = 'Staff';
+  stIcon.style.cssText = 'object-fit:contain;width:60px;height:60px;';
+  staffBtn.appendChild(stIcon);
+  staffBtn.addEventListener('click', () => {
+    if (staffLocked) return;
+    if (!staffBuilt) {
+      activeShopTab = 'building';
+      openShop();
+      audio.play('click');
+      return;
+    }
+    for (const k in state.placed) {
+      if (state.placed[k].id !== 'building_staff') continue;
+      const [bx, by] = k.split(',').map(Number);
+      openBuildingMenu('building_staff', window.innerWidth/2 - 200, window.innerHeight/2 - 200, bx, by);
+      audio.play('click');
+      return;
+    }
   });
-  tb.appendChild(rstBtn);
+  tb.appendChild(staffBtn);
   // Horse mount/dismount shortcut — sits to the right of the Staff Hall
   // button. Greyed out until the horse unlock level. Click while
   // dismounted: queue a walk-to + mount for the nearest placed horse.
@@ -13242,6 +13258,48 @@ function buildToolbar() {
     audio.play('click');
   });
   tb.appendChild(horseBtn);
+
+  // ---- Spacer + Prestige (Reset Farm) button at the right edge ----
+  // The reset is destructive enough that we visually quarantine it
+  // from the everyday-use shortcuts above with a one-button-width
+  // empty gap so the player never hits it by accident reaching for
+  // Horse / Staff Hall.
+  const prestigeSpacer = document.createElement('div');
+  prestigeSpacer.style.cssText = 'width:72px;height:72px;flex-shrink:0;';
+  prestigeSpacer.setAttribute('aria-hidden', 'true');
+  tb.appendChild(prestigeSpacer);
+
+  const rstLocked = !canResetFarm();
+  const rstBtn = document.createElement('button');
+  rstBtn.className = 'tool toolReset' + (rstLocked ? ' toolLocked' : '');
+  rstBtn.id = 'toolResetFarmBtn';
+  const earnedNow = prestigeBonusFromCoins(state.coins || 0);
+  const curBonus  = ((state.prestige && state.prestige.totalBonus) || 0);
+  rstBtn.title = rstLocked
+    ? `Reset Farm — unlocks at Lv ${PRESTIGE_UNLOCK_LEVEL}`
+    : `Reset Farm · current permanent bonus: +${formatPrestigePct(curBonus)}% · resetting now would add +${formatPrestigePct(earnedNow)}% (1% per 1M¢ on hand) for a total of +${formatPrestigePct(curBonus + earnedNow)}%`;
+  rstBtn.disabled = rstLocked;
+  // Stack the prestige icon over a small "PRESTIGE" label so the
+  // toolbar button reads as more than a generic refresh — players
+  // were missing it / mistaking it for a UI reset.
+  const rstInner = document.createElement('span');
+  rstInner.style.cssText = 'display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;height:60px;line-height:1;';
+  const rstIcon = document.createElement('span');
+  rstIcon.style.cssText = 'font-size:34px;line-height:1;';
+  rstIcon.textContent = '🔄';
+  const rstLabel = document.createElement('span');
+  rstLabel.style.cssText = 'font-size:9px;font-weight:900;letter-spacing:0.5px;color:#FFE066;text-shadow:0 1px 0 rgba(0,0,0,0.55);margin-top:2px;';
+  rstLabel.textContent = 'PRESTIGE';
+  rstInner.appendChild(rstIcon);
+  rstInner.appendChild(rstLabel);
+  rstBtn.appendChild(rstInner);
+  rstBtn.addEventListener('click', () => {
+    if (rstLocked) return;
+    openResetFarmModal();
+    audio.play('click');
+  });
+  tb.appendChild(rstBtn);
+
   refreshTools();
 }
 function refreshTools() {
@@ -14308,6 +14366,19 @@ function bindInput() {
             live.dragMode = 'idle';
             return;
           }
+          // Click on a built greenhouse — skip the in-place "Mutation
+          // Greenhouse" menu and pop the lab modal directly. The
+          // intermediate menu only had a single "Open Greenhouse"
+          // button anyway; players were treating the click on the
+          // building as a request to enter the lab, not as a place
+          // to manage the building. Move/Sell are still reachable via
+          // the Move tool / Sell tool toolbar buttons.
+          if (placedHere.id === 'building_greenhouse') {
+            openMutationModal();
+            audio.play('click');
+            live.dragMode = 'idle';
+            return;
+          }
           // Click on the slaughterhouse with no target marked — pop the
           // barn roster filtered to slaughter-eligible animals so the
           // player can pick from the mature roster directly. Routes
@@ -15367,7 +15438,7 @@ function buildTooltipHTML(ix, iy) {
             const maxed = buildingCount('building_greenhouse') >= 5;
             const tag = maxed ? _maxedTag : ` · +5% per copy (cap +25%)`;
             return `Click to open — <b>mutate seeds</b> into rare hybrids for XP + coins.` +
-                   `<br><span style="color:#2D6E33">${ch}% chance per harvest for +1-3 bonus yields</span>${tag}`;
+                   `<br><span style="color:#2D6E33">${ch}% chance per harvest for +1 bonus crop</span>${tag}`;
           },
         };
         const hover = placed.id && BUILDING_HOVER[placed.id];
