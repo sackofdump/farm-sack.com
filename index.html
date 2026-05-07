@@ -12814,12 +12814,25 @@ function finishGroupMoveAt(destIx, destIy) {
   const _wbMaxY = _wbMove.y0 + _wbMove.h - 1;
   const inFence = (ix, iy) => ix >= _wbMinX && iy >= _wbMinY && ix <= _wbMaxX && iy <= _wbMaxY;
   const movingKeys = new Set(grp.items.map(it => it.srcKey));
+  // Track destinations within the group itself so two items in the
+  // same drop don't collide on the same tile. Without this, both
+  // items pass the `state.placed[dstKey]` check individually (the
+  // tile is genuinely empty when the loop runs), then the assignment
+  // pass overwrites the first record with the second and silently
+  // eats one of the items.
+  const seenDst = new Set();
   for (const t of targets) {
     const id = (t.record && t.record.id) || '';
     if (t.dstIx < 0 || t.dstIy < 0 || t.dstIx >= WORLD_W || t.dstIy >= WORLD_H) {
       toast('Destination would push items past the world edge.', true);
       audio.play('error'); return;
     }
+    const dstKeyEarly = tileKey(t.dstIx, t.dstIy);
+    if (seenDst.has(dstKeyEarly)) {
+      toast('Two items in the group would land on the same tile.', true);
+      audio.play('error'); return;
+    }
+    seenDst.add(dstKeyEarly);
     const isBuilding       = id.startsWith('building_');
     const isSlaughterhouse = id === 'building_slaughterhouse';
     const isAnimal         = id.startsWith('animal_');
@@ -14072,6 +14085,29 @@ function applyExpandPen(pen) {
   const cost  = Math.round(tiles * 90);
   if (state.coins < cost) { toast('Not enough coins.', true); audio.play('error'); return false; }
   state.coins -= cost;
+  // Slaughterhouses sitting one tile outside the OLD pen border are
+  // visually attached to the fence; an expansion that absorbed them
+  // into the new pen interior felt wrong. Snapshot every adjacent
+  // slaughterhouse + the direction it was sitting from the pen, so
+  // we can translate it one tile further out after the expansion to
+  // keep it on the new fence border.
+  const slaughterMoves = [];
+  const oldPenX1 = pen.x0 + pen.w, oldPenY1 = pen.y0 + pen.h;
+  for (const k in state.placed) {
+    const it = state.placed[k];
+    if (!it || it.id !== 'building_slaughterhouse') continue;
+    const ci = k.indexOf(',');
+    const sx = +k.slice(0, ci), sy = +k.slice(ci + 1);
+    let dx = 0, dy = 0;
+    if (sx === pen.x0 - 1) dx = -1;
+    else if (sx === oldPenX1) dx = 1;
+    if (sy === pen.y0 - 1) dy = -1;
+    else if (sy === oldPenY1) dy = 1;
+    if (dx === 0 && dy === 0) continue;     // inside the pen — leave it alone
+    const nx = sx + dx, ny = sy + dy;
+    if (nx < 0 || ny < 0 || nx >= WORLD_W || ny >= WORLD_H) continue;
+    slaughterMoves.push({ oldKey: k, newKey: tileKey(nx, ny), record: it });
+  }
   // Apply the expansion — pen rect first, then scoot the barn record so
   // it stays on the outskirts. If anything was placed on the barn's new
   // tile (or in the new pen ring), refund + remove it the same way the
@@ -14110,6 +14146,20 @@ function applyExpandPen(pen) {
         delete state.placed[k];
       }
     }
+  }
+  // Translate the snapshotted slaughterhouses outward so they keep
+  // hugging the new fence border. Refund + clear anything blocking
+  // the destination tile (same policy as the barn-move path above).
+  for (const m of slaughterMoves) {
+    if (m.oldKey === m.newKey) continue;
+    const blocker = state.placed[m.newKey];
+    if (blocker && blocker.id !== 'building_slaughterhouse' && blocker.id !== 'building_barn') {
+      const refund = Math.max(1, Math.round((blocker.cost ?? 10) * 0.5));
+      state.coins += refund;
+      delete state.placed[m.newKey];
+    }
+    delete state.placed[m.oldKey];
+    state.placed[m.newKey] = m.record;
   }
   return true;
 }
