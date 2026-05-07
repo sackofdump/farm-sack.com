@@ -11243,6 +11243,18 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
     if (state.placed[k] || PATH_TILES.has(k)) return fail('Tile is occupied.');
     const p = state.plots[k];
     if (p && p.state === 'planted') return fail('Crop already growing here.');
+    // Re-validate placement against the LIVE world before committing —
+    // bulk-paints check isPlaceableTile when the rect is queued, but
+    // pen rects can move (player relocates a barn mid-paint) before
+    // each placeHere fires. Without these checks the queued cows
+    // continued to land on tiles that were inside the pen at queue
+    // time but had since fallen outside the relocated fence.
+    if (data.id.startsWith('animal_') && !data.moving) {
+      if (!inBarnPen(ix, iy)) return fail('Pen moved — tile is no longer inside an animal pen.');
+    }
+    if (data.id === 'building_slaughterhouse' && !data.moving) {
+      if (!nearBarnPen(ix, iy, 1)) return fail('Pen moved — slaughterhouse spot is no longer near a pen.');
+    }
     state.coins -= data.cost;
     const rec = { id: data.id, cost: data.cost };
     if (data.id.startsWith('tree_') && data.id !== 'tree_stump' && !data.moving) {
