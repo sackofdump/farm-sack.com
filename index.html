@@ -14824,7 +14824,9 @@ function bindInput() {
         // sprinkler so coverage zones tile flush. Apply the same snap
         // we use for the ghost preview here so the click lands on the
         // tile the player just saw highlighted instead of the raw
-        // cursor tile.
+        // cursor tile. Stays in placeMode after the queue push so the
+        // player can keep dropping more sprinklers in a row without
+        // re-opening the shop — right-click to cancel out.
         const snapped = snapSprinklerTile(startT.ix, startT.iy);
         if (!isPlaceableTile(snapped.ix, snapped.iy) || state.coins < live.placeMode.cost) {
           tryPlace(snapped.ix, snapped.iy);
@@ -14835,7 +14837,6 @@ function bindInput() {
             placeData: { id: live.placeMode.id, name: live.placeMode.name,
                          cost: live.placeMode.cost, moving: !!live.placeMode.moving },
           });
-          if (!e.shiftKey) cancelPlaceMode();
         }
       } else if (!isPlaceableTile(startT.ix, startT.iy) || state.coins < live.placeMode.cost) {
         // Invalid spot — let the existing tryPlace produce its toast +
