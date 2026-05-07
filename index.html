@@ -13249,13 +13249,27 @@ function buildToolbar() {
   barnBtn.appendChild(bIcon);
   barnBtn.addEventListener('click', () => {
     if (barnLocked) return;
-    if (!firstBarnKey) {
+    // Re-scan state.placed at click time — placing a fresh barn after
+    // the toolbar was last rebuilt would otherwise leave firstBarnKey
+    // stale (closure-captured undefined) and bounce the player to
+    // the shop instead of the new barn's roster.
+    const liveKey = Object.keys(state.placed || {}).find(k =>
+      state.placed[k] && state.placed[k].id === 'building_barn'
+    );
+    if (!liveKey) {
       activeShopTab = 'building';
       openShop();
       audio.play('click');
       return;
     }
-    const [bx, by] = firstBarnKey.split(',').map(Number);
+    // Reset the roster filter — the slaughterhouse shortcut sets it
+    // to 'mature' so a slaughter pass isn't reset when the player
+    // immediately checks the barn afterward, but the Big Red Barn
+    // button itself should always come up on the default species
+    // ordering. Without this, clicking Slaughterhouse → Barn left
+    // the barn menu stuck on the slaughter filter.
+    state._barnRosterMode = 'species';
+    const [bx, by] = liveKey.split(',').map(Number);
     openBuildingMenu('building_barn', window.innerWidth/2 - 200, window.innerHeight/2 - 200, bx, by);
     audio.play('click');
   });
@@ -13285,13 +13299,16 @@ function buildToolbar() {
   slaughterBtn.appendChild(slaughterIcon);
   slaughterBtn.addEventListener('click', () => {
     if (slaughterLocked) return;
-    if (!firstSlaughterKey) {
+    const liveKey = Object.keys(state.placed || {}).find(k =>
+      state.placed[k] && state.placed[k].id === 'building_slaughterhouse'
+    );
+    if (!liveKey) {
       activeShopTab = 'building';
       openShop();
       audio.play('click');
       return;
     }
-    const [sx, sy] = firstSlaughterKey.split(',').map(Number);
+    const [sx, sy] = liveKey.split(',').map(Number);
     const pen = findPenForSlaughterhouse(sx, sy);
     if (pen && typeof pen.barnIx === 'number') {
       state._barnRosterMode = 'mature';
@@ -13395,13 +13412,18 @@ function buildToolbar() {
   seedBtn.appendChild(seedIcon);
   seedBtn.addEventListener('click', () => {
     if (seedLocked) return;
-    if (!firstSeedKey) {
+    // Re-scan at click time so a container placed (or moved/sold)
+    // after the toolbar was last rebuilt is still found.
+    const liveKey = Object.keys(state.placed || {}).find(k =>
+      state.placed[k] && state.placed[k].id === 'building_seed_container'
+    );
+    if (!liveKey) {
       activeShopTab = 'building';
       openShop();
       audio.play('click');
       return;
     }
-    const [sx, sy] = firstSeedKey.split(',').map(Number);
+    const [sx, sy] = liveKey.split(',').map(Number);
     openSeedContainerModal(sx, sy);
     audio.play('click');
   });
@@ -14528,7 +14550,12 @@ function bindInput() {
       // Menu-opens / shortcut clicks stay gated to non-sell, non-move
       // tools so a click with Sell / Move falls through to the action
       // dispatch below and can actually sell or relocate the sprite.
-      const menusEligible = state.selectedTool !== 'sell' && state.selectedTool !== 'move';
+      // Also skip menu-opens while in place-mode: a misclick on an
+      // occupied tile while previewing a building used to pop that
+      // tile's building menu and quietly drop the ghost out of the
+      // player's hand. Now invalid clicks just toast + keep the
+      // ghost active so the player can try a different tile.
+      const menusEligible = state.selectedTool !== 'sell' && state.selectedTool !== 'move' && !live.placeMode;
       if (menusEligible) {
         const staffHere = staffAtTile(startT.ix, startT.iy);
         if (staffHere) {
