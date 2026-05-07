@@ -7313,13 +7313,20 @@ const BUILDING_MENUS = {
         const editZoneBtn = m.role === 'crop_farmer'
           ? `<button data-staff-action="zone" data-staff-id="${m.id}" style="background:#3F8338;color:#FFF;border:2px solid #1F4C1A;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">🗺️ Zone</button>`
           : '';
+        const pausedTag = m.paused
+          ? ` <span style="color:#A03423;font-weight:800;">· paused</span>`
+          : '';
+        const pauseBtn = m.paused
+          ? `<button data-staff-action="resume" data-staff-id="${m.id}" style="background:linear-gradient(to bottom,#7BC56A,#3F8338);color:#FFF;border:2px solid #2A4A1A;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">▶ Resume</button>`
+          : `<button data-staff-action="pause" data-staff-id="${m.id}" style="background:linear-gradient(to bottom,#E5C77A,#B0863A);color:#3a2410;border:2px solid #5C3F1A;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">⏸ Pause</button>`;
         return (
           `<div style="display:flex;align-items:center;gap:6px;background:#FFF7E6;border:1.5px solid #C7A874;border-radius:8px;padding:6px 8px;margin:4px 0;">` +
             `<div style="flex:1;min-width:0;">` +
-              `<div style="font-weight:700;color:#4A2E15;font-size:12px;">${emoji} ${roleName} · <span style="color:#7a5430;">${m.name || ''}</span></div>` +
+              `<div style="font-weight:700;color:#4A2E15;font-size:12px;">${emoji} ${roleName} · <span style="color:#7a5430;">${m.name || ''}</span>${pausedTag}</div>` +
               `<div style="font-size:10px;color:#7a5430;">${sub}</div>` +
             `</div>` +
             `<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:flex-end;">` +
+              pauseBtn +
               `<button data-staff-action="edit" data-staff-id="${m.id}" style="background:#E0D4FF;color:#4A2E15;border:2px solid #6B4FB0;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">✏️ Edit</button>` +
               editZoneBtn +
               `<button data-staff-action="fire" data-staff-id="${m.id}" style="background:#C04444;color:#FFF;border:2px solid #6B1F1F;border-radius:6px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;">🚫 Fire</button>` +
@@ -7756,6 +7763,19 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         if (!state.staff || !Array.isArray(state.staff.members)) return;
         const member = state.staff.members.find(m => m.id === sid);
         if (!member) return;
+        if (action === 'pause' || action === 'resume') {
+          member.paused = (action === 'pause');
+          // Drop in-flight task / queue so the change applies on the
+          // next tick rather than letting them finish their current
+          // walk first.
+          member.task = null;
+          member.queue = [];
+          member.nextSearchAt = 0;
+          audio.play('click');
+          storage.save();
+          setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+          return;
+        }
         if (action === 'edit') {
           // Stash the Staff Hall menu coords so Cancel / Save returns
           // here instead of dropping the player back to the field.
@@ -10605,7 +10625,6 @@ function openStaffMenu(member, screenX, screenY) {
   const moveBtn = document.getElementById('amMove');
   const sellBtn = document.getElementById('amSell');
   const closeBtn = document.getElementById('amClose');
-  if (collectBtn) collectBtn.style.display = 'none';
   if (rideBtn) rideBtn.style.display = 'none';
   if (petBtn) petBtn.style.display = 'none';
   // The shared #animalMenu is also used for buildings — those toggle
@@ -10614,6 +10633,35 @@ function openStaffMenu(member, screenX, screenY) {
   // hanging on the worker's menu (no-op against staff anyway).
   if (moveBtn) moveBtn.style.display = 'none';
   if (sellBtn) sellBtn.style.display = 'none';
+  // Per-worker pause toggle — repurpose the collect button slot.
+  // Drops the worker out of the task-search loop without firing them
+  // (so wages still tick — paused = "on break", not "fired"). Clicking
+  // again resumes them. The roster-wide pause on the Staff Hall menu
+  // still works independently and overrides per-worker resume.
+  if (collectBtn) {
+    const isPaused = !!member.paused;
+    collectBtn.style.display = '';
+    collectBtn.disabled = false;
+    collectBtn.textContent = isPaused ? '▶ Resume Worker' : '⏸ Pause Worker';
+    collectBtn.style.background = isPaused
+      ? 'linear-gradient(to bottom,#7BC56A,#3F8338)'
+      : 'linear-gradient(to bottom,#E5C77A,#B0863A)';
+    collectBtn.style.borderColor = isPaused ? '#2A4A1A' : '#5C3F1A';
+    collectBtn.style.boxShadow = isPaused ? '0 2px 0 #2A4A1A' : '0 2px 0 #5C3F1A';
+    collectBtn.style.color = '#FFF';
+    collectBtn.onclick = () => {
+      member.paused = !member.paused;
+      // Drop any in-flight task so paused workers freeze immediately
+      // (and resumed ones re-evaluate the field on the next tick).
+      member.task = null;
+      member.queue = [];
+      member.nextSearchAt = 0;
+      storage.save();
+      audio.play('click');
+      // Re-open the menu in place so the button label flips.
+      openStaffMenu(member, screenX, screenY);
+    };
+  }
   // Edit Zone — crop farmer only, repurpose the ride button (green).
   if (member.role === 'crop_farmer' && rideBtn) {
     rideBtn.style.display = '';
@@ -10910,10 +10958,11 @@ function tickStaff(dtMs) {
 }
 function tickArborist(m, dt, now) {
   if (m.cooldownAt && now < m.cooldownAt) return;
-  // Roster-wide pause toggle from the Staff Hall menu — when set, every
-  // worker stops searching for tasks. They still occupy their tile so
-  // the player can see they exist, just don't pick up anything new.
-  if (state.staffPaused) { m.task = null; return; }
+  // Pause gates — roster-wide (Staff Hall toggle) OR per-worker
+  // (individual menu's Pause Worker button). Either freezes the
+  // arborist's task search; they keep their tile but don't pick up
+  // anything new.
+  if (state.staffPaused || m.paused) { m.task = null; return; }
   if (!m.task) {
     // Throttle the full state.placed scan to once every ~300ms when the
     // arborist has nothing to do. Without this, an idle arborist re-scans
@@ -10971,8 +11020,8 @@ function tickArborist(m, dt, now) {
 function tickCropFarmer(m, dt, now) {
   // Cooldown after each action so they don't spam-clear the entire farm.
   if (m.cooldownAt && now < m.cooldownAt) return;
-  // Roster-wide pause toggle from the Staff Hall menu — see tickArborist.
-  if (state.staffPaused) { m.task = null; return; }
+  // Roster-wide OR per-worker pause — see tickArborist.
+  if (state.staffPaused || m.paused) { m.task = null; return; }
   // No active task? Find one.
   if (!m.task) {
     // Throttle the per-frame zone scan to once every ~300ms when there's
@@ -11046,8 +11095,8 @@ function tickCropFarmer(m, dt, now) {
 // Limited to the keeper's own pen so multi-pen farms route correctly.
 function tickAnimalKeeper(m, dt, now) {
   if (m.cooldownAt && now < m.cooldownAt) return;
-  // Roster-wide pause toggle from the Staff Hall menu — see tickArborist.
-  if (state.staffPaused) { m.task = null; return; }
+  // Roster-wide OR per-worker pause — see tickArborist.
+  if (state.staffPaused || m.paused) { m.task = null; return; }
   if (!m.task) {
     if (m.nextSearchAt && now < m.nextSearchAt) {
       // Skip the scan this frame.
