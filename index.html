@@ -4558,7 +4558,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
   { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
   { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations for XP + coins — click to open the greenhouse', unlock: 12 },
-  { cat: 'building', id: 'building_sprinkler',      name: 'Sprinkler',      cost: 4200, sub: 'Auto-waters every planted crop in a 5×5 radius. Pours every 6 sec.', unlock: 11 },
+  { cat: 'building', id: 'building_sprinkler',      name: 'Sprinkler',      cost: 4200, sub: 'Auto-waters crops + growing trees in a 5×5 radius. Pours every 6 sec.', unlock: 11 },
 ];
 // Sprinkler radius: 5×5 means 2 tiles in each direction from the
 // sprinkler tile. Preview overlay reads this so what the player sees
@@ -4567,9 +4567,13 @@ const SPRINKLER_RADIUS = 2;
 const SPRINKLER_INTERVAL_MS = 6000;
 // Soak the 5×5 vicinity around (sx, sy): every planted crop that isn't
 // already watered gets the watered flag, plays an FX, and credits the
-// player the same XP a manual water would. Returns the number of plots
-// freshly watered so callers can short-circuit FX work when the pass is
-// idle.
+// player the same XP a manual water would. Trees in the early-water
+// window (stage 1-3, still growing, not yet watered this stage) also
+// get the +50% growth flag — sprinklers don't auto-advance stages
+// (that's an active, coin-spending action) but they do hand the
+// watered-grow bonus same as a player pour. Returns the number of
+// tiles freshly watered so callers can short-circuit FX work when
+// the pass is idle.
 function sprinklerSoak(sx, sy) {
   let n = 0;
   for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
@@ -4578,14 +4582,31 @@ function sprinklerSoak(sx, sy) {
       if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) continue;
       const k = ix + ',' + iy;
       const p = state.plots[k];
-      if (!p || p.state !== 'planted' || p.watered) continue;
-      p.watered = true;
-      n++;
-      const wxp = waterXpGain();
-      grantXp(wxp);
-      bumpStat('watered');
-      fxBurst(ix, iy, '#6CD4FF', 6);
-      fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
+      if (p && p.state === 'planted' && !p.watered) {
+        p.watered = true;
+        n++;
+        const wxp = waterXpGain();
+        grantXp(wxp);
+        bumpStat('watered');
+        fxBurst(ix, iy, '#6CD4FF', 6);
+        fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
+        continue;
+      }
+      // Trees: hand them the same watered flag the player's manual
+      // early-water grants. Skips fully-grown trees (no stage timer
+      // left to speed up) and trees that are already either watered
+      // or ready to be advanced — those need the player to pay the
+      // water fee to bump the stage.
+      const placed = state.placed[k];
+      if (placed && treeNeedsEarlyWater(placed)) {
+        placed.watered = true;
+        n++;
+        const wxp = waterXpGain();
+        grantXp(wxp);
+        bumpStat('watered');
+        fxBurst(ix, iy, '#6CD4FF', 6);
+        fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
+      }
     }
   }
   if (n > 0) audio.play('water');
