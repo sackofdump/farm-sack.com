@@ -10315,14 +10315,29 @@ function buildSeedContainerModal() {
         rm.textContent = '−1';
         rm.style.cssText = 'padding:4px 10px;font-size:12px;font-weight:700;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border:2px solid var(--wood-3);color:#FFF;border-radius:6px;cursor:pointer;';
         rm.onclick = () => {
-          removeSeedFromNetwork(seedId, 1);
+          // Full refund — the player paid for these seeds, so removing
+          // them shouldn't burn coins. Pulls per-seed cost from CROPS
+          // (mutation seeds carry their generated cost too).
+          const removed = removeSeedFromNetwork(seedId, 1);
+          const refundEach = (CROPS[seedId] && CROPS[seedId].cost) || 0;
+          if (removed > 0 && refundEach > 0) {
+            state.coins += removed * refundEach;
+            toast(`Refunded ${removed * refundEach}¢ (${removed} ${name}).`, false, 'good', 2500);
+            audio.play('coin');
+          }
           storage.save(); buildSeedContainerModal();
         };
         const rmAll = document.createElement('button');
         rmAll.textContent = 'Remove all';
         rmAll.style.cssText = 'padding:4px 10px;font-size:12px;font-weight:700;background:linear-gradient(to bottom,#A33B3B,#6e1f1f);border:2px solid #4a0f0f;color:#FFF;border-radius:6px;cursor:pointer;';
         rmAll.onclick = () => {
-          removeSeedFromNetwork(seedId, qty);
+          const removed = removeSeedFromNetwork(seedId, qty);
+          const refundEach = (CROPS[seedId] && CROPS[seedId].cost) || 0;
+          if (removed > 0 && refundEach > 0) {
+            state.coins += removed * refundEach;
+            toast(`Refunded ${(removed * refundEach).toLocaleString()}¢ (${removed} ${name}).`, false, 'good', 2500);
+            audio.play('coin');
+          }
           storage.save(); buildSeedContainerModal();
         };
         row.appendChild(upBtn);
