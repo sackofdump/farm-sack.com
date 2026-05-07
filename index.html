@@ -9369,10 +9369,14 @@ function drawAll() {
     // Sprinkler ghost: paint the 5×5 watering radius the sprinkler will
     // cover from this tile so the player can position it without
     // guessing which crops it'll reach. Three colours:
-    //   teal  — already covered by another sprinkler (no cursor here)
-    //   cyan  — fresh ground the new sprinkler will newly cover
-    //   red   — cursor tile that overlaps an existing sprinkler's
-    //           radius (still placeable, just flags wasted overlap)
+    //   teal   — already covered by another sprinkler (no cursor here)
+    //   cyan   — fresh ground the new sprinkler will newly cover
+    //   yellow — cursor tile that overlaps an existing sprinkler's
+    //            radius. Placement is allowed (sometimes the player
+    //            wants the redundancy), the warning hue just flags
+    //            that those tiles are wasted coverage. Was red before;
+    //            red read as "blocked" and made players think the
+    //            placement was being rejected.
     if (live.placeMode.id === 'building_sprinkler') {
       const cursorCovers = new Set();
       for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
@@ -9410,13 +9414,13 @@ function drawAll() {
         drawHoverHighlight(cc.x, cc.y, '#3F8FB5');
       }
       // Pass 2: cursor preview. Tiles that also belong to an existing
-      // sprinkler's radius paint red (overlap = wasted coverage); the
-      // rest paint bright cyan as fresh ground.
+      // sprinkler's radius paint yellow (overlap = wasted coverage but
+      // still placeable); the rest paint bright cyan as fresh ground.
       for (const tk of cursorCovers) {
         const ci = tk.indexOf(',');
         const tx = +tk.slice(0, ci), ty = +tk.slice(ci + 1);
         const cc = isoCenter(tx, ty);
-        drawHoverHighlight(cc.x, cc.y, existingCovers.has(tk) ? '#FF6B5C' : '#6CC8FF');
+        drawHoverHighlight(cc.x, cc.y, existingCovers.has(tk) ? '#FFD24A' : '#6CC8FF');
       }
     }
   }
