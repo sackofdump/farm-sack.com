@@ -14775,11 +14775,14 @@ function bindInput() {
     // -------- Place mode click --------
     if (live.placeMode) {
       // Shift+drag a rect while a tree OR an animal is staged =
-      // bulk-place across the bounding box. Same machinery for both;
-      // isPlaceableTile already routes animals to in-pen tiles only.
+      // bulk-place across the bounding box. Same machinery for trees,
+      // animals, and sprinklers; isPlaceableTile already routes animals
+      // to in-pen tiles only, and the sprinkler branch in the bulk-place
+      // pass strides the rect every 5 tiles to land flush coverage.
       const bulkOk = live.placeMode.id && !live.placeMode.moving &&
                      (live.placeMode.id.startsWith('tree_') ||
-                      live.placeMode.id.startsWith('animal_'));
+                      live.placeMode.id.startsWith('animal_') ||
+                      live.placeMode.id === 'building_sprinkler');
       if (e.button === 0 && e.shiftKey && bulkOk) {
         live.dragMode = 'paintRect';
         live.paintRect = {
@@ -15332,17 +15335,47 @@ function bindInput() {
       const r = live.paintRect;
       const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
       const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
-      // Bulk-place rect (trees + animals) uses isPlaceableTile +
-      // affordability instead of the canActOnTile path. Tagged
-      // 'placeTree' for legacy reasons; the branch handles animals
-      // too since the validity gate is identical.
+      // Bulk-place rect (trees + animals + sprinklers) uses
+      // isPlaceableTile + affordability instead of the canActOnTile
+      // path. Tagged 'placeTree' for legacy reasons; the branch
+      // handles animals + sprinklers too since the validity gate is
+      // identical, modulo the sprinkler stride.
+      const isSprinkler = live.placeMode && live.placeMode.id === 'building_sprinkler';
       const bulkPlace = r.tool === 'placeTree' && live.placeMode && live.placeMode.id &&
-                        (live.placeMode.id.startsWith('tree_') || live.placeMode.id.startsWith('animal_'));
+                        (live.placeMode.id.startsWith('tree_') ||
+                         live.placeMode.id.startsWith('animal_') ||
+                         isSprinkler);
       if (bulkPlace) {
         const candidates = [];
-        for (let iy = y0; iy <= y1; iy++) {
-          for (let ix = x0; ix <= x1; ix++) {
-            if (isPlaceableTile(ix, iy)) candidates.push({ ix, iy });
+        if (isSprinkler) {
+          // Stride the rect every SPRINKLER_SNAP_STEP tiles, anchored
+          // on any existing sprinkler so the bulk drop tiles flush
+          // with prior placements. Without an anchor, start at the
+          // rect's NW corner.
+          let anchorX = x0, anchorY = y0;
+          for (const sk in state.placed) {
+            const it = state.placed[sk];
+            if (it && it.id === 'building_sprinkler') {
+              const ci = sk.indexOf(',');
+              anchorX = +sk.slice(0, ci); anchorY = +sk.slice(ci + 1);
+              break;
+            }
+          }
+          const STEP = SPRINKLER_SNAP_STEP;
+          const startX = anchorX + Math.ceil((x0 - anchorX) / STEP) * STEP;
+          const startY = anchorY + Math.ceil((y0 - anchorY) / STEP) * STEP;
+          for (let iy = startY; iy <= y1; iy += STEP) {
+            for (let ix = startX; ix <= x1; ix += STEP) {
+              if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) continue;
+              if (!isPlaceableTile(ix, iy)) continue;
+              candidates.push({ ix, iy });
+            }
+          }
+        } else {
+          for (let iy = y0; iy <= y1; iy++) {
+            for (let ix = x0; ix <= x1; ix++) {
+              if (isPlaceableTile(ix, iy)) candidates.push({ ix, iy });
+            }
           }
         }
         // Greedy nearest-neighbour ordering, anchored to the player
@@ -15375,7 +15408,8 @@ function bindInput() {
         let queuedCost = 0;
         for (const q of state.player.queue) {
           if (q.tool === 'placeHere' && q.placeData && q.placeData.id && !q.placeData.moving &&
-              (q.placeData.id.startsWith('tree_') || q.placeData.id.startsWith('animal_'))) {
+              (q.placeData.id.startsWith('tree_') || q.placeData.id.startsWith('animal_') ||
+               q.placeData.id === 'building_sprinkler')) {
             queuedCost += q.placeData.cost || 0;
           }
         }
