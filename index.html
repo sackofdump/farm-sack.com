@@ -5689,6 +5689,33 @@ function hashFloat(ix, iy, salt=0) {
   h = Math.imul(h, 1274126177) >>> 0;
   return ((h ^ (h >>> 16)) >>> 0) / 4294967296;
 }
+// One-shot blurred ellipse used as the shadow under every placed
+// building. Late-game farms have hundreds of buildings on screen at
+// once; running ctx.filter='blur(5px)' per draw was the single biggest
+// hot spot (filter calls force a software fallback path on the canvas
+// backing store and don't batch with adjacent drawImage calls). Bake
+// it once and stamp the result with drawImage — same look, near-zero
+// per-frame cost.
+let _BUILDING_SHADOW_STAMP = null;
+function _buildingShadowStamp() {
+  if (_BUILDING_SHADOW_STAMP) return _BUILDING_SHADOW_STAMP;
+  // Pad the canvas past the ellipse so the blur fade-out isn't clipped.
+  const ellipseW = TILE_W * 0.45;
+  const ellipseH = TILE_H * 0.40;
+  const padPx = 12;
+  const c = document.createElement('canvas');
+  c.width  = Math.ceil((ellipseW + padPx) * 2);
+  c.height = Math.ceil((ellipseH + padPx) * 2);
+  const sctx = c.getContext('2d');
+  sctx.globalAlpha = 0.30;
+  sctx.fillStyle = '#000';
+  sctx.filter = 'blur(5px)';
+  sctx.beginPath();
+  sctx.ellipse(c.width / 2, c.height / 2, ellipseW, ellipseH, 0, 0, Math.PI * 2);
+  sctx.fill();
+  _BUILDING_SHADOW_STAMP = c;
+  return c;
+}
 function drawTileSprite(key, cx, cy) {
   if (!imgReady(key)) return false;
   const img = IMG[key];
@@ -7986,22 +8013,18 @@ function drawPlacedItem(id, cx, cy, placed) {
   }
   // Buildings cast a soft shadow BEHIND them (north on the iso grid)
   // so the building reads as if light is coming from the front. The
-  // ellipse sits at the back-edge of the diamond, blurred and dim so
-  // the building's body covers the front half.
+  // ellipse sits at the back-edge of the diamond. The shadow is baked
+  // once into an offscreen canvas (see _buildingShadowStamp) and stamped
+  // here with drawImage — generating it live with ctx.filter='blur(5px)'
+  // every frame, for every building, was the dominant late-game CPU
+  // cost (filter changes force a software-blur pass per call).
   if (id.startsWith('building_')) {
-    ctx.save();
-    ctx.globalAlpha = 0.30;
-    ctx.fillStyle = '#000';
-    ctx.filter = 'blur(5px)';
-    ctx.beginPath();
-    // Anchor at top of the diamond (back corner) and skew upward-left
-    // so the shadow trails away from the viewer behind the structure.
-    ctx.ellipse(cx - TILE_W * 0.05, cy - TILE_H * 0.20,
-                TILE_W * 0.45, TILE_H * 0.40,
-                0, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.filter = 'none';
-    ctx.restore();
+    const stamp = _buildingShadowStamp();
+    ctx.drawImage(
+      stamp,
+      cx - TILE_W * 0.05 - stamp.width / 2,
+      cy - TILE_H * 0.20 - stamp.height / 2
+    );
   }
   // Sprinkler is a short single-tile prop. Anchor between the tile
   // centre and the diamond's front corner so the base sits low on the
