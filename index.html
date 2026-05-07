@@ -12502,11 +12502,12 @@ function finishGroupMoveAt(destIx, destIy) {
     dstIy: Math.round(destIy + it.dy),
     record: it.record,
   }));
-  // Validate every target tile. Restrict to the bought fence
-  // (state.worldBounds) — bulk-moving onto un-bought meadow stranded
-  // trees outside the play area where the player couldn't see / interact
-  // with them properly. Single-placement still allows buying-as-you-go
-  // via separate code paths; this check is bulk-move only.
+  // Validate every target tile. Per-item rules mirror isPlaceableTile:
+  // buildings (cottage / silo / staff hall / etc.) can land on the open
+  // meadow outside the fence; animals + slaughterhouse must stay in a
+  // barn pen; trees + decor are fence-bound. An earlier version of this
+  // check restricted EVERY item to inside the fence, which broke
+  // bulk-moving any building cluster that lived on the meadow.
   const _wbMove = state.worldBounds || defaultWorldBounds();
   const _wbMinX = _wbMove.x0;
   const _wbMinY = _wbMove.y0;
@@ -12515,16 +12516,49 @@ function finishGroupMoveAt(destIx, destIy) {
   const inFence = (ix, iy) => ix >= _wbMinX && iy >= _wbMinY && ix <= _wbMaxX && iy <= _wbMaxY;
   const movingKeys = new Set(grp.items.map(it => it.srcKey));
   for (const t of targets) {
-    if (!inFence(t.dstIx, t.dstIy)) {
-      // Surface which edge so the player knows which way to nudge the
-      // drop click instead of guessing.
-      let dir = '';
-      if (t.dstIx < _wbMinX)      dir = ' (extends past the west fence)';
-      else if (t.dstIx > _wbMaxX) dir = ' (extends past the east fence)';
-      else if (t.dstIy < _wbMinY) dir = ' (extends past the north fence)';
-      else if (t.dstIy > _wbMaxY) dir = ' (extends past the south fence)';
-      toast('Destination would push items outside the fence' + dir + '.', true);
+    const id = (t.record && t.record.id) || '';
+    if (t.dstIx < 0 || t.dstIy < 0 || t.dstIx >= WORLD_W || t.dstIy >= WORLD_H) {
+      toast('Destination would push items past the world edge.', true);
       audio.play('error'); return;
+    }
+    const isBuilding       = id.startsWith('building_');
+    const isSlaughterhouse = id === 'building_slaughterhouse';
+    const isAnimal         = id.startsWith('animal_');
+    const tileInPen        = inBarnPen(t.dstIx, t.dstIy);
+    if (isAnimal || isSlaughterhouse) {
+      if (!tileInPen) {
+        toast(isAnimal ? 'Animals must stay in a barn pen.'
+                       : 'Slaughterhouse must stay in a barn pen.', true);
+        audio.play('error'); return;
+      }
+    } else if (isBuilding) {
+      // Most buildings (silo, cottage, market, windmill, greenhouse,
+      // staff hall, seed container, sprinkler, coffee stand…) and the
+      // big red barn can land anywhere in the world EXCEPT inside a
+      // pen. Pen-fit for a moved barn is enforced by isPlaceableTile
+      // on single placement; bulk-moving a barn is rare enough that
+      // we let the pen-overlap check below catch obvious collisions.
+      if (tileInPen) {
+        toast('Buildings can\'t be dropped inside the animal pen.', true);
+        audio.play('error'); return;
+      }
+    } else {
+      // Trees + decor stay inside the fence (no valid render outside
+      // the bought play area). Surface which edge so the player can
+      // nudge the drop click toward the right side.
+      if (!inFence(t.dstIx, t.dstIy)) {
+        let dir = '';
+        if (t.dstIx < _wbMinX)      dir = ' (extends past the west fence)';
+        else if (t.dstIx > _wbMaxX) dir = ' (extends past the east fence)';
+        else if (t.dstIy < _wbMinY) dir = ' (extends past the north fence)';
+        else if (t.dstIy > _wbMaxY) dir = ' (extends past the south fence)';
+        toast('Destination would push trees / decor outside the fence' + dir + '.', true);
+        audio.play('error'); return;
+      }
+      if (tileInPen) {
+        toast('Trees / decor can\'t be dropped inside the animal pen.', true);
+        audio.play('error'); return;
+      }
     }
     const dstKey = tileKey(t.dstIx, t.dstIy);
     if (state.placed[dstKey] && !movingKeys.has(dstKey)) {
