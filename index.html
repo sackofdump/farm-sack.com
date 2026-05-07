@@ -4512,7 +4512,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_windmill',     name: 'Windmill',     cost: 5250, sub: '+5% crop growth speed (cap +25%)', unlock: 10 },
   { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% crops & animal yield (cap +25%) · stores Animal Feed for animal bonuses', unlock: 9  },
   { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1800, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 15 },
-  { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile up to 1,000 seeds for your crop farmer to plant', unlock: 15 },
+  { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile unlimited seeds for your crop farmer to plant', unlock: 15 },
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
   { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
   { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations for XP + coins — click to open the greenhouse', unlock: 12 },
@@ -7162,19 +7162,22 @@ const BUILDING_MENUS = {
     title: 'Seed Container',
     desc: ({ ix, iy } = {}) => {
       const total = seedContainerTotal();
-      const count = buildingCount('building_seed_container');
-      const netCap = SEED_CONTAINER_CAP * count;
+      const unlimited = !isFinite(SEED_CONTAINER_CAP);
       let thisLine = '';
       if (typeof ix === 'number' && typeof iy === 'number') {
         const placed = state.placed[ix + ',' + iy];
         if (placed && placed.id === 'building_seed_container') {
           const own = seedContainerTotal(placed);
-          thisLine = `<div style="font-size:12px;color:#5b3f1f;margin:0 0 4px;">This container: <b>${own.toLocaleString()} / ${SEED_CONTAINER_CAP.toLocaleString()}</b></div>`;
+          thisLine = `<div style="font-size:12px;color:#5b3f1f;margin:0 0 4px;">This container: <b>${own.toLocaleString()}</b></div>`;
         }
       }
-      return thisLine +
-             `<div style="margin-bottom:6px;">Network: <b>${total.toLocaleString()} / ${netCap.toLocaleString()}</b></div>` +
-             `<div style="font-size:12px;color:#5b3f1f;">Stockpile up to <b>${SEED_CONTAINER_CAP.toLocaleString()}</b> seeds per container for crop farmers to plant.</div>` +
+      const networkLine = unlimited
+        ? `<div style="margin-bottom:6px;">Network: <b>${total.toLocaleString()}</b> <span style="color:#2D6E33;">(unlimited)</span></div>`
+        : `<div style="margin-bottom:6px;">Network: <b>${total.toLocaleString()} / ${(SEED_CONTAINER_CAP * buildingCount('building_seed_container')).toLocaleString()}</b></div>`;
+      const blurb = unlimited
+        ? `<div style="font-size:12px;color:#5b3f1f;">Stockpile <b>unlimited</b> seeds for crop farmers to plant.</div>`
+        : `<div style="font-size:12px;color:#5b3f1f;">Stockpile up to <b>${SEED_CONTAINER_CAP.toLocaleString()}</b> seeds per container for crop farmers to plant.</div>`;
+      return thisLine + networkLine + blurb +
              `<span style="color:#7a5430;font-size:11px;">Drop one anywhere — every crop farmer can pull seeds from any container.</span>`;
     },
     actions: [{
@@ -9631,7 +9634,11 @@ function hireStaff(role, opts) {
   return state.staff.members[state.staff.members.length - 1];
 }
 // ----- Seed container -----
-const SEED_CONTAINER_CAP = 1000;
+// Unlimited per-container stockpile — the network is a sink, not a
+// pressure point. SEED_CONTAINER_CAP stays defined so legacy callers
+// that read it still get a sensible value; display code branches on
+// isFinite() to render "unlimited" instead of a fraction.
+const SEED_CONTAINER_CAP = Infinity;
 // A container's stock is an ordered queue: [{ id, qty }, ...]. The crop
 // farmer plants from index 0; the player can reorder with the up/down
 // buttons in the buy menu. Older saves stored a flat { id: qty } object —
@@ -9694,7 +9701,10 @@ function seedNetworkAggregate() {
   return map;
 }
 function seedNetworkCapacity() {
-  return SEED_CONTAINER_CAP * buildingCount('building_seed_container');
+  // Capacity is unlimited as long as at least one container exists.
+  // Guard the no-container case explicitly so callers don't get NaN
+  // from Infinity * 0.
+  return buildingCount('building_seed_container') > 0 ? Infinity : 0;
 }
 // Cascade-fill across containers. Returns the actual amount deposited
 // (clamped to network room).
@@ -9763,14 +9773,23 @@ function buildSeedContainerModal() {
   const total = Array.from(networkMap.values()).reduce((s, q) => s + q, 0);
   const cap = seedNetworkCapacity();
   const containerCount = buildingCount('building_seed_container');
-  const pct = cap > 0 ? Math.max(0, Math.min(100, Math.round((total / cap) * 100))) : 0;
+  const unlimited = !isFinite(cap);
+  const pct = (!unlimited && cap > 0) ? Math.max(0, Math.min(100, Math.round((total / cap) * 100))) : 0;
   const info = document.getElementById('scQueueInfo');
   if (info) info.innerHTML =
-    `Total stocked: <b>${total.toLocaleString()} / ${cap.toLocaleString()}</b>` +
+    (unlimited
+      ? `Total stocked: <b>${total.toLocaleString()}</b> · <span style="color:#2D6E33;font-weight:700;">unlimited capacity</span>`
+      : `Total stocked: <b>${total.toLocaleString()} / ${cap.toLocaleString()}</b>`) +
     ` · across <b>${containerCount}</b> container${containerCount === 1 ? '' : 's'}` +
     ` · pooled — any farmer can pull from any container`;
   const bar = document.getElementById('scQueueBar');
-  if (bar) bar.style.width = pct + '%';
+  if (bar) {
+    // Hide the capacity bar entirely when capacity is unlimited — a bar
+    // that never fills reads as broken UI rather than "no cap".
+    bar.style.width = pct + '%';
+    const track = bar.parentElement;
+    if (track) track.style.display = unlimited ? 'none' : '';
+  }
   const list = document.getElementById('scQueueList');
   if (list) {
     list.innerHTML = '';
@@ -10038,7 +10057,7 @@ function fireStaff(member) {
   audio.play('click');
   storage.save(); refreshHud();
 }
-function openStaffMenu(member, screenX, screenY) {
+function openStaffMenu(member, screenX, screenY, opts) {
   const menu = document.getElementById('animalMenu');
   if (!menu) return;
   // Surface this staff's zone while their menu is open.
@@ -10139,7 +10158,26 @@ function openStaffMenu(member, screenX, screenY) {
   const y = Math.min(window.innerHeight - h - 8, Math.max(8, screenY + 12));
   menu.style.left = x + 'px';
   menu.style.top  = y + 'px';
-  if (closeBtn) closeBtn.onclick = closeAnimalMenu;
+  if (closeBtn) {
+    // Reading "Cancel" right after the player set up a fresh hire reads
+    // wrong — they're confirming the worker, not undoing anything. Swap
+    // the label/style to a green Confirm in that one flow; everywhere
+    // else keeps the standard wood-tan Cancel.
+    if (opts && opts.fromZoneConfirm) {
+      closeBtn.textContent = '✓ Confirm';
+      closeBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
+      closeBtn.style.borderColor = '#2A4A1A';
+      closeBtn.style.boxShadow = '0 2px 0 #2A4A1A';
+      closeBtn.style.color = '#FFF';
+    } else {
+      closeBtn.textContent = 'Cancel';
+      closeBtn.style.background = '';
+      closeBtn.style.borderColor = '';
+      closeBtn.style.boxShadow = '';
+      closeBtn.style.color = '';
+    }
+    closeBtn.onclick = closeAnimalMenu;
+  }
 }
 function cancelZoneSelect() {
   live.zoneSelect = null;
@@ -10219,7 +10257,7 @@ function confirmZoneSelect() {
     // committed. Skip when the seed-container reminder takes priority
     // so the player isn't fighting two modals at once. Defer one tick
     // so the cancelZoneSelect banner finishes hiding first.
-    setTimeout(() => openStaffMenu(openedMember, window.innerWidth/2 - 200, window.innerHeight/2 - 200), 60);
+    setTimeout(() => openStaffMenu(openedMember, window.innerWidth/2 - 200, window.innerHeight/2 - 200, { fromZoneConfirm: true }), 60);
   }
 }
 function staffWanderTarget(m) {
@@ -14987,6 +15025,12 @@ function buildTooltipHTML(ix, iy) {
           building_seed_container: (p) => {
             const own = seedContainerTotal(p);
             const total = seedContainerTotal();
+            const unlimited = !isFinite(SEED_CONTAINER_CAP);
+            if (unlimited) {
+              return `Stockpile <b>unlimited</b> seeds per container.` +
+                     `<br>This container: <b>${own.toLocaleString()}</b>` +
+                     `<br>Network: <b>${total.toLocaleString()}</b>`;
+            }
             const netCap = SEED_CONTAINER_CAP * buildingCount('building_seed_container');
             return `Stockpile up to <b>${SEED_CONTAINER_CAP.toLocaleString()}</b> seeds per container.` +
                    `<br>This container: <b>${own.toLocaleString()} / ${SEED_CONTAINER_CAP.toLocaleString()}</b>` +
