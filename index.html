@@ -7569,15 +7569,16 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   const slaughterBtn = document.getElementById('amSlaughter');
   const rideBtn = document.getElementById('amRide');
   const closeBtn = document.getElementById('amClose');
-  // Reset the close button — openStaffMenu styles it as a green "✓ Done"
-  // and that styling would carry over to a building menu opened right
-  // after a staffer if we don't clear it back to the wood-tan Cancel.
+  // Building menus get the same green ✓ Done as the staff menu —
+  // every action they expose (claim, brew, fire, etc.) commits the
+  // moment it's clicked, so "Cancel" was always a misnomer. Done
+  // matches the user's mental model of "I'm done with this menu".
   if (closeBtn) {
-    closeBtn.textContent = 'Cancel';
-    closeBtn.style.background = '';
-    closeBtn.style.borderColor = '';
-    closeBtn.style.boxShadow = '';
-    closeBtn.style.color = '';
+    closeBtn.textContent = '✓ Done';
+    closeBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
+    closeBtn.style.borderColor = '#2A4A1A';
+    closeBtn.style.boxShadow = '0 2px 0 #2A4A1A';
+    closeBtn.style.color = '#FFF';
   }
   if (desc) {
     const descContent = typeof cfg.desc === 'function' ? cfg.desc({ ix, iy }) : (cfg.desc || '');
@@ -8005,20 +8006,14 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
       actOnTile('move', ix, iy, false);
     } : null;
   }
-  // Sell button — every non-permanent building can be sold for a 50%
-  // refund from its own menu, no toolbar tool required. Barns drop their
-  // pen but leave animals + slaughterhouse standing (handled inside the
-  // sell action), so a fresh barn-with-pen sweeps them back in.
+  // Sell button removed from per-building menus — the Sell tool on
+  // the toolbar covers the same action and the in-menu Sell button
+  // was leading to misclicks. Hide the slot defensively in case some
+  // earlier menu opened it.
   const sellBtn = document.getElementById('amSell');
   if (sellBtn) {
-    const placedHere = state.placed[tileKey(ix, iy)];
-    const canSell = placedHere && !placedHere.permanent;
-    sellBtn.style.display = canSell ? '' : 'none';
-    sellBtn.disabled = !canSell;
-    sellBtn.onclick = canSell ? () => {
-      closeAnimalMenu();
-      actOnTile('sell', ix, iy, false);
-    } : null;
+    sellBtn.style.display = 'none';
+    sellBtn.onclick = null;
   }
   // Preserve the menu's current position when this is a refresh of an
   // already-open menu (e.g. dropdown change, bulk action). If the
