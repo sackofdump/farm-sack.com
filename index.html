@@ -6493,7 +6493,7 @@ const ITEM_RENDER_W = {
   building_slaughterhouse: 170, building_staff: 168, building_seed_container: 84,
   building_coffee_stand: 130,
   building_greenhouse: 218,
-  building_sprinkler: 48,
+  building_sprinkler: 32,
 };
 // Trees grow from sapling → mature in four stages. Each stage runs a
 // timer; when the timer expires the tree is "ready to water" and the
@@ -8639,6 +8639,33 @@ function barnPenGate(pen) {
 function inBarnPen(ix, iy) {
   return !!findBarnPenAt(ix, iy);
 }
+// True when (ix, iy) is inside a barn pen OR within `buffer` tiles of
+// any pen edge. Used by the Slaughterhouse placement check so the
+// player can drop one right against the pen fence (1 tile away)
+// instead of having to fit it inside the pen footprint.
+function nearBarnPen(ix, iy, buffer = 1) {
+  if (inBarnPen(ix, iy)) return true;
+  const pens = (typeof getAllBarnPens === 'function') ? getAllBarnPens() : [];
+  for (const p of pens) {
+    if (ix >= p.x0 - buffer && ix < p.x0 + p.w + buffer &&
+        iy >= p.y0 - buffer && iy < p.y0 + p.h + buffer) return true;
+  }
+  return false;
+}
+// Pen lookup used by the Slaughterhouse menu — finds the pen this
+// slaughterhouse "belongs to" (containing pen if inside, otherwise
+// the closest pen within 1 tile). Falls back to the first pen on
+// the farm so a stray slaughterhouse still surfaces a roster.
+function findPenForSlaughterhouse(ix, iy) {
+  const inside = findBarnPenAt(ix, iy);
+  if (inside) return inside;
+  const pens = (typeof getAllBarnPens === 'function') ? getAllBarnPens() : [];
+  for (const p of pens) {
+    if (ix >= p.x0 - 1 && ix < p.x0 + p.w + 1 &&
+        iy >= p.y0 - 1 && iy < p.y0 + p.h + 1) return p;
+  }
+  return pens[0] || null;
+}
 // Outlined 8×8 preview of the pending animal pen — shown while the
 // player is hovering with the barn in their hand. Translucent green
 // when the location is valid, red where pen tiles would clash with
@@ -8831,12 +8858,14 @@ function isPlaceableTile(ix, iy) {
   }
   const cat = live.placeMode && (shopItem(live.placeMode.id) || {}).cat;
   const id  = live.placeMode && live.placeMode.id;
-  // The Slaughterhouse sits INSIDE the animal pen — needs an existing
-  // pen and an empty grass tile within it.
+  // The Slaughterhouse needs to be within reach of an animal pen — it
+  // can sit INSIDE the pen or one tile outside any pen edge so the
+  // butcher can stand right next to the fence and the player has more
+  // room to lay out the farm. Tile must still be empty + not a path.
   if (id === 'building_slaughterhouse') {
-    if (!inBarnPen(ix, iy)) return false;
     if (state.placed[k]) return false;
     if (PATH_TILES.has(k)) return false;
+    if (!nearBarnPen(ix, iy, 1)) return false;
     return true;
   }
   // Big Red Barn — placeable anywhere in the world (inside the main
@@ -12621,10 +12650,15 @@ function finishGroupMoveAt(destIx, destIy) {
     const isSlaughterhouse = id === 'building_slaughterhouse';
     const isAnimal         = id.startsWith('animal_');
     const tileInPen        = inBarnPen(t.dstIx, t.dstIy);
-    if (isAnimal || isSlaughterhouse) {
+    if (isAnimal) {
       if (!tileInPen) {
-        toast(isAnimal ? 'Animals must stay in a barn pen.'
-                       : 'Slaughterhouse must stay in a barn pen.', true);
+        toast('Animals must stay in a barn pen.', true);
+        audio.play('error'); return;
+      }
+    } else if (isSlaughterhouse) {
+      // Slaughterhouse can sit inside a pen or one tile outside it.
+      if (!nearBarnPen(t.dstIx, t.dstIy, 1)) {
+        toast('Slaughterhouse must be inside a barn pen or one tile outside it.', true);
         audio.play('error'); return;
       }
     } else if (isBuilding) {
@@ -14274,6 +14308,23 @@ function bindInput() {
             live.dragMode = 'idle';
             return;
           }
+          // Click on the slaughterhouse with no target marked — pop the
+          // barn roster filtered to slaughter-eligible animals so the
+          // player can pick from the mature roster directly. Routes
+          // through the barn that owns this slaughterhouse's pen so
+          // multi-pen farms surface the right animals.
+          if (placedHere.id === 'building_slaughterhouse') {
+            const pen = findPenForSlaughterhouse(hereIx, hereIy);
+            if (pen && typeof pen.barnIx === 'number') {
+              state._barnRosterMode = 'mature';
+              openBuildingMenu('building_barn', e.clientX, e.clientY, pen.barnIx, pen.barnIy);
+              audio.play('click');
+              live.dragMode = 'idle';
+              return;
+            }
+            // No pen association — fall through to the default building
+            // menu so Move / Sell still work on stray slaughterhouses.
+          }
           // Click on any building — pop a small in-place menu with the
           // building's description and any contextual action button. Skips
           // building_slaughterhouse when a slaughter target is set so the
@@ -15130,8 +15181,8 @@ function buildTooltipHTML(ix, iy) {
       const isBuilding = live.placeMode.id && live.placeMode.id.startsWith('building_');
       if (cat === 'animal' && !inBarnPen(ix, iy)) {
         badReason = 'Must be placed in the barnyard.';
-      } else if (live.placeMode.id === 'building_slaughterhouse' && !inBarnPen(ix, iy)) {
-        badReason = 'Must be placed inside the animal pen.';
+      } else if (live.placeMode.id === 'building_slaughterhouse' && !nearBarnPen(ix, iy, 1)) {
+        badReason = 'Must be placed inside or one tile outside an animal pen.';
       } else if (live.placeMode.id === 'building_barn') {
         badReason = 'Need empty grass with room for the pen south of here.';
       } else if (isBuilding && onCrop) {
