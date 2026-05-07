@@ -4635,6 +4635,32 @@ const SHOP_ITEMS = [
 // sprinkler tile. Preview overlay reads this so what the player sees
 // matches the shop description.
 const SPRINKLER_RADIUS = 2;
+// Distance between sprinkler centers when their 5×5 footprints sit
+// edge-to-edge with no overlap. A sprinkler covers the radius-2
+// neighborhood (5×5), so the next one over starts 5 tiles away.
+const SPRINKLER_SNAP_STEP = (SPRINKLER_RADIUS * 2) + 1;
+// Snap a candidate sprinkler placement so its 5×5 footprint lines up
+// flush with the nearest existing sprinkler — multiples of 5 in both
+// axes from any anchor. Falls back to (ix, iy) unchanged when there
+// are no sprinklers placed yet (the first one defines the grid). The
+// returned tile is the closest snap target to the player's cursor
+// across every existing sprinkler's grid alignment, so two separate
+// sprinkler fields with different anchors still both work.
+function snapSprinklerTile(ix, iy) {
+  let bestIx = ix, bestIy = iy, bestD = Infinity, found = false;
+  for (const k in state.placed) {
+    const it = state.placed[k];
+    if (!it || it.id !== 'building_sprinkler') continue;
+    const ci = k.indexOf(',');
+    const sIx = +k.slice(0, ci), sIy = +k.slice(ci + 1);
+    const stepDx = Math.round((ix - sIx) / SPRINKLER_SNAP_STEP) * SPRINKLER_SNAP_STEP;
+    const stepDy = Math.round((iy - sIy) / SPRINKLER_SNAP_STEP) * SPRINKLER_SNAP_STEP;
+    const sx = sIx + stepDx, sy = sIy + stepDy;
+    const d = (sx - ix) * (sx - ix) + (sy - iy) * (sy - iy);
+    if (d < bestD) { bestD = d; bestIx = sx; bestIy = sy; found = true; }
+  }
+  return found ? { ix: bestIx, iy: bestIy } : { ix, iy };
+}
 const SPRINKLER_INTERVAL_MS = 6000;
 // Soak the 5×5 vicinity around (sx, sy): every planted crop that isn't
 // already watered gets the watered flag, plays an FX, and credits the
@@ -9543,7 +9569,13 @@ function drawAll() {
   }
   // -------- Place ghost --------
   if (live.placeMode && live.hover) {
-    const { ix, iy } = live.hover;
+    let { ix, iy } = live.hover;
+    // Sprinkler placements snap to a 5-tile grid anchored on any
+    // existing sprinkler so their 5×5 coverage zones tile edge-to-edge.
+    if (live.placeMode.id === 'building_sprinkler') {
+      const snapped = snapSprinklerTile(ix, iy);
+      ix = snapped.ix; iy = snapped.iy;
+    }
     const c = isoCenter(ix, iy);
     ctx.save();
     ctx.globalAlpha = 0.7;
@@ -14579,6 +14611,24 @@ function bindInput() {
         // place-mode so the player can pick another spot.
         if (isPlaceableTile(startT.ix, startT.iy)) tryPlace(startT.ix, startT.iy);
         else { toast('Tile is occupied.', true); audio.play('error'); }
+      } else if (live.placeMode.id === 'building_sprinkler') {
+        // Sprinklers snap to the 5-tile grid established by any existing
+        // sprinkler so coverage zones tile flush. Apply the same snap
+        // we use for the ghost preview here so the click lands on the
+        // tile the player just saw highlighted instead of the raw
+        // cursor tile.
+        const snapped = snapSprinklerTile(startT.ix, startT.iy);
+        if (!isPlaceableTile(snapped.ix, snapped.iy) || state.coins < live.placeMode.cost) {
+          tryPlace(snapped.ix, snapped.iy);
+        } else {
+          state.player.queue.push({
+            tool: 'placeHere',
+            ix: snapped.ix, iy: snapped.iy,
+            placeData: { id: live.placeMode.id, name: live.placeMode.name,
+                         cost: live.placeMode.cost, moving: !!live.placeMode.moving },
+          });
+          if (!e.shiftKey) cancelPlaceMode();
+        }
       } else if (!isPlaceableTile(startT.ix, startT.iy) || state.coins < live.placeMode.cost) {
         // Invalid spot — let the existing tryPlace produce its toast +
         // error sound, but skip the walk-to-tile.
@@ -15686,16 +15736,21 @@ const MUT_TIERS = {
   // failMul scales the existing min(0.5, instability * 0.025) so a
   // maxed-out lab can still brew even a max-instability recipe with
   // < 5% fail at T10. Earlier tiers keep failMul == 1 by default.
-  1:  { slots: 2, rarityBonus: 0,  brewMin: 60, allowsCrossBreed: false, upgradeCost: 0,        failMul: 1.00 },
-  2:  { slots: 3, rarityBonus: 4,  brewMin: 50, allowsCrossBreed: false, upgradeCost: 48000,    failMul: 0.85 },
-  3:  { slots: 4, rarityBonus: 8,  brewMin: 40, allowsCrossBreed: false, upgradeCost: 140000,   failMul: 0.70 },
-  4:  { slots: 4, rarityBonus: 12, brewMin: 30, allowsCrossBreed: true,  upgradeCost: 360000,   failMul: 0.55 },
-  5:  { slots: 4, rarityBonus: 16, brewMin: 25, allowsCrossBreed: true,  upgradeCost: 900000,   failMul: 0.40 },
-  6:  { slots: 4, rarityBonus: 20, brewMin: 20, allowsCrossBreed: true,  upgradeCost: 2200000,  failMul: 0.28 },
-  7:  { slots: 4, rarityBonus: 24, brewMin: 16, allowsCrossBreed: true,  upgradeCost: 5400000,  failMul: 0.20 },
-  8:  { slots: 4, rarityBonus: 28, brewMin: 13, allowsCrossBreed: true,  upgradeCost: 13000000, failMul: 0.14 },
-  9:  { slots: 4, rarityBonus: 32, brewMin: 11, allowsCrossBreed: true,  upgradeCost: 30000000, failMul: 0.10 },
-  10: { slots: 4, rarityBonus: 36, brewMin: 9,  allowsCrossBreed: true,  upgradeCost: 70000000, failMul: 0.08 },
+  // Brew times were originally 60→9 minutes across the tier ladder, but
+  // the long tier-1 wait was the loudest pain point on early greenhouse
+  // play. Flat 15-minute brews across every tier — tier progression now
+  // pays out via slot count, rarity bonus, cross-breed unlock, and fail
+  // rate instead of stretching real-time waits.
+  1:  { slots: 2, rarityBonus: 0,  brewMin: 15, allowsCrossBreed: false, upgradeCost: 0,        failMul: 1.00 },
+  2:  { slots: 3, rarityBonus: 4,  brewMin: 15, allowsCrossBreed: false, upgradeCost: 48000,    failMul: 0.85 },
+  3:  { slots: 4, rarityBonus: 8,  brewMin: 15, allowsCrossBreed: false, upgradeCost: 140000,   failMul: 0.70 },
+  4:  { slots: 4, rarityBonus: 12, brewMin: 15, allowsCrossBreed: true,  upgradeCost: 360000,   failMul: 0.55 },
+  5:  { slots: 4, rarityBonus: 16, brewMin: 15, allowsCrossBreed: true,  upgradeCost: 900000,   failMul: 0.40 },
+  6:  { slots: 4, rarityBonus: 20, brewMin: 15, allowsCrossBreed: true,  upgradeCost: 2200000,  failMul: 0.28 },
+  7:  { slots: 4, rarityBonus: 24, brewMin: 15, allowsCrossBreed: true,  upgradeCost: 5400000,  failMul: 0.20 },
+  8:  { slots: 4, rarityBonus: 28, brewMin: 15, allowsCrossBreed: true,  upgradeCost: 13000000, failMul: 0.14 },
+  9:  { slots: 4, rarityBonus: 32, brewMin: 15, allowsCrossBreed: true,  upgradeCost: 30000000, failMul: 0.10 },
+  10: { slots: 4, rarityBonus: 36, brewMin: 15, allowsCrossBreed: true,  upgradeCost: 70000000, failMul: 0.08 },
 };
 // Slot order in the UI also dictates which slots a tier exposes.
 const MUT_SLOT_KEYS = ['water', 'light', 'soil', 'catalyst'];
