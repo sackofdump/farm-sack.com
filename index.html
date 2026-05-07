@@ -8701,6 +8701,32 @@ function movePenWithBarn(newBarnIx, newBarnIy, newBarnKey, oldBarnIx, oldBarnIy)
   oldPen.y0 += dy;
   oldPen.barnIx = newBarnIx;
   oldPen.barnIy = newBarnIy;
+  // Staff don't live in state.placed — they're tracked separately in
+  // state.staff.members — so the loop above missed them. Animal keepers
+  // (and any other staffer that happens to be standing inside the OLD
+  // pen footprint at move time) need the same translation so they don't
+  // get stranded outside the relocated pen and stop tending animals.
+  if (state.staff && Array.isArray(state.staff.members)) {
+    const oldX1 = oldPen.x0 - dx + w, oldY1 = oldPen.y0 - dy + h;
+    const oldX0 = oldPen.x0 - dx,    oldY0 = oldPen.y0 - dy;
+    for (const sm of state.staff.members) {
+      const homeIn = typeof sm.homeIx === 'number' && typeof sm.homeIy === 'number' &&
+                     sm.homeIx >= oldX0 && sm.homeIx < oldX1 &&
+                     sm.homeIy >= oldY0 && sm.homeIy < oldY1;
+      const standIn = sm.ix >= oldX0 && sm.ix < oldX1 && sm.iy >= oldY0 && sm.iy < oldY1;
+      if (!homeIn && !standIn) continue;
+      sm.ix     = (sm.ix || 0) + dx;
+      sm.iy     = (sm.iy || 0) + dy;
+      sm.homeIx = (sm.homeIx || 0) + dx;
+      sm.homeIy = (sm.homeIy || 0) + dy;
+      // Drop their in-flight task / queue so they re-evaluate against
+      // the pen's new tile coordinates immediately rather than walking
+      // toward stale targets in the old footprint.
+      sm.task = null;
+      sm.queue = [];
+      sm.nextSearchAt = 0;
+    }
+  }
   // Belt-and-braces: if any animal landed outside the translated pen
   // (shouldn't happen, but botched saves can carry strays), pull them in.
   sweepStrayAnimalsIntoPens();
