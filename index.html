@@ -16627,16 +16627,35 @@ document.addEventListener('visibilitychange', () => {
 // ============================================================
 async function startGame() {
   resizeCanvas();
-  // First try the cloud save; fall back to the local cache if the network
-  // is offline / RLS blocks / no row exists yet.
+  // Load both cloud + local, pick the one with the newer lastSaved.
+  // Cloud writes are debounced ~1.5s; if the player tweaks something
+  // (rotates the camera, etc.) and closes the tab before the push
+  // fires, the local save has the fresh value but cloud is stale.
+  // Old behaviour preferred cloud unconditionally and silently ate
+  // the most-recent change. Comparing lastSaved keeps whichever
+  // copy actually has the freshest data.
   let had = false;
+  let remote = null;
   if (cloud && cloud.user) {
-    try {
-      const remote = await cloud.loadSave();
-      if (remote) had = storage.applySave(remote);
-    } catch (e) { /* ignore — fall back to local */ }
+    try { remote = await cloud.loadSave(); } catch (e) { remote = null; }
   }
-  if (!had) had = storage.load();
+  let localData = null;
+  try {
+    const raw = localStorage.getItem(SAVE_KEY);
+    if (raw) localData = JSON.parse(raw);
+  } catch (e) { localData = null; }
+  const remoteAt = (remote && remote.lastSaved) || 0;
+  const localAt  = (localData && localData.lastSaved) || 0;
+  // Prefer remote when it's at least as new (cloud is the canonical
+  // copy across devices). Local only wins if it's strictly newer —
+  // typically because a recent change hadn't pushed yet.
+  if (remote && remoteAt >= localAt) {
+    had = storage.applySave(remote);
+  } else if (localData) {
+    had = storage.applySave(localData);
+  } else if (remote) {
+    had = storage.applySave(remote);
+  }
   // Wipe-Save preserves prestige across the reload via a separate
   // localStorage key. If the carry record exists AND the loaded state
   // doesn't have any banked bonus, replay the carry so the new run
