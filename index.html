@@ -4669,11 +4669,13 @@ const SPRINKLER_RADIUS = 2;
 const SPRINKLER_SNAP_STEP = (SPRINKLER_RADIUS * 2) + 1;
 // Snap a candidate sprinkler placement so its 5×5 footprint lines up
 // flush with the nearest existing sprinkler — multiples of 5 in both
-// axes from any anchor. Falls back to (ix, iy) unchanged when there
-// are no sprinklers placed yet (the first one defines the grid). The
-// returned tile is the closest snap target to the player's cursor
-// across every existing sprinkler's grid alignment, so two separate
-// sprinkler fields with different anchors still both work.
+// axes from any anchor. Returns the unchanged cursor tile when:
+//   • no sprinklers are placed yet (the first one defines the grid), or
+//   • the nearest snap target is more than SPRINKLER_RADIUS tiles
+//     away — past that range the player is intentionally placing far
+//     from the existing grid (e.g. inside another sprinkler's coverage
+//     for redundant watering), so we honour the cursor instead of
+//     yanking it back to the rigid 5-grid.
 function snapSprinklerTile(ix, iy) {
   let bestIx = ix, bestIy = iy, bestD = Infinity, found = false;
   for (const k in state.placed) {
@@ -4687,7 +4689,12 @@ function snapSprinklerTile(ix, iy) {
     const d = (sx - ix) * (sx - ix) + (sy - iy) * (sy - iy);
     if (d < bestD) { bestD = d; bestIx = sx; bestIy = sy; found = true; }
   }
-  return found ? { ix: bestIx, iy: bestIy } : { ix, iy };
+  // Snap radius — within ~2 tiles of a grid intersection we yank to
+  // the grid; beyond that we leave the cursor alone so the player can
+  // overlap coverage zones at will.
+  const SNAP_RADIUS_SQ = SPRINKLER_RADIUS * SPRINKLER_RADIUS;
+  if (!found || bestD > SNAP_RADIUS_SQ) return { ix, iy };
+  return { ix: bestIx, iy: bestIy };
 }
 const SPRINKLER_INTERVAL_MS = 6000;
 // Soak the 5×5 vicinity around (sx, sy): every planted crop that isn't
@@ -9046,6 +9053,10 @@ function isPlaceableTile(ix, iy) {
   if (id && id.startsWith('building_')) {
     if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) return false;
     if (inBarnPen(ix, iy)) return false;
+    // Sprinklers are fence-bound — they only water crops, so dropping
+    // one on un-bought meadow does nothing useful and just dilutes the
+    // bulk-paint pass. Restrict to the live worldBounds rect.
+    if (id === 'building_sprinkler' && !inWorld(ix, iy)) return false;
     // Don't quietly bulldoze a planted crop — block placement so the
     // tooltip's "Tile is occupied" branch fires + the click → tryPlace
     // path produces an audible error instead of silently destroying
@@ -9448,7 +9459,9 @@ function drawAll() {
       // Sprinkler bulk-place strides every SPRINKLER_SNAP_STEP tiles
       // (so coverage zones tile flush) — preview only the snap-grid
       // positions, not every tile under the rect, so the player can
-      // see exactly where each sprinkler will land.
+      // see exactly where each sprinkler will land. Coverage cells
+      // that fall outside the bought play area are skipped so the
+      // preview stays inside the fence.
       let anchorX = x0, anchorY = y0;
       for (const sk in state.placed) {
         const it = state.placed[sk];
@@ -9463,7 +9476,7 @@ function drawAll() {
       const startY = anchorY + Math.ceil((y0 - anchorY) / STEP) * STEP;
       for (let iy = startY; iy <= y1; iy += STEP) {
         for (let ix = startX; ix <= x1; ix += STEP) {
-          if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) continue;
+          if (!inWorld(ix, iy)) continue;
           const ok = isPlaceableTile(ix, iy);
           // Paint the full 5×5 footprint each sprinkler will cover so
           // the player sees the watering coverage too, not just the
@@ -9471,7 +9484,7 @@ function drawAll() {
           for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
             for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
               const tx = ix + dx, ty = iy + dy;
-              if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
+              if (!inWorld(tx, ty)) continue;
               const cc = isoCenter(tx, ty);
               drawHoverHighlight(cc.x, cc.y, ok ? '#6CC8FF' : '#FF7B6B');
             }
@@ -9709,11 +9722,15 @@ function drawAll() {
     //            red read as "blocked" and made players think the
     //            placement was being rejected.
     if (live.placeMode.id === 'building_sprinkler') {
+      // Clip the coverage preview to the bought play area — sprinklers
+      // are restricted to inside the fence, so showing cyan tiles on
+      // un-bought meadow misled the player about where the spray would
+      // actually land. inWorld respects the live worldBounds rect.
       const cursorCovers = new Set();
       for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
         for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
           const tx = ix + dx, ty = iy + dy;
-          if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
+          if (!inWorld(tx, ty)) continue;
           cursorCovers.add(tx + ',' + ty);
         }
       }
@@ -9728,7 +9745,7 @@ function drawAll() {
         for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
           for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
             const tx = sIx + dx, ty = sIy + dy;
-            if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) continue;
+            if (!inWorld(tx, ty)) continue;
             existingCovers.add(tx + ',' + ty);
           }
         }
