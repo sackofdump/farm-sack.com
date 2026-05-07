@@ -539,6 +539,9 @@ button.brand.brand-clickable:active { transform: translateY(2px); }
 .tool.toolSlaughterhouse {
   background: linear-gradient(to bottom, #A03423 0%, #6A1A12 100%);
 }
+.tool.toolSeedContainer {
+  background: linear-gradient(to bottom, #C2884A 0%, #7A4A23 100%);
+}
 .tool.toolLocked {
   filter: grayscale(1) brightness(0.65);
   cursor: not-allowed;
@@ -5121,7 +5124,7 @@ const storage = {
                 'dailies','dailyResetAt','dailiesCompleted','dailyStreak','lastDailyDay',
                 'tutorialStep','prefs','barnPen','barnPens','clearedWild','barnTutorialShown','greenhouseTutorialShown',
                 'siloTutorialShown','dogTutorialShown','greenhouse','priorityQuests','silo','staff','staffTutorialShown','coffeeStand','expandHintShown',
-                'slaughterhouseTutorialShown','staffComboTutorialShown','prestige','prestigeTutorialShown'],
+                'slaughterhouseTutorialShown','staffComboTutorialShown','prestige','prestigeTutorialShown','staffPaused'],
   // Load from a parsed save object (used by both local + cloud paths).
   applySave(data) {
     if (!data || typeof data !== 'object') return false;
@@ -7266,9 +7269,19 @@ const BUILDING_MENUS = {
       const rosterHtml = (state.staff && state.staff.members && state.staff.members.length)
         ? state.staff.members.map(renderRow).join('')
         : `<div style="text-align:center;color:#7a5430;font-style:italic;padding:8px 0;">No staff hired yet — use the buttons below.</div>`;
+      // Global pause toggle — flips state.staffPaused which the per-role
+      // tickers (tickCropFarmer / tickArborist / tickAnimalKeeper) check
+      // before searching for new tasks. Useful when the player wants to
+      // do a hand-built layout pass without the farmer plowing the row
+      // they just laid out.
+      const paused = !!state.staffPaused;
+      const pauseBtn = total === 0 ? '' :
+        `<button data-staff-action="pause-all" style="display:block;width:100%;margin:6px 0 4px;padding:7px 10px;background:${paused ? 'linear-gradient(to bottom,#7BC56A,#3F8338)' : 'linear-gradient(to bottom,#E27464,#A03423)'};color:#FFF;border:2px solid ${paused ? '#2A4A1A' : '#6A1A12'};border-radius:8px;font-weight:800;font-size:13px;cursor:pointer;box-shadow:0 2px 0 ${paused ? '#2A4A1A' : '#6A1A12'};">${paused ? '▶ Resume All Workers' : '⏸ Stop All Workers'}</button>`;
       return (
         `<div style="margin-bottom:6px;">Roster: <b>${total}/${cap}</b>` +
+        (paused ? ` <span style="color:#A03423;font-weight:700;">· paused</span>` : ``) +
         `</div>` +
+        pauseBtn +
         `<div style="max-height:240px;overflow-y:auto;margin:6px -2px;">${rosterHtml}</div>` +
         `<div style="font-size:12px;color:#5b3f1f;">Wages: <b>${STAFF_DAILY_UPKEEP}¢/day</b> per staffer (auto-deducted; staff quit if you can't pay).</div>` +
         (() => {
@@ -7656,6 +7669,28 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
       btn.addEventListener('click', (ev) => {
         ev.stopPropagation();
         const action = btn.getAttribute('data-staff-action');
+        // pause-all is a roster-wide toggle, not a per-member action,
+        // so it doesn't carry a data-staff-id. Handle it before the
+        // member lookup so we don't bail on the missing id.
+        if (action === 'pause-all') {
+          state.staffPaused = !state.staffPaused;
+          // Drop every in-flight task so resuming snaps the workers
+          // back into the search loop right away — otherwise they'd
+          // finish whatever they were mid-walk on first.
+          if (state.staff && Array.isArray(state.staff.members)) {
+            for (const m of state.staff.members) {
+              m.task = null;
+              m.queue = [];
+              m.nextSearchAt = 0;
+            }
+          }
+          audio.play('click');
+          storage.save();
+          // Re-open the menu so the button label flips between Stop
+          // and Resume to match the new state.
+          setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+          return;
+        }
         const sid = parseInt(btn.getAttribute('data-staff-id'), 10);
         if (!state.staff || !Array.isArray(state.staff.members)) return;
         const member = state.staff.members.find(m => m.id === sid);
@@ -10632,6 +10667,10 @@ function tickStaff(dtMs) {
 }
 function tickArborist(m, dt, now) {
   if (m.cooldownAt && now < m.cooldownAt) return;
+  // Roster-wide pause toggle from the Staff Hall menu — when set, every
+  // worker stops searching for tasks. They still occupy their tile so
+  // the player can see they exist, just don't pick up anything new.
+  if (state.staffPaused) { m.task = null; return; }
   if (!m.task) {
     // Throttle the full state.placed scan to once every ~300ms when the
     // arborist has nothing to do. Without this, an idle arborist re-scans
@@ -10689,6 +10728,8 @@ function tickArborist(m, dt, now) {
 function tickCropFarmer(m, dt, now) {
   // Cooldown after each action so they don't spam-clear the entire farm.
   if (m.cooldownAt && now < m.cooldownAt) return;
+  // Roster-wide pause toggle from the Staff Hall menu — see tickArborist.
+  if (state.staffPaused) { m.task = null; return; }
   // No active task? Find one.
   if (!m.task) {
     // Throttle the per-frame zone scan to once every ~300ms when there's
@@ -10762,6 +10803,8 @@ function tickCropFarmer(m, dt, now) {
 // Limited to the keeper's own pen so multi-pen farms route correctly.
 function tickAnimalKeeper(m, dt, now) {
   if (m.cooldownAt && now < m.cooldownAt) return;
+  // Roster-wide pause toggle from the Staff Hall menu — see tickArborist.
+  if (state.staffPaused) { m.task = null; return; }
   if (!m.task) {
     if (m.nextSearchAt && now < m.nextSearchAt) {
       // Skip the scan this frame.
@@ -13230,6 +13273,40 @@ function buildToolbar() {
     }
   });
   tb.appendChild(staffBtn);
+
+  // ---- Seed Container shortcut ----
+  // Pops the network buy/queue modal directly, the same way clicking
+  // a placed seed container on the map does (no walking required).
+  const seedItem = SHOP_ITEMS.find(i => i.id === 'building_seed_container');
+  const seedUnlockLv = seedItem ? (seedItem.unlock || 1) : 15;
+  const firstSeedKey = Object.keys(state.placed || {}).find(k =>
+    state.placed[k] && state.placed[k].id === 'building_seed_container'
+  );
+  const seedLocked = state.level < seedUnlockLv;
+  const seedBtn = document.createElement('button');
+  seedBtn.className = 'tool toolSeedContainer' + (seedLocked ? ' toolLocked' : '');
+  seedBtn.id = 'toolSeedContainerBtn';
+  seedBtn.title = seedLocked
+    ? `Seed Container — unlocks at Lv ${seedUnlockLv}`
+    : (firstSeedKey ? 'Seed Container — open the network' : 'Seed Container — buy one in the shop');
+  seedBtn.disabled = seedLocked;
+  const seedIcon = document.createElement('img');
+  seedIcon.src = imgPath('building_seed_container'); seedIcon.alt = 'Seed Container';
+  seedIcon.style.cssText = 'object-fit:contain;width:60px;height:60px;';
+  seedBtn.appendChild(seedIcon);
+  seedBtn.addEventListener('click', () => {
+    if (seedLocked) return;
+    if (!firstSeedKey) {
+      activeShopTab = 'building';
+      openShop();
+      audio.play('click');
+      return;
+    }
+    const [sx, sy] = firstSeedKey.split(',').map(Number);
+    openSeedContainerModal(sx, sy);
+    audio.play('click');
+  });
+  tb.appendChild(seedBtn);
   // Horse mount/dismount shortcut — sits to the right of the Staff Hall
   // button. Greyed out until the horse unlock level. Click while
   // dismounted: queue a walk-to + mount for the nearest placed horse.
@@ -14400,6 +14477,16 @@ function bindInput() {
           // the Move tool / Sell tool toolbar buttons.
           if (placedHere.id === 'building_greenhouse') {
             openMutationModal();
+            audio.play('click');
+            live.dragMode = 'idle';
+            return;
+          }
+          // Click on a built seed container — skip the in-place menu
+          // (which only had a single "Open Container" button) and pop
+          // the network buy/queue modal directly. Same reasoning as
+          // the greenhouse redirect above.
+          if (placedHere.id === 'building_seed_container') {
+            openSeedContainerModal(hereIx, hereIy);
             audio.play('click');
             live.dragMode = 'idle';
             return;
