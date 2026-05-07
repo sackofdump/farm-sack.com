@@ -9984,6 +9984,30 @@ function seedNetworkAggregate() {
   });
   return map;
 }
+// Reorder a seed type within the network — every container's queue
+// gets re-sorted to match the new global order, so the crop farmer's
+// "head of queue" pick (q[0].id) shifts in lockstep across all
+// containers. direction = -1 moves the seed one slot up (planted
+// sooner), +1 moves it down (planted later).
+function reorderNetworkSeed(seedId, direction) {
+  const map = seedNetworkAggregate();
+  const orderIds = Array.from(map.keys());
+  const i = orderIds.indexOf(seedId);
+  if (i < 0) return;
+  const j = i + direction;
+  if (j < 0 || j >= orderIds.length) return;
+  [orderIds[i], orderIds[j]] = [orderIds[j], orderIds[i]];
+  eachSeedContainer(p => {
+    const q = ensureSeedQueue(p) || [];
+    const byId = new Map(q.map(e => [e.id, e]));
+    const newQ = [];
+    for (const id of orderIds) if (byId.has(id)) newQ.push(byId.get(id));
+    // Defensive: keep any seed entries that somehow weren't in the
+    // global order (newly-added during this frame, etc.).
+    for (const e of q) if (!orderIds.includes(e.id)) newQ.push(e);
+    p.seedQueue = newQ;
+  });
+}
 function seedNetworkCapacity() {
   // Capacity is unlimited as long as at least one container exists.
   // Guard the no-container case explicitly so callers don't get NaN
@@ -10090,6 +10114,35 @@ function buildSeedContainerModal() {
           `<div style="width:24px;text-align:center;font-weight:800;color:#7a5430;">${idx + 1}.</div>` +
           `<img src="${imgPath('crop_'+seedId+'_4')}" style="width:32px;height:32px;object-fit:contain;">` +
           `<div style="flex:1;"><b>${name}</b> <span style="color:#7a5430;">× ${qty.toLocaleString()}</span></div>`;
+        // Up/down arrows reorder the queue across every container so
+        // the farmer's head-of-queue pick changes accordingly. Disabled
+        // (and dimmed) at the boundaries so the player gets a visual
+        // hint that the seed is already top/bottom.
+        const arrowStyle = (disabled) =>
+          `padding:4px 8px;font-size:14px;font-weight:700;` +
+          `background:${disabled ? '#a89169' : 'linear-gradient(to bottom,#E5C77A,#B0863A)'};` +
+          `border:2px solid #5C3F1A;color:#3a2410;border-radius:6px;` +
+          `cursor:${disabled ? 'not-allowed' : 'pointer'};opacity:${disabled ? 0.5 : 1};`;
+        const upBtn = document.createElement('button');
+        upBtn.textContent = '▲';
+        upBtn.title = 'Move up — planted sooner';
+        upBtn.disabled = idx === 0;
+        upBtn.style.cssText = arrowStyle(idx === 0);
+        upBtn.onclick = () => {
+          if (upBtn.disabled) return;
+          reorderNetworkSeed(seedId, -1);
+          storage.save(); buildSeedContainerModal(); audio.play('click');
+        };
+        const downBtn = document.createElement('button');
+        downBtn.textContent = '▼';
+        downBtn.title = 'Move down — planted later';
+        downBtn.disabled = idx === entries.length - 1;
+        downBtn.style.cssText = arrowStyle(idx === entries.length - 1);
+        downBtn.onclick = () => {
+          if (downBtn.disabled) return;
+          reorderNetworkSeed(seedId, +1);
+          storage.save(); buildSeedContainerModal(); audio.play('click');
+        };
         const rm = document.createElement('button');
         rm.textContent = '−1';
         rm.style.cssText = 'padding:4px 10px;font-size:12px;font-weight:700;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border:2px solid var(--wood-3);color:#FFF;border-radius:6px;cursor:pointer;';
@@ -10104,6 +10157,8 @@ function buildSeedContainerModal() {
           removeSeedFromNetwork(seedId, qty);
           storage.save(); buildSeedContainerModal();
         };
+        row.appendChild(upBtn);
+        row.appendChild(downBtn);
         row.appendChild(rm);
         row.appendChild(rmAll);
         list.appendChild(row);
