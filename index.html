@@ -593,6 +593,25 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
   text-shadow: 0 1px 0 rgba(255,255,255,0.7);
 }
 .modal-body p { color: #6A4A22; font-size: 13px; margin: 0 0 12px; }
+/* Sticky modal header — keeps the title + Close button anchored to
+   the top of the scroll viewport on long modals. Catches both patterns
+   the codebase uses: a bare <h2> at the top, or a flex <div> wrapping
+   <h2> + Close button. Each modal-body sets its own padding inline
+   (18 22, 22 26, etc.), so we lean on the modal-body's parchment
+   gradient + a solid header background instead of trying to negative-
+   margin out to the edge. As content scrolls under the header, the
+   header's opaque parchment hides it. */
+.modal-body > h2:first-child,
+.modal-body > div:first-child:has(> h2) {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  background: var(--parchment);
+  padding-top: 4px;
+  padding-bottom: 8px;
+  margin-bottom: 6px;
+  box-shadow: 0 6px 6px -6px rgba(74, 46, 21, 0.25);
+}
 .tabbar {
   display: flex;
   gap: 4px;
@@ -10126,6 +10145,9 @@ function removeSeedFromNetwork(seedId, qty) {
   return removed;
 }
 function openSeedContainerModal(ix, iy) {
+  // Force the live-refresh signature to invalidate so the next loop
+  // tick repaints if anything has changed since we last rendered.
+  _seedModalLastSig = '';
   // We treat all containers as one shared network now — clicking any
   // single one opens the unified view. Still validate that the click
   // landed on a real container so a stale ix/iy doesn't pop the modal
@@ -10141,6 +10163,36 @@ function openSeedContainerModal(ix, iy) {
 function closeSeedContainerModal() {
   live.activeSeedContainer = null;
   document.getElementById('seedContainerModal').classList.add('hidden');
+}
+// Throttled live refresh — keeps the open seed container modal in sync
+// as crop farmers plant from the network or sprinklers / other actions
+// don't directly touch the queue but the player still expects the
+// "× N" counts to tick down in real time. Mirrors the building-menu
+// live refresh: skips when the modal is closed, only re-renders when
+// the network's actual contents have changed (cheap signature compare)
+// so unrelated frames don't repaint the grid every tick.
+let _seedModalLastSig = '';
+let _seedModalLastTickAt = 0;
+function refreshLiveSeedContainerModal() {
+  if (!live.activeSeedContainer) return;
+  const modal = document.getElementById('seedContainerModal');
+  if (!modal || modal.classList.contains('hidden')) {
+    live.activeSeedContainer = null;
+    _seedModalLastSig = '';
+    return;
+  }
+  // Cap the refresh at ~3/sec so a flurry of plants doesn't thrash
+  // the modal's DOM tree (and any focused buttons inside it).
+  const now = Date.now();
+  if (now - _seedModalLastTickAt < 333) return;
+  _seedModalLastTickAt = now;
+  // Build a cheap signature of the network's queue so an idle frame
+  // (no farmer plants since last refresh) is a no-op.
+  const sig = Array.from(seedNetworkAggregate().entries())
+    .map(([id, qty]) => id + ':' + qty).join('|');
+  if (sig === _seedModalLastSig) return;
+  _seedModalLastSig = sig;
+  buildSeedContainerModal();
 }
 function buildSeedContainerModal() {
   // Network view — shows totals across every placed seed container.
@@ -16951,6 +17003,7 @@ function loop(t) {
   tickStaff(dt);            // wander the visible staffers around the staff hall
   tickSprinklers();         // pour every 6 sec: water unwatered planted crops in 5×5 + grant XP
   if (!hidden) refreshLiveBuildingMenu();// keep the open building popup's desc text live
+  if (!hidden) refreshLiveSeedContainerModal();// keep the seed container modal's qty in sync as farmers consume seeds
   tickCoyote(dt);           // roll for / move / despawn coyote raids and the chasing dog
   tickPlacedAnimals(dt);    // drift pen animals around inside the fence
   edgePanTick(dt);          // auto-pan camera when a bulk-select drag pushes against the screen edges
