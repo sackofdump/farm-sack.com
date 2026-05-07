@@ -14250,6 +14250,44 @@ function applyExpandArea() {
     }
   }
   state.worldBounds = { x0: newX0, y0: newY0, w: newW, h: newH };
+  // Crop farmer zones that hugged the OLD farm boundary should grow
+  // alongside it — otherwise the player who expands a zone-fills-
+  // the-whole-farm setup ends up with a bare ring just outside the
+  // old fence that the farmer ignores. For each side of the zoneRect
+  // that was flush with the old worldBounds, extend it to the matching
+  // side of the new bounds, then re-derive the zone's tile list from
+  // the bumped rect.
+  const oldX1 = b.x0 + b.w - 1, oldY1 = b.y0 + b.h - 1;
+  const newX1 = newX0 + newW - 1, newY1 = newY0 + newH - 1;
+  if (state.staff && Array.isArray(state.staff.members)) {
+    for (const m of state.staff.members) {
+      if (m.role !== 'crop_farmer') continue;
+      if (!m.zoneRect) continue;
+      const r = m.zoneRect;
+      let zx0 = r.x0, zy0 = r.y0, zx1 = r.x1, zy1 = r.y1;
+      let bumped = false;
+      if (zx0 === b.x0)   { zx0 = newX0; bumped = true; }
+      if (zy0 === b.y0)   { zy0 = newY0; bumped = true; }
+      if (zx1 === oldX1)  { zx1 = newX1; bumped = true; }
+      if (zy1 === oldY1)  { zy1 = newY1; bumped = true; }
+      if (!bumped) continue;
+      m.zoneRect = { x0: zx0, y0: zy0, x1: zx1, y1: zy1 };
+      const tiles = [];
+      for (let iy = zy0; iy <= zy1; iy++) {
+        for (let ix = zx0; ix <= zx1; ix++) {
+          if (inBarnPen(ix, iy)) continue;
+          if (inCropFarm(ix, iy)) tiles.push(`${ix},${iy}`);
+        }
+      }
+      m.zone = tiles;
+      // Drop the in-flight task so the farmer re-evaluates immediately
+      // against the larger zone instead of finishing whatever they
+      // were on (which may now be off-center for the new rectangle).
+      m.task = null;
+      m.queue = [];
+      m.nextSearchAt = 0;
+    }
+  }
 }
 
 function afterUpgrade(grid, label) {
