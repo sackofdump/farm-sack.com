@@ -593,14 +593,21 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
   text-shadow: 0 1px 0 rgba(255,255,255,0.7);
 }
 .modal-body p { color: #6A4A22; font-size: 13px; margin: 0 0 12px; }
-/* Sticky modal header — keeps the title + Close button anchored to
-   the top of the scroll viewport on long modals. Catches both patterns
-   the codebase uses: a bare <h2> at the top, or a flex <div> wrapping
-   <h2> + Close button. Each modal-body sets its own padding inline
-   (18 22, 22 26, etc.), so we lean on the modal-body's parchment
-   gradient + a solid header background instead of trying to negative-
-   margin out to the edge. As content scrolls under the header, the
-   header's opaque parchment hides it. */
+/* Sticky modal header — keeps the title (and any always-visible
+   summary rows) anchored to the top of the scroll viewport on long
+   modals. Three patterns are matched:
+     • An explicit <div class="modalStickyHeader"> wrapper for modals
+       that want more than the title row pinned (seed container's
+       totals + bar + queued-seeds heading, etc.).
+     • A bare <h2> first child for simple modals.
+     • A flex <div> first child wrapping <h2> + Close button for the
+       common title-row pattern.
+   Each modal-body sets its own padding inline (18 22, 22 26, etc.),
+   so we lean on the modal-body's parchment gradient + a solid header
+   background instead of negative-margining out to the edge — as
+   content scrolls under the header, the header's opaque parchment
+   hides it. */
+.modal-body > .modalStickyHeader,
 .modal-body > h2:first-child,
 .modal-body > div:first-child:has(> h2) {
   position: sticky;
@@ -2264,15 +2271,17 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
 <!-- Seed-container buy menu — opens after the farmer walks to the bin. -->
 <div id="seedContainerModal" class="modal hidden">
   <div class="modal-body" style="width:auto;max-width:min(960px,96vw);max-height:88vh;overflow:auto;padding:18px 22px;">
-    <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;">
-      <h2 style="margin:0;">&#127793; Seed Container</h2>
-      <button class="splashBtn" data-close style="width:auto;padding:7px 14px;font-size:13px;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border-color:var(--wood-3);box-shadow:0 3px 0 var(--wood-3);">Close</button>
+    <div class="modalStickyHeader">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:8px;">
+        <h2 style="margin:0;">&#127793; Seed Container</h2>
+        <button class="splashBtn" data-close style="width:auto;padding:7px 14px;font-size:13px;background:linear-gradient(to bottom,#C98E4F,#8a5a32);border-color:var(--wood-3);box-shadow:0 3px 0 var(--wood-3);">Close</button>
+      </div>
+      <div id="scQueueInfo" style="margin-bottom:6px;font-size:13px;color:#4A2E15;"></div>
+      <div style="background:#3a2818;height:9px;border-radius:5px;overflow:hidden;margin:0 0 10px;">
+        <div id="scQueueBar" style="width:0%;height:100%;background:linear-gradient(180deg,#FBE38A,#E8B339);"></div>
+      </div>
+      <h3 style="margin:8px 0 4px;color:#4A2E15;font-size:14px;">Queued seeds</h3>
     </div>
-    <div id="scQueueInfo" style="margin-bottom:6px;font-size:13px;color:#4A2E15;"></div>
-    <div style="background:#3a2818;height:9px;border-radius:5px;overflow:hidden;margin:0 0 10px;">
-      <div id="scQueueBar" style="width:0%;height:100%;background:linear-gradient(180deg,#FBE38A,#E8B339);"></div>
-    </div>
-    <h3 style="margin:8px 0 4px;color:#4A2E15;font-size:14px;">Queued seeds</h3>
     <div id="scQueueList" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px;"></div>
     <h3 style="margin:8px 0 6px;color:#4A2E15;font-size:14px;">Buy seeds</h3>
     <div id="scSeedGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;"></div>
@@ -10643,6 +10652,14 @@ function openStaffMenu(member, screenX, screenY) {
 }
 function cancelZoneSelect() {
   live.zoneSelect = null;
+  // The zone picker keeps the staffer's existing zone painted blue
+  // underneath the live drag rect (so the player can see what they're
+  // about to overwrite). Without clearing the highlight here, hitting
+  // Cancel left those blue tiles stuck on screen even though the
+  // picker had been dismissed. Drop the drag-mode flag too in case
+  // the player cancelled mid-drag.
+  live.highlightedStaff = null;
+  if (live.dragMode === 'zoneSelect') live.dragMode = 'idle';
   const banner = document.getElementById('zoneSelectBanner');
   if (banner) banner.style.display = 'none';
 }
