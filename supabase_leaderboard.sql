@@ -28,7 +28,16 @@ alter table public.leaderboard
   add column if not exists animals_slaughtered int not null default 0,
   add column if not exists staff_harvested     int not null default 0,
   add column if not exists prestige_count      int not null default 0,
-  add column if not exists prestige_bonus_pct  int not null default 0;
+  add column if not exists prestige_bonus_pct  numeric(8,2) not null default 0;
+
+-- Widen prestige_bonus_pct from int to numeric(8,2) on installs that
+-- predate this change. Prestige bonus is now tracked to 0.01% precision
+-- in-game (e.g. 46.55% from a reset at 46.55M coins), so the leaderboard
+-- column has to accept fractional percent values too. Idempotent:
+-- re-running against a column that's already numeric(8,2) is a no-op.
+alter table public.leaderboard
+  alter column prestige_bonus_pct type numeric(8,2)
+  using prestige_bonus_pct::numeric(8,2);
 
 -- Indexes for the two sort orders the leaderboard uses.
 create index if not exists leaderboard_level_coins_idx

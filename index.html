@@ -12260,7 +12260,12 @@ async function renderLeaderboardTab(wrap) {
       const v = r[c.key] ?? 0;
       let cell;
       if (c.fmt === 'pct') {
-        cell = `+${(typeof v === 'number' ? v : 0).toLocaleString()}%`;
+        // numeric(8,2) columns can come back from supabase-js as strings,
+        // so coerce defensively. Format up to 2 decimals with trailing
+        // zeros trimmed: 46.55 → "46.55", 46 → "46".
+        const n = typeof v === 'number' ? v : (parseFloat(v) || 0);
+        const trimmed = parseFloat(n.toFixed(2));
+        cell = `+${trimmed.toLocaleString()}%`;
       } else if (typeof v === 'number') {
         cell = v.toLocaleString();
       } else {
@@ -16981,7 +16986,7 @@ const cloud = {
     });
     const fullRow = Object.assign({}, withStaff, {
       prestige_count:     (state.prestige && state.prestige.count)      || 0,
-      prestige_bonus_pct: Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100),
+      prestige_bonus_pct: Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 10000) / 100,
     });
     const isMissingColumn = (err) => err && /does not exist|schema cache|could not find the/i.test(err.message || '');
     let { error } = await sb.from('leaderboard').upsert(fullRow, { onConflict: 'user_id' });
