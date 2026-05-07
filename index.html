@@ -3175,7 +3175,8 @@ function resetFarm() {
   state.barnPen = null;
   state.barnPens = [];
   state.clearedWild = {};
-  state.worldBounds = null;         // reverts to defaultWorldBounds
+  // Re-derived a few lines below after CROP_FARM.x0/y0/w/h are reset to
+  // the new prestige-scaled size and re-centered.
   state.silo = { feed: 0, lastTickAt: 0, boostMs: 0 };
   state.coffeeStand = { coffee: 0, lastTickAt: 0 };
   state.staff = { members: [], lastUpkeepAt: 0, lastLoyaltyAt: 0, nextStaffId: 1 };
@@ -3192,9 +3193,21 @@ function resetFarm() {
   // CROP_FARM is a `const` BINDING but the object is mutable —
   // applyExpandArea / Expand-Field bumped its w/h over time. Reset it
   // alongside the state fields so defaultWorldBounds() returns the
-  // freshly-sized rect on the new run.
+  // freshly-sized rect on the new run. Also re-center it inside the
+  // world: a prestige-scaled farm anchored at the original (32,32)
+  // origin pushed the rect into the bottom-right of the meadow as
+  // it grew. Snap (x0,y0) to the world center for the new size.
   CROP_FARM.w = startSize;
   CROP_FARM.h = startSize;
+  CROP_FARM.x0 = Math.max(0, Math.floor((WORLD_W - startSize) / 2));
+  CROP_FARM.y0 = Math.max(0, Math.floor((WORLD_H - startSize) / 2));
+  // Lock in the freshly-recentered rect as the active world bounds.
+  // Earlier this was nulled and inWorld was expected to fall back to
+  // defaultWorldBounds(); that path had a bug where null meant
+  // "everywhere" so the player could place buildings on the entire
+  // 72×72 meadow on prestige runs. Setting it explicitly here is
+  // belt-and-suspenders alongside the inWorld fix.
+  state.worldBounds = defaultWorldBounds();
   state.player = {
     ix: CROP_FARM.x0 - 1, iy: CROP_FARM.y0 + CROP_FARM.h,
     queue: [], facing: 1, busy: 0, pending: null,
@@ -5597,8 +5610,14 @@ function inWorld(ix, iy) {
   // The animal pen is part of the playable world even though it lives
   // outside worldBounds — animals roam it freely.
   if (inBarnPen(ix, iy)) return true;
-  const b = state.worldBounds;
-  if (!b) return true;
+  // Fall back to the default farm rectangle when state.worldBounds is
+  // null. Treating null as "everywhere" was a long-standing bug:
+  // resetFarm nulls worldBounds expecting defaultWorldBounds() to take
+  // over, but every other call site does that fallback explicitly —
+  // inWorld did not, so the post-reset run let the player place
+  // buildings on the entire 72×72 meadow outside the freshly-fenced
+  // starting lot.
+  const b = state.worldBounds || defaultWorldBounds();
   return ix >= b.x0 && iy >= b.y0 && ix < b.x0 + b.w && iy < b.y0 + b.h;
 }
 
@@ -12153,16 +12172,25 @@ function refreshQuestsPanel() {
     toggleBtn.addEventListener('pointerdown', (ev) => ev.stopPropagation());
     return;
   }
+  // checkQuests/checkDailies grant base × prestigeMul (× streak for
+  // dailies). Display the post-multiplier value so the player sees
+  // what they'll actually pocket — the raw base read as a nerf at
+  // high prestige.
+  const presMul = prestigeMul();
+  const streakMul = dailyStreakMultiplier();
   const renderRow = (q, daily) => {
     const cur = Math.min(q.target, questProgress(q));
     const claimed = !!q.claimed;
+    const rewMul = daily ? streakMul * presMul : presMul;
+    const coins = Math.round((q.reward.coins || 0) * rewMul);
+    const xp    = daily ? Math.max(1, Math.round(q.reward.xp * streakMul)) : q.reward.xp;
     return (
       '<div class="qRow' + (daily ? ' daily' : '') + (claimed ? ' claimed' : '') + '">' +
         '<div class="qLabel"><span>' + q.verb + ' ' + q.target + ' ' + q.noun + '</span>' +
         '<b>' + cur + '/' + q.target + (claimed ? ' &#10003;' : '') + '</b></div>' +
         '<div class="qBar"><div class="qFill" style="width:' +
           Math.round(cur / q.target * 100) + '%"></div></div>' +
-        '<div class="qReward">+' + q.reward.coins + '¢ &middot; +' + q.reward.xp + ' XP</div>' +
+        '<div class="qReward">+' + coins + '¢ &middot; +' + xp + ' XP</div>' +
       '</div>'
     );
   };
@@ -12287,11 +12315,19 @@ function buildAchModal() {
   }
   if (activeAchTab === 'quests' || activeAchTab === 'dailies') {
     const list = activeAchTab === 'dailies' ? state.dailies : state.quests;
+    const presMul = prestigeMul();
+    const streakMul = dailyStreakMultiplier();
     let html = '<div class="quest-list">';
     for (const q of list) {
       const cur = Math.min(q.target, questProgress(q));
       const pct = Math.round((cur / q.target) * 100);
       const done = q.claimed;
+      // Display the post-prestige (and post-streak for dailies) reward
+      // so the modal matches what the player actually banks on claim.
+      const isDaily = activeAchTab === 'dailies';
+      const rewMul  = isDaily ? streakMul * presMul : presMul;
+      const rwCoins = Math.round((q.reward.coins || 0) * rewMul);
+      const rwXp    = isDaily ? Math.max(1, Math.round(q.reward.xp * streakMul)) : q.reward.xp;
       html +=
         '<div class="quest-card' + (q.daily ? ' daily' : '') + (done ? ' claimed' : '') + '">' +
           '<div class="qc-head">' +
@@ -12299,7 +12335,7 @@ function buildAchModal() {
             '<div class="qc-progress">' + (done ? '&#10003; Claimed' : (cur + ' / ' + q.target)) + '</div>' +
           '</div>' +
           '<div class="qc-bar"><div class="qc-fill" style="width:' + pct + '%"></div></div>' +
-          '<div class="qc-reward">Reward: <b>' + q.reward.coins + '¢</b> &middot; <b>' + q.reward.xp + ' XP</b></div>' +
+          '<div class="qc-reward">Reward: <b>' + rwCoins + '¢</b> &middot; <b>' + rwXp + ' XP</b></div>' +
         '</div>';
     }
     html += '</div>';
@@ -12325,8 +12361,12 @@ function buildAchModal() {
     const got   = Object.keys(state.achievements || {}).length;
     let html = '<p style="margin-top:6px;color:#6E4D22;"><b>' + got + ' / ' + total + '</b> unlocked.</p>';
     html += '<div class="ach-grid">';
+    const presMul = prestigeMul();
     for (const a of ACHIEVEMENTS) {
       const unlocked = !!state.achievements[a.id];
+      // Show the prestige-scaled coin payout so the card matches what
+      // checkAchievements actually grants on unlock.
+      const rwCoins = Math.round((a.reward.coins || 0) * presMul);
       html +=
         '<div class="ach-card ' + (unlocked ? 'unlocked' : 'locked') + '">' +
           (unlocked ? '<div class="ach-badge">&#10003;</div>' : '') +
@@ -12334,7 +12374,7 @@ function buildAchModal() {
           '<div class="ach-info">' +
             '<div class="ach-name">' + a.name + '</div>' +
             '<div class="ach-desc">' + a.desc + '</div>' +
-            '<div class="ach-reward">+' + a.reward.coins + '¢ · +' + a.reward.xp + ' XP</div>' +
+            '<div class="ach-reward">+' + rwCoins + '¢ · +' + a.reward.xp + ' XP</div>' +
           '</div>' +
         '</div>';
     }
