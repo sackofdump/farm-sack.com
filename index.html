@@ -3180,7 +3180,16 @@ function resetFarm() {
   state.silo = { feed: 0, lastTickAt: 0, boostMs: 0 };
   state.coffeeStand = { coffee: 0, lastTickAt: 0 };
   state.staff = { members: [], lastUpkeepAt: 0, lastLoyaltyAt: 0, nextStaffId: 1 };
+  // Preserve the discovered-mutation book across the prestige reset —
+  // tier and active brews reset (those are run-scoped), but unlocked
+  // mutations are a permanent achievement that carries forever.
   state.greenhouse = { tier: 1, book: state.greenhouse?.book || {}, activeRuns: [] };
+  // Defensive: re-register every discovered mutation as a plantable
+  // CROPS entry. The dynamic registrations from the prior run are
+  // technically still in CROPS (it's a module-level dict, not state),
+  // but if anything ever clears/rebuilds CROPS this guarantees the
+  // post-prestige seed strip + seed container still surface them.
+  if (typeof rehydrateMutationCrops === 'function') rehydrateMutationCrops();
   // Scale the starting farm lot by the new prestige bonus. Base is
   // 12×12 (the new starting size); +25% prestige → round(12 × 1.25)
   // = 15; +100% → 24. Floor at 12 in case totalBonus is somehow
@@ -16425,6 +16434,23 @@ async function startGame() {
           lastResetAt:  carry.lastResetAt  || 0,
         };
       }
+      // Merge the carried mutation book into the fresh greenhouse so
+      // every mutation the player has unlocked stays unlocked across a
+      // full save wipe. Older carry blobs that predate this field just
+      // skip this branch — they keep the existing book intact.
+      if (carry && carry.mutBook && typeof carry.mutBook === 'object') {
+        if (!state.greenhouse) state.greenhouse = { tier:1, book:{}, activeRuns:[] };
+        if (!state.greenhouse.book) state.greenhouse.book = {};
+        for (const id in carry.mutBook) {
+          // Newer / richer entry wins on merge so re-running the wipe
+          // doesn't downgrade discovered → undiscovered.
+          const incoming = carry.mutBook[id];
+          const existing = state.greenhouse.book[id];
+          if (!existing || (incoming && incoming.discovered && !existing.discovered)) {
+            state.greenhouse.book[id] = incoming;
+          }
+        }
+      }
       localStorage.removeItem('fs_prestige_carry');
     }
   } catch (e) {}
@@ -16828,13 +16854,24 @@ async function startGame() {
     storage.save();
   });
   document.getElementById('resetBtn').onclick     = () => {
-    if (!confirm('Wipe this profile\'s save and start a fresh farm? (Your prestige bonus is preserved.)')) return;
-    // Stash the prestige record in a separate localStorage key so the
-    // wipe doesn't blow it away. startGame restores it after the
-    // fresh state initialises so the bonus carries across.
+    if (!confirm('Wipe this profile\'s save and start a fresh farm? (Your prestige bonus and unlocked mutations are preserved.)')) return;
+    // Stash the prestige record + the discovered-mutation book in a
+    // separate localStorage key so the wipe doesn't blow them away.
+    // startGame restores both after the fresh state initialises so the
+    // bonus + every unlocked mutation carry across the wipe.
     try {
       const p = state.prestige || { count: 0, totalBonus: 0, lastResetAt: 0 };
-      localStorage.setItem('fs_prestige_carry', JSON.stringify(p));
+      const book = (state.greenhouse && state.greenhouse.book) || {};
+      const payload = {
+        // Top-level prestige fields kept for back-compat with older
+        // save-restore code that reads { count, totalBonus, lastResetAt }
+        // directly off the carry blob.
+        count:        p.count        || 0,
+        totalBonus:   p.totalBonus   || 0,
+        lastResetAt:  p.lastResetAt  || 0,
+        mutBook:      book,
+      };
+      localStorage.setItem('fs_prestige_carry', JSON.stringify(payload));
     } catch (e) {}
     storage.wipe();
     location.reload();
