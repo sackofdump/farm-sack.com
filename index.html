@@ -2810,7 +2810,19 @@ function prestigeMul() {
   return 1 + ((state.prestige && state.prestige.totalBonus) || 0);
 }
 function prestigeBonusFromCoins(coins) {
-  return Math.max(0, Math.floor(coins / 1000000)) * PRESTIGE_BONUS_PER_M;
+  // Track to 0.01% precision (one cent of bonus per 10,000 coins) so a
+  // reset at, say, 46.55M coins banks +46.55% instead of getting floored
+  // down to a flat +46%. The multiplier is still +1% per 1M, just with
+  // sub-percent granularity preserved.
+  if (!coins || coins <= 0) return 0;
+  return Math.floor(coins / 10000) / 10000;
+}
+// Format a prestige multiplier (e.g. 0.4655) as a display percent
+// string ("46.55"). Trailing zeros are trimmed so an integer bonus
+// reads as "46" instead of "46.00".
+function formatPrestigePct(bonus) {
+  const pct = Math.round(((bonus || 0)) * 10000) / 100;
+  return parseFloat(pct.toFixed(2)).toString();
 }
 function canResetFarm() { return (state.level || 1) >= PRESTIGE_UNLOCK_LEVEL; }
 function refreshFarmerProfileChip() {
@@ -2850,7 +2862,7 @@ function openFarmerProfileModal() {
     const growPct  = Math.round((growSpeedMul() - 1) * 100);
     const sellPct  = Math.round((marketSellMul() - 1) * 100);
     const presLine = presBonus > 0
-      ? `<div>&#127775; <b>Prestige:</b> +${Math.round(presBonus * 100)}% all gains + speeds · ${presCnt} reset${presCnt === 1 ? '' : 's'}</div>`
+      ? `<div>&#127775; <b>Prestige:</b> +${formatPrestigePct(presBonus)}% all gains + speeds · ${presCnt} reset${presCnt === 1 ? '' : 's'}</div>`
       : `<div style="color:#7a5430;">No prestige yet — reset at Lv ${PRESTIGE_UNLOCK_LEVEL} for a permanent bonus.</div>`;
     stats.innerHTML =
       `<div>&#129489;‍&#127806; <b>Lv ${state.level || 1}</b> · ${formatCoins(state.coins || 0)}¢</div>` +
@@ -3087,9 +3099,9 @@ function openResetFarmModal() {
   const preview = document.getElementById('resetFarmPreview');
   if (preview) {
     const total   = cur + earned;
-    const curPct  = Math.round(cur * 100);
-    const earnPct = Math.round(earned * 100);
-    const totalPct= Math.round(total * 100);
+    const curPct  = formatPrestigePct(cur);
+    const earnPct = formatPrestigePct(earned);
+    const totalPct= formatPrestigePct(total);
     const presCnt = (state.prestige && state.prestige.count) || 0;
     const STARTING_BASE = 12;
     const curLot = Math.max(STARTING_BASE, Math.round(STARTING_BASE * (1 + cur)));
@@ -3224,7 +3236,7 @@ function resetFarm() {
   // and applies inline style so call it after the player wipe.
   if (typeof refreshDismountBanner === 'function') refreshDismountBanner();
   if (typeof camera !== 'undefined' && camera.centerOnFarm) camera.centerOnFarm();
-  toast(`Farm reset! Permanent bonus is now +${Math.round(state.prestige.totalBonus * 100)}%.`, false, 'good', 6000);
+  toast(`Farm reset! Permanent bonus is now +${formatPrestigePct(state.prestige.totalBonus)}%.`, false, 'good', 6000);
   audio.play('levelup');
 }
 // Held over for harvest call sites that still add it; intentionally 0
@@ -12636,9 +12648,9 @@ function refreshHud() {
     if (presBonus > 0) {
       presChip.style.display = '';
       const txt = document.getElementById('prestigeBonusTxt');
-      if (txt) txt.textContent = Math.round(presBonus * 100);
+      if (txt) txt.textContent = formatPrestigePct(presBonus);
       const cnt = (state.prestige && state.prestige.count) || 0;
-      presChip.title = `Prestige bonus: +${Math.round(presBonus * 100)}% to coins / XP / movement / growth · ${cnt} reset${cnt === 1 ? '' : 's'}`;
+      presChip.title = `Prestige bonus: +${formatPrestigePct(presBonus)}% to coins / XP / movement / growth · ${cnt} reset${cnt === 1 ? '' : 's'}`;
     } else {
       presChip.style.display = 'none';
     }
@@ -12945,7 +12957,7 @@ function buildToolbar() {
   const curBonus  = ((state.prestige && state.prestige.totalBonus) || 0);
   rstBtn.title = rstLocked
     ? `Reset Farm — unlocks at Lv ${PRESTIGE_UNLOCK_LEVEL}`
-    : `Reset Farm · current permanent bonus: +${Math.round(curBonus * 100)}% · resetting now would add +${Math.round(earnedNow * 100)}% (1% per 1M¢ on hand) for a total of +${Math.round((curBonus + earnedNow) * 100)}%`;
+    : `Reset Farm · current permanent bonus: +${formatPrestigePct(curBonus)}% · resetting now would add +${formatPrestigePct(earnedNow)}% (1% per 1M¢ on hand) for a total of +${formatPrestigePct(curBonus + earnedNow)}%`;
   rstBtn.disabled = rstLocked;
   // Stack the prestige icon over a small "PRESTIGE" label so the
   // toolbar button reads as more than a generic refresh — players
@@ -13441,15 +13453,17 @@ function buildUpgradesGrid(grid) {
     // Display includes the prestige additive — wateredSpeedMul folds
     // it into the watered base, so the upgrade card should match
     // what the player actually receives in-game.
-    const presBonusPct = Math.round(((state.prestige && state.prestige.totalBonus) || 0) * 100);
+    const presBonus    = (state.prestige && state.prestige.totalBonus) || 0;
+    const presBonusPct = presBonus * 100;
     const curBoost  = Math.round((WATER_SPEED_M[lvl] - 1) * 100) + presBonusPct;
     const nextBoost = maxed ? curBoost : (Math.round((WATER_SPEED_M[lvl + 1] - 1) * 100) + presBonusPct);
     const curCost   = WATER_COSTS[lvl];
     const nextCost  = maxed ? curCost : WATER_COSTS[lvl + 1];
-    const presNote  = presBonusPct > 0 ? ` (+${presBonusPct}% prestige)` : '';
+    const fmtBoost = (b) => parseFloat((Math.round(b * 100) / 100).toFixed(2)).toString();
+    const presNote  = presBonusPct > 0 ? ` (+${formatPrestigePct(presBonus)}% prestige)` : '';
     const sub = maxed
-      ? `Crops &amp; trees +${curBoost}% growth${presNote} · ${curCost}¢ per water`
-      : `Crops &amp; trees +${curBoost}% → +${nextBoost}% growth${presNote} · ${curCost}¢ → ${nextCost}¢ per water`;
+      ? `Crops &amp; trees +${fmtBoost(curBoost)}% growth${presNote} · ${curCost}¢ per water`
+      : `Crops &amp; trees +${fmtBoost(curBoost)}% → +${fmtBoost(nextBoost)}% growth${presNote} · ${curCost}¢ → ${nextCost}¢ per water`;
     makeUpgradeCard(grid, {
       iconKey: 'tool_water',
       name: 'Water Efficiency',
