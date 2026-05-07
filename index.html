@@ -6483,6 +6483,16 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
     slaughterBtn.style.background = '';
     slaughterBtn.style.borderColor = '';
   }
+  // Reset the bottom close button — openStaffMenu styles it as a green
+  // "✓ Done", which would otherwise leak over to an animal menu opened
+  // right after a worker.
+  if (closeBtn) {
+    closeBtn.textContent = 'Cancel';
+    closeBtn.style.background = '';
+    closeBtn.style.borderColor = '';
+    closeBtn.style.boxShadow = '';
+    closeBtn.style.color = '';
+  }
 
   // Collect button — show only if the animal has a yield.
   const y = ANIMAL_YIELDS[animal.id];
@@ -7318,6 +7328,16 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   const slaughterBtn = document.getElementById('amSlaughter');
   const rideBtn = document.getElementById('amRide');
   const closeBtn = document.getElementById('amClose');
+  // Reset the close button — openStaffMenu styles it as a green "✓ Done"
+  // and that styling would carry over to a building menu opened right
+  // after a staffer if we don't clear it back to the wood-tan Cancel.
+  if (closeBtn) {
+    closeBtn.textContent = 'Cancel';
+    closeBtn.style.background = '';
+    closeBtn.style.borderColor = '';
+    closeBtn.style.boxShadow = '';
+    closeBtn.style.color = '';
+  }
   if (desc) {
     const descContent = typeof cfg.desc === 'function' ? cfg.desc({ ix, iy }) : (cfg.desc || '');
     desc.innerHTML = descContent;
@@ -10084,7 +10104,7 @@ function fireStaff(member) {
   audio.play('click');
   storage.save(); refreshHud();
 }
-function openStaffMenu(member, screenX, screenY, opts) {
+function openStaffMenu(member, screenX, screenY) {
   const menu = document.getElementById('animalMenu');
   if (!menu) return;
   // Surface this staff's zone while their menu is open.
@@ -10142,10 +10162,18 @@ function openStaffMenu(member, screenX, screenY, opts) {
   const slaughterBtn = document.getElementById('amSlaughter');
   const rideBtn = document.getElementById('amRide');
   const petBtn = document.getElementById('amPet');
+  const moveBtn = document.getElementById('amMove');
+  const sellBtn = document.getElementById('amSell');
   const closeBtn = document.getElementById('amClose');
   if (collectBtn) collectBtn.style.display = 'none';
   if (rideBtn) rideBtn.style.display = 'none';
   if (petBtn) petBtn.style.display = 'none';
+  // The shared #animalMenu is also used for buildings — those toggle
+  // amMove/amSell visible. Without resetting them here, opening a
+  // staffer right after a building leaves "Unlock To Move" + "Sell"
+  // hanging on the worker's menu (no-op against staff anyway).
+  if (moveBtn) moveBtn.style.display = 'none';
+  if (sellBtn) sellBtn.style.display = 'none';
   // Edit Zone — crop farmer only, repurpose the ride button (green).
   if (member.role === 'crop_farmer' && rideBtn) {
     rideBtn.style.display = '';
@@ -10186,23 +10214,16 @@ function openStaffMenu(member, screenX, screenY, opts) {
   menu.style.left = x + 'px';
   menu.style.top  = y + 'px';
   if (closeBtn) {
-    // Reading "Cancel" right after the player set up a fresh hire reads
-    // wrong — they're confirming the worker, not undoing anything. Swap
-    // the label/style to a green Confirm in that one flow; everywhere
-    // else keeps the standard wood-tan Cancel.
-    if (opts && opts.fromZoneConfirm) {
-      closeBtn.textContent = '✓ Confirm';
-      closeBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
-      closeBtn.style.borderColor = '#2A4A1A';
-      closeBtn.style.boxShadow = '0 2px 0 #2A4A1A';
-      closeBtn.style.color = '#FFF';
-    } else {
-      closeBtn.textContent = 'Cancel';
-      closeBtn.style.background = '';
-      closeBtn.style.borderColor = '';
-      closeBtn.style.boxShadow = '';
-      closeBtn.style.color = '';
-    }
+    // The staff menu doesn't have a destructive in-progress action to
+    // back out of — every change (task flags, edits) commits the moment
+    // it's clicked, so "Cancel" was always misleading. A green ✓ Done
+    // matches what the button actually does and stays consistent with
+    // the post-zone-confirm flow.
+    closeBtn.textContent = '✓ Done';
+    closeBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
+    closeBtn.style.borderColor = '#2A4A1A';
+    closeBtn.style.boxShadow = '0 2px 0 #2A4A1A';
+    closeBtn.style.color = '#FFF';
     closeBtn.onclick = closeAnimalMenu;
   }
 }
@@ -10284,7 +10305,7 @@ function confirmZoneSelect() {
     // committed. Skip when the seed-container reminder takes priority
     // so the player isn't fighting two modals at once. Defer one tick
     // so the cancelZoneSelect banner finishes hiding first.
-    setTimeout(() => openStaffMenu(openedMember, window.innerWidth/2 - 200, window.innerHeight/2 - 200, { fromZoneConfirm: true }), 60);
+    setTimeout(() => openStaffMenu(openedMember, window.innerWidth/2 - 200, window.innerHeight/2 - 200), 60);
   }
 }
 function staffWanderTarget(m) {
