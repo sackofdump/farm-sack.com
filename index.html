@@ -2281,8 +2281,11 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
         <div id="scQueueBar" style="width:0%;height:100%;background:linear-gradient(180deg,#FBE38A,#E8B339);"></div>
       </div>
       <h3 style="margin:8px 0 4px;color:#4A2E15;font-size:14px;">Queued seeds</h3>
+      <!-- Queue list scrolls within the sticky header when the queue
+           gets long, so the Buy seeds grid below still has room on
+           screen even with 10+ seed types stocked. -->
+      <div id="scQueueList" style="margin-bottom:12px;display:flex;flex-direction:column;gap:0;max-height:38vh;overflow-y:auto;"></div>
     </div>
-    <div id="scQueueList" style="margin-bottom:12px;display:flex;flex-wrap:wrap;gap:6px;"></div>
     <h3 style="margin:8px 0 6px;color:#4A2E15;font-size:14px;">Buy seeds</h3>
     <div id="scSeedGrid" style="display:grid;grid-template-columns:repeat(4,1fr);gap:10px;"></div>
   </div>
