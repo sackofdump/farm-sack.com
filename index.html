@@ -4709,51 +4709,44 @@ const SPRINKLER_INTERVAL_MS = 6000;
 // watered-grow bonus same as a player pour. Returns the number of
 // tiles freshly watered so callers can short-circuit FX work when
 // the pass is idle.
-function sprinklerSoak(sx, sy) {
-  // Visual effects per tile are expensive (DOM nodes + setTimeouts) and
-  // grantXp / bumpStat each chain into achievement / quest / daily /
-  // tutorial rechecks. With multiple sprinklers covering big fields,
-  // doing this per-tile melts the main thread. Batch the totals and
-  // cap the visual fx to a handful of tiles per soak.
-  const FX_CAP = 6;
-  const wxp = waterXpGain();
+// Set the .watered flag on every soakable tile in a sprinkler's range
+// and return how many tiles were actually soaked. Pure state mutation
+// — no XP, no fx, no audio. The caller decides how to surface the
+// result so bursty sprinkler ticks can batch the side effects.
+function _sprinklerSoakTiles(sx, sy) {
   let n = 0;
-  let totalXp = 0;
-  let fxShown = 0;
   for (let dy = -SPRINKLER_RADIUS; dy <= SPRINKLER_RADIUS; dy++) {
     for (let dx = -SPRINKLER_RADIUS; dx <= SPRINKLER_RADIUS; dx++) {
       const ix = sx + dx, iy = sy + dy;
       if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) continue;
       const k = ix + ',' + iy;
       const p = state.plots[k];
-      let soaked = false;
       if (p && p.state === 'planted' && !p.watered) {
         p.watered = true;
-        soaked = true;
-      } else {
-        // Trees: hand them the same watered flag the player's manual
-        // early-water grants. Skips fully-grown trees (no stage timer
-        // left to speed up) and trees that are already either watered
-        // or ready to be advanced — those need the player to pay the
-        // water fee to bump the stage.
-        const placed = state.placed[k];
-        if (placed && treeNeedsEarlyWater(placed)) {
-          placed.watered = true;
-          soaked = true;
-        }
+        n++;
+        continue;
       }
-      if (!soaked) continue;
-      n++;
-      totalXp += wxp;
-      if (fxShown < FX_CAP) {
-        fxBurst(ix, iy, '#6CD4FF', 6);
-        fxFloat(ix, iy, '+' + wxp + ' XP', 1, '#6CFFB4');
-        fxShown++;
+      // Trees: hand them the same watered flag the player's manual
+      // early-water grants. Skips fully-grown trees (no stage timer
+      // left to speed up) and trees that are already either watered
+      // or ready to be advanced — those need the player to pay the
+      // water fee to bump the stage.
+      const placed = state.placed[k];
+      if (placed && treeNeedsEarlyWater(placed)) {
+        placed.watered = true;
+        n++;
       }
     }
   }
+  return n;
+}
+function sprinklerSoak(sx, sy) {
+  // Single-sprinkler soak (placement path). Always shows fx for the
+  // immediate feedback the player expects when dropping a sprinkler.
+  const n = _sprinklerSoakTiles(sx, sy);
   if (n > 0) {
-    grantXp(totalXp);
+    fxBurst(sx, sy, '#6CD4FF', 8);
+    grantXp(waterXpGain() * n);
     bumpStat('watered', n);
     audio.play('water');
   }
@@ -4762,9 +4755,17 @@ function sprinklerSoak(sx, sy) {
 // Walk every placed sprinkler and fire its 6s soak whenever its
 // individual timer is due. lastSoakAt is stamped per-sprinkler on
 // placement so a fresh sprinkler doesn't have to wait the full 6s for
-// its first pour.
+// its first pour. Side effects are batched across the whole tick:
+// big fields fire 10+ sprinklers in the same frame and running their
+// XP grant + stat bump + audio per-sprinkler used to chain achievement,
+// quest, daily and tutorial rechecks dozens of times in a row.
 function tickSprinklers() {
   const now = Date.now();
+  let totalSoaked = 0;
+  let firedCount = 0;
+  // Pop a single burst at the first firing sprinkler so the player
+  // still sees water happening — full per-sprinkler fx is too costly.
+  let burstAt = null;
   for (const k in state.placed) {
     const it = state.placed[k];
     if (!it || it.id !== 'building_sprinkler') continue;
@@ -4773,7 +4774,18 @@ function tickSprinklers() {
     it.lastSoakAt = now;
     const ci = k.indexOf(',');
     const ix = +k.slice(0, ci), iy = +k.slice(ci + 1);
-    sprinklerSoak(ix, iy);
+    const n = _sprinklerSoakTiles(ix, iy);
+    if (n > 0) {
+      totalSoaked += n;
+      if (!burstAt) burstAt = { ix, iy };
+    }
+    firedCount++;
+  }
+  if (totalSoaked > 0) {
+    grantXp(waterXpGain() * totalSoaked);
+    bumpStat('watered', totalSoaked);
+    if (burstAt) fxBurst(burstAt.ix, burstAt.iy, '#6CD4FF', 6);
+    audio.play('water');
   }
 }
 
