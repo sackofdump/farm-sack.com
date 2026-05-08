@@ -3644,7 +3644,11 @@ const SILO_YIELD_SPEED_BONUS        = 0.25;    // +25% faster yield timers while
 // (The flat silo-network slaughter bonus that used to sit alongside
 // this was removed — slaughter price now comes purely from the
 // per-animal age multiplier + per-animal weight.)
-const SLAUGHTER_OVERTIME_PER_DAY    = 6;
+// Mature animals accrue this fraction of their base meat value per
+// day toward their eventual slaughter payout while the silo network
+// has feed. 0.01 = +1% of base value / day, so a cow scales its
+// bonus much faster than a chicken (instead of the old flat ¢/day).
+const SLAUGHTER_OVERTIME_PCT_PER_DAY = 0.01;
 // Yield-rate multiplier — divide the next-yield delay by this so each
 // timer counts down 25% faster while the silo is feeding.
 function siloYieldSpeedMul() { return siloHasFeed() ? 1 + SILO_YIELD_SPEED_BONUS : 1; }
@@ -4652,18 +4656,20 @@ function siloTick() {
     drainSiloFeed(drain);
     state.silo.boostMs = (state.silo.boostMs || 0) + dt * SILO_AGE_BONUS;
     // Mature-overtime slaughter bonus: while the silo has feed, every
-    // animal that's already at max age stage accrues
-    // SLAUGHTER_OVERTIME_PER_DAY ¢/day toward its eventual slaughter
-    // payout. Stored on the animal so it survives barn moves / saves.
-    // Constant lives at module scope (see top of file) so the UI
-    // tooltips read the same number used here.
+    // animal at max age stage accrues SLAUGHTER_OVERTIME_PCT_PER_DAY
+    // of its species' base meat value per day toward the eventual
+    // slaughter payout. Stored on the animal so it survives barn
+    // moves / saves. % scaling means a cow's bonus grows much faster
+    // than a chicken's instead of the old flat ¢/day.
     const matureIdx = ANIMAL_AGE_STAGES.length - 1;
     const dayFraction = dt / DAY_MS;
     for (const k in state.placed) {
       const a = state.placed[k];
-      if (!a || !a.id || !ANIMAL_MEAT[a.id]) continue;
+      const meat = a && a.id && ANIMAL_MEAT[a.id];
+      if (!meat) continue;
       if (animalAgeIndex(a) < matureIdx) continue;
-      a.matureBonus = (a.matureBonus || 0) + dayFraction * SLAUGHTER_OVERTIME_PER_DAY;
+      a.matureBonus = (a.matureBonus || 0) +
+        dayFraction * meat.coins * SLAUGHTER_OVERTIME_PCT_PER_DAY;
     }
   }
 }
@@ -7165,7 +7171,7 @@ const BUILDING_MENUS = {
               ? `<b>Active</b> — silo has feed.`
               : `<b>Idle</b> — silo network is empty.`);
         html += `<div style="font-size:11px;color:${tipColor};margin-bottom:4px;text-align:center;">` +
-                `&#127806; Mature animals gain <b>+${SLAUGHTER_OVERTIME_PER_DAY}¢/day weight from silo</b> at slaughter while silo has feed. ${status}` +
+                `&#127806; Mature animals gain <b>+${Math.round(SLAUGHTER_OVERTIME_PCT_PER_DAY * 100)}%/day of base meat value</b> at slaughter while silo has feed. ${status}` +
                 `</div>`;
       }
       // Horse stable tally — every placed horse adds +5% staff speed,
@@ -7500,10 +7506,11 @@ const BUILDING_MENUS = {
         matureCount++;
         matureTotal += Math.round(a.matureBonus || 0);
       }
+      const pctLabel = Math.round(SLAUGHTER_OVERTIME_PCT_PER_DAY * 100);
       const matureLine = matureCount === 0
-        ? `<span style="color:#7a5430;">No fully-mature animals yet — the +${SLAUGHTER_OVERTIME_PER_DAY}¢/day slaughter bonus only ticks once they hit the Mature stage.</span>`
+        ? `<span style="color:#7a5430;">No fully-mature animals yet — the +${pctLabel}%/day slaughter bonus only ticks once they hit the Mature stage.</span>`
         : `<b>${matureCount}</b> mature animal${matureCount === 1 ? '' : 's'} accruing` +
-          ` <b>+${SLAUGHTER_OVERTIME_PER_DAY}¢/day</b> while feed is in the silo · banked: <b>${matureTotal}¢</b>`;
+          ` <b>+${pctLabel}%/day of base meat value</b> while feed is in the silo · banked: <b>${matureTotal}¢</b>`;
       // Per-silo readout for the one the player actually clicked on,
       // matching the coffee-stand menu convention. Multi-silo farms
       // can see "this silo vs network" without flipping between
