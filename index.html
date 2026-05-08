@@ -3252,8 +3252,13 @@ function resetFarm() {
   // 72×72 meadow on prestige runs. Setting it explicitly here is
   // belt-and-suspenders alongside the inWorld fix.
   state.worldBounds = defaultWorldBounds();
+  // Drop the player INSIDE the new farm rather than one tile outside
+  // the southwest corner. The old spawn worked when the lot was 6×6
+  // and tiny, but on a recentered post-prestige lot the player ended
+  // up well off the visible camera.
   state.player = {
-    ix: CROP_FARM.x0 - 1, iy: CROP_FARM.y0 + CROP_FARM.h,
+    ix: CROP_FARM.x0 + Math.floor(CROP_FARM.w / 2),
+    iy: CROP_FARM.y0 + Math.floor(CROP_FARM.h / 2),
     queue: [], facing: 1, busy: 0, pending: null,
     speedLevel: 0, yieldLevel: 0, autoHarvestLevel: 0, waterLevel: 0, staffSpeedLevel: 0,
   };
@@ -17708,8 +17713,13 @@ async function startGame() {
       }
     }
     // Sanitize player state (older saves predate the farmer character).
+    // Default spawn lives inside the farm so post-prestige the camera
+    // and player land on the same tile — old (x0-1, y0+h) put them
+    // diagonally outside the southwest corner.
+    const _spawnIx = CROP_FARM.x0 + Math.floor(CROP_FARM.w / 2);
+    const _spawnIy = CROP_FARM.y0 + Math.floor(CROP_FARM.h / 2);
     if (!state.player || typeof state.player !== 'object') {
-      state.player = { ix: CROP_FARM.x0 - 1, iy: CROP_FARM.y0 + CROP_FARM.h, queue: [], facing: 1, busy: 0, pending: null };
+      state.player = { ix: _spawnIx, iy: _spawnIy, queue: [], facing: 1, busy: 0, pending: null };
     } else {
       // Preserve the action queue across reloads — drag-painted rows of
       // plowing / planting / collecting were getting wiped on refresh.
@@ -17727,8 +17737,8 @@ async function startGame() {
       });
       state.player.busy = 0;
       state.player.pending = null;
-      if (typeof state.player.ix !== 'number') state.player.ix = CROP_FARM.x0 - 1;
-      if (typeof state.player.iy !== 'number') state.player.iy = CROP_FARM.y0 + CROP_FARM.h;
+      if (typeof state.player.ix !== 'number') state.player.ix = _spawnIx;
+      if (typeof state.player.iy !== 'number') state.player.iy = _spawnIy;
       if (typeof state.player.facing !== 'number') state.player.facing = 1;
       // Auto-dismount on load: never resume riding across sessions. If the
       // farmer was mounted at save time we drop the saved horse back into
@@ -17748,11 +17758,12 @@ async function startGame() {
       state.player.mounted = false;
       state.player.mountData = null;
     }
-    // If a save predates the world re-center, the player + camera will
-    // point at the old farm location — recenter them on the new farm.
+    // If a save predates the world re-center (or post-prestige the
+    // player coords land outside the freshly-shrunken farm), drop the
+    // farmer back inside and force the camera to recenter on next boot.
     if (!inWorld(state.player.ix, state.player.iy)) {
-      state.player.ix = CROP_FARM.x0 - 1;
-      state.player.iy = CROP_FARM.y0 + CROP_FARM.h;
+      state.player.ix = _spawnIx;
+      state.player.iy = _spawnIy;
       state.camX = 0; state.camY = 0;   // forces centerOnFarm at boot
     }
     let ready = 0;
