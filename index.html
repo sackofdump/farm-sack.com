@@ -11631,17 +11631,11 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       sprinklerSoak(ix, iy);
       rec.lastSoakAt = Date.now();
     }
-    // Buildings are expensive one-offs — drop placeMode after placing
-    // one so the player doesn't accidentally buy a second copy by
-    // clicking again. Trees / decor stay in placeMode for bulk placing.
-    // Sprinklers are also bulk-placed: laying out a 5×5 grid of them
-    // across a big crop field is the normal case, and the placement
-    // ghost already shows existing coverage so accidental doubles are
-    // visible. The cost check on the next click still gates affordability.
-    if (data.id.startsWith('building_') && data.id !== 'building_sprinkler' &&
-        live.placeMode && live.placeMode.id === data.id) {
-      cancelPlaceMode();
-    }
+    // Buildings now stay in placeMode after a drop, the same as trees /
+    // decor / sprinklers. The affordability check on the next click
+    // still gates accidental double-purchases — and the player can
+    // press Esc or click the banner's cancel to drop place mode when
+    // they're done.
     storage.save(); refreshHud();
     return 'ok';
   }
