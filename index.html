@@ -3441,7 +3441,11 @@ const BUILDING_MAXED_AT = {
   building_house:        () => buildingCount('building_house')        >= 5,
   building_market_stall: () => buildingCount('building_market_stall') >= 5,
   building_windmill:     () => buildingCount('building_windmill')     >= 5,
-  building_silo:         () => buildingCount('building_silo')         >= 5,
+  // Silo intentionally absent — each silo adds +500 to the network's
+  // feed capacity with no upper cap, same shape as sprinklers. The
+  // yield-bonus side caps at 5 silos (+25%), but flagging the building
+  // MAXED at 5 was misleading once players started using extra silos
+  // purely for storage.
   building_greenhouse:   () => buildingCount('building_greenhouse')   >= 5,
   // Coffee Stand intentionally absent — its bonus only applies while
   // the network has coffee, so flagging it MAXED at 3 stands was
@@ -4657,7 +4661,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_barn',         name: 'Big Red Barn', cost: 3300, sub: 'Opens the animal pen — unlocks livestock', unlock: 8  },
   { cat: 'building', id: 'building_market_stall', name: 'Market Stall', cost: 2700, sub: '+5% sell prices (cap +25%)',     unlock: 8  },
   { cat: 'building', id: 'building_windmill',     name: 'Windmill',     cost: 5250, sub: '+5% crop growth speed (cap +25%)', unlock: 10 },
-  { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% crops & animal yield (cap +25%) · stores Animal Feed for animal bonuses', unlock: 9  },
+  { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% crops & animal yield (cap +25%) · adds +500 feed capacity each (uncapped — keep building for more storage)', unlock: 9  },
   { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1800, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 15 },
   { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile unlimited seeds for your crop farmer to plant', unlock: 15 },
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
@@ -7197,6 +7201,10 @@ const BUILDING_MENUS = {
             ? `📏 Pen MAX (${pen.w}×${pen.h})`
             : `📏 Expand Pen → ${pen.w + 2}×${pen.h + 2} (${cost}¢)`,
           disabled: maxed || state.coins < cost,
+          // keepOpen → menu re-renders after each expand so the player
+          // can spam-click to keep growing the pen without reopening
+          // the barn menu in between.
+          keepOpen: true,
           run: () => {
             if (applyExpandPen(pen)) {
               audio.play('coin');
@@ -7206,9 +7214,38 @@ const BUILDING_MENUS = {
           },
         };
       }
+      // Hire Animal Keeper — same gating as the Staff Hall's per-role
+      // button, surfaced here so the barn menu has its core animal
+      // workflow in one place. Animal-keeper cap = number of pens.
+      const keeperRole = STAFF_ROLES.animal_keeper;
+      const keeperHave = staffCount('animal_keeper');
+      const keeperMax  = maxHires('animal_keeper');
+      const keeperReqLevel = nextHireLevel('animal_keeper');
+      const keeperAtMax = keeperHave >= keeperMax;
+      const keeperLocked = !keeperAtMax && state.level < keeperReqLevel;
+      const keeperLabel = keeperAtMax
+        ? `🐮 Animal Keeper (${keeperHave}/${keeperMax})`
+        : keeperLocked
+          ? `🐮 Animal Keeper — Lv ${keeperReqLevel}`
+          : `🐮 Hire Animal Keeper (${keeperHave}/${keeperMax})`;
+      const hireKeeperAction = {
+        label: keeperLabel,
+        disabled: keeperAtMax || keeperLocked,
+        run: () => {
+          if (!canHireMore('animal_keeper')) {
+            toast(keeperAtMax ? 'Already have a keeper for every pen.' : `Reach Lv ${keeperReqLevel} to hire.`, true);
+            audio.play('error'); return;
+          }
+          hireStaff('animal_keeper');
+          toast(`${keeperRole.name} hired!`, false, 'good');
+          audio.play('coin');
+          storage.save(); refreshHud();
+        },
+      };
       // Lay the buttons out so Slaughter Mode lands in the slaughter
       // slot (kept red via danger:true), Buy Animals in the green
-      // collect slot, and the Expand Pen action takes the top slot.
+      // collect slot, the Expand Pen action takes the top slot, and
+      // Hire Animal Keeper takes the 4th (pet-button) slot.
       // Sell is rendered as a generic per-building button in
       // openBuildingMenu, so no need to add it here.
       return [
@@ -7227,6 +7264,7 @@ const BUILDING_MENUS = {
             toast('Click an animal — the farmer auto-delivers it to the slaughterhouse.', false);
           },
         },
+        hireKeeperAction,
       ];
     },
   },
@@ -8018,11 +8056,21 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     btn.disabled = !!a.disabled;
     btn.textContent = a.label;
     btn.onclick = a.disabled ? null : () => {
-      closeAnimalMenu();
+      // keepOpen actions (e.g. Expand Pen) leave the menu visible and
+      // re-render afterwards so the player can spam-click to keep
+      // expanding without re-opening the building menu each time.
+      if (!a.keepOpen) closeAnimalMenu();
       a.run({ ix, iy });
+      if (a.keepOpen) {
+        setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+      }
     };
   };
-  // Action slot #1 → ride button (top), #2 → collect, #3 → slaughter.
+  // Action slot #1 → ride button (top), #2 → collect, #3 → slaughter,
+  // #4 → pet button (repurposed as a 4th general-purpose action slot
+  // for buildings that need more than three actions, like the barn
+  // wanting an Expand Pen, Buy Animals, Slaughter Mode AND a Hire
+  // Animal Keeper button all on the same menu).
   // Stripping the slaughter button's red gradient so it doesn't look hostile
   // when it's just a hire option.
   wireActionBtn(rideBtn, actionList[0]);
@@ -8041,6 +8089,24 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
       slaughterBtn.style.borderColor = '';
     }
     wireActionBtn(slaughterBtn, a);
+  }
+  // Pet-button slot: when used by a building action, override its
+  // default pink palette with green so it reads as a normal action
+  // button (or red when a.danger is set).
+  if (petBtn) {
+    const a = actionList[3];
+    if (a) {
+      if (a.danger) {
+        petBtn.style.background = 'linear-gradient(to bottom,#E27464,#A03423)';
+        petBtn.style.borderColor = '#6A1A12';
+        petBtn.style.color = '#FFF';
+      } else {
+        petBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
+        petBtn.style.borderColor = '#2A4A1A';
+        petBtn.style.color = '#FFF';
+      }
+    }
+    wireActionBtn(petBtn, a);
   }
   // Move button — every non-permanent building can be relocated from its
   // own menu, so the player has to explicitly opt in to picking it up
@@ -10322,13 +10388,21 @@ function refreshLiveSeedContainerModal() {
     .map(([id, qty]) => id + ':' + qty).join('|');
   if (sig === _seedModalLastSig) return;
   _seedModalLastSig = sig;
-  buildSeedContainerModal();
+  // Pass `true` so the seed-picture grid below the queue is left alone
+  // — only the queue + capacity bar need to refresh as farmers plant.
+  // Rebuilding the grid every refresh was tearing down + recreating
+  // every seed card, which read on screen as the pictures flashing
+  // each time a worker pulled a seed.
+  buildSeedContainerModal(true);
 }
-function buildSeedContainerModal() {
+function buildSeedContainerModal(skipSeedGrid) {
   // Network view — shows totals across every placed seed container.
   // The single live.activeSeedContainer is just the click anchor; the
   // data comes from the whole network so the player can stock + pull
   // from any container by interacting with this one menu.
+  // `skipSeedGrid=true` suppresses the bottom shop-card grid rebuild,
+  // which is used by the live refresh path so the pictures don't
+  // flash every time a worker plants from the queue.
   const networkMap = seedNetworkAggregate();
   const total = Array.from(networkMap.values()).reduce((s, q) => s + q, 0);
   const cap = seedNetworkCapacity();
@@ -10434,6 +10508,9 @@ function buildSeedContainerModal() {
   }
   // Available seeds — same shop-card visuals used in the main shop, just
   // with three quick-buy buttons instead of the single Buy.
+  // Live refreshes pass skipSeedGrid=true to leave the grid intact (the
+  // unlocked-crop list doesn't change between plants).
+  if (skipSeedGrid) return;
   const grid = document.getElementById('scSeedGrid');
   if (grid) {
     grid.innerHTML = '';
