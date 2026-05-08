@@ -9776,7 +9776,20 @@ function isPlaceableTile(ix, iy) {
 // ============================================================
 // MAIN RENDER
 // ============================================================
+// drawAll sub-pass timing — visible in fsPerf when enabled.
+// Each phase pushes its ms cost into _drawAllSubBag which the loop
+// merges into the main perf bag after drawAll returns.
+let _drawAllSubBag = null;
+function _dStart() {
+  return _drawAllSubBag ? performance.now() : 0;
+}
+function _dEnd(label, t0) {
+  if (!_drawAllSubBag) return;
+  _drawAllSubBag[label] = (_drawAllSubBag[label] || 0) + (performance.now() - t0);
+}
 function drawAll() {
+  if (typeof fsPerf !== 'undefined' && fsPerf.enabled) _drawAllSubBag = {};
+  else _drawAllSubBag = null;
   // Sky/ground gradient (unaffected by camera)
   const grd = ctx.createLinearGradient(0, 0, 0, window.innerHeight);
   grd.addColorStop(0,    '#87CEEB');
@@ -9870,6 +9883,7 @@ function drawAll() {
     ctx.closePath();
     ctx.fill();
   }
+  const _tGroundBuild = _dStart();
   const groundList = [];
   for (let ix = groundMinIx; ix <= groundMaxIx; ix++) {
     for (let iy = groundMinIy; iy <= groundMaxIy; iy++) {
@@ -9877,6 +9891,8 @@ function drawAll() {
     }
   }
   groundList.sort((a, b) => a.depth - b.depth);
+  _dEnd('groundBuild', _tGroundBuild);
+  const _tGroundDraw = _dStart();
   for (const g of groundList) {
     const ix = g.ix, iy = g.iy;
     const tk = tileKey(ix, iy);
@@ -9902,6 +9918,7 @@ function drawAll() {
       drawGrassTile(ix, iy, c.x, c.y);
     }
   }
+  _dEnd('groundDraw', _tGroundDraw);
   // No filter restore — disabled above for perf. Re-enable here if
   // the offscreen tinted-layer variant lands later.
   // if (presFilter) ctx.filter = 'none';
@@ -9926,6 +9943,7 @@ function drawAll() {
   // Culling bounds — tall sprites can extend several tiles NW of their
   // anchor, so we widen the placed-cull box past the visible-tile box
   // and skip any item whose anchor falls outside it.
+  const _tListBuild = _dStart();
   const cullPlMinX = minIx - 6, cullPlMaxX = maxIx + 2;
   const cullPlMinY = minIy - 6, cullPlMaxY = maxIy + 2;
   const cullCrMinX = minIx - 1, cullCrMaxX = maxIx + 1;
@@ -9978,9 +9996,14 @@ function drawAll() {
   }
   // Fences
   buildFenceList(list);
+  _dEnd('listBuild', _tListBuild);
+  if (_drawAllSubBag) _drawAllSubBag.listSize = list.length;
+  const _tSort = _dStart();
   list.sort((a, b) => a.depth - b.depth);
+  _dEnd('listSort', _tSort);
 
   // -------- Pass B: objects --------
+  const _tObjDraw = _dStart();
   for (const it of list) {
     if (it.kind === 'crop') {
       const c = isoCenter(it.ix, it.iy);
@@ -10024,6 +10047,7 @@ function drawAll() {
       drawFenceRail(it.x1, it.y1, it.x2, it.y2);
     }
   }
+  _dEnd('objDraw', _tObjDraw);
 
   // -------- Highlighted staff zone (only the one the player just clicked) --------
   if (live.highlightedStaff && live.highlightedStaff.zone) {
@@ -17966,7 +17990,16 @@ function loop(t) {
   else if (state.zoom <= 0.65) renderInterval = 40;   // ~25 FPS
   if (!hidden && t - (loop._drawLastT || 0) >= renderInterval) {
     loop._drawLastT = t;
-    if (_perfBag) _perfMark('drawAll', () => drawAll(), _perfBag);
+    if (_perfBag) {
+      _perfMark('drawAll', () => drawAll(), _perfBag);
+      // Merge the drawAll sub-bag into the main perf bag so the
+      // log line lists which pass inside drawAll dominated.
+      if (_drawAllSubBag) {
+        for (const k in _drawAllSubBag) {
+          _perfBag['drawAll.' + k] = _drawAllSubBag[k];
+        }
+      }
+    }
     else drawAll();
   }
   // refreshHud rebuilds chip text + the quest panel innerHTML; doesn't
