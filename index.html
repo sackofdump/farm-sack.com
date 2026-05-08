@@ -6961,9 +6961,9 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
       rideBtn.style.display = 'none';
     }
     rideBtn.onclick = () => {
-      closeAnimalMenu();
       const [ix, iy] = tileK.split(',').map(Number);
-      // Walk-to-horse, then mount when the farmer arrives.
+      // Walk-to-horse, then mount when the farmer arrives. Menu stays
+      // open — the player dismisses via the Done button.
       state.player.queue.push({ tool: 'mount', ix, iy, horseKey: tileK });
     };
   }
@@ -6985,13 +6985,12 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
   menu.style.top  = yy + 'px';
 
   collectBtn.onclick = () => {
-    closeAnimalMenu();
     const [ix, iy] = tileK.split(',').map(Number);
     // Walk the farmer over before collecting, just like crop harvest.
+    // Menu stays open — Done is the only dismiss path.
     state.player.queue.push({ tool: 'harvest', ix, iy });
   };
   slaughterBtn.onclick = () => {
-    closeAnimalMenu();
     queueOneClickSlaughter(tileK, animal);
   };
   // Pet — restores +20 loyalty per in-game day per animal. Free, no walk.
@@ -7008,13 +7007,12 @@ function openAnimalMenu(tileK, animal, screenX, screenY) {
       petBtn.textContent = `🤚 Pet (+${PET_LOYALTY_GAIN} loyalty)`;
     }
     petBtn.onclick = () => {
-      closeAnimalMenu();
       const since2 = animal.lastPettedAt ? (Date.now() - animal.lastPettedAt) : Infinity;
       if (since2 < PET_COOLDOWN_MS) {
         toast("Already petted today.", true); audio.play('error'); return;
       }
       const [ix, iy] = tileK.split(',').map(Number);
-      // Walk the farmer over before petting — same pattern as Collect.
+      // Walk the farmer over before petting — menu stays open.
       state.player.queue.push({ tool: 'pet', ix, iy });
     };
   }
@@ -7355,10 +7353,9 @@ const BUILDING_MENUS = {
             ? `📏 Pen MAX (${pen.w}×${pen.h})`
             : `📏 Expand Pen → ${pen.w + 2}×${pen.h + 2} (${cost}¢)`,
           disabled: maxed || state.coins < cost,
-          // keepOpen → menu re-renders after each expand so the player
-          // can spam-click to keep growing the pen without reopening
-          // the barn menu in between.
-          keepOpen: true,
+          // Building-menu actions now stay open by default — the
+          // wireActionBtn re-render path lets the player spam-click
+          // expand without reopening the menu in between.
           run: () => {
             if (applyExpandPen(pen)) {
               audio.play('coin');
@@ -8061,10 +8058,14 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         if (action === 'edit') {
           // Stash the Staff Hall menu coords so Cancel / Save returns
           // here instead of dropping the player back to the field.
+          // The Worker Edit modal is its own popup — close the staff
+          // menu so the modal isn't fighting it for attention.
           const reopen = () => openBuildingMenu(buildingId, screenX, screenY, ix, iy);
           closeAnimalMenu();
           openWorkerEditModal(member, reopen);
         } else if (action === 'zone') {
+          // Zone edit takes over the canvas (drag a rect) — close the
+          // staff menu so it isn't covering the picker.
           closeAnimalMenu();
           enterCropFarmerZoneEdit(member);
         } else if (action === 'fire') {
@@ -8210,14 +8211,17 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     btn.disabled = !!a.disabled;
     btn.textContent = a.label;
     btn.onclick = a.disabled ? null : () => {
-      // keepOpen actions (e.g. Expand Pen) leave the menu visible and
-      // re-render afterwards so the player can spam-click to keep
-      // expanding without re-opening the building menu each time.
-      if (!a.keepOpen) closeAnimalMenu();
-      a.run({ ix, iy });
-      if (a.keepOpen) {
-        setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+      // The menu stays open after every action by default — the player
+      // dismisses via the Done button. Actions that genuinely need the
+      // menu out of the way (e.g., the picker would block the next
+      // step) can opt back in with `closeOnRun: true`.
+      if (a.closeOnRun) {
+        closeAnimalMenu();
+        a.run({ ix, iy });
+        return;
       }
+      a.run({ ix, iy });
+      setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
     };
   };
   // Action slot #1 → ride button (top), #2 → collect, #3 → slaughter,
@@ -8272,7 +8276,9 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
     moveBtn.style.display = canMove ? '' : 'none';
     moveBtn.disabled = !canMove;
     moveBtn.onclick = canMove ? () => {
-      closeAnimalMenu();
+      // Stay open after Move — every menu now waits for the explicit
+      // Done click before dismissing. The player can drag the menu out
+      // of the way if it's blocking their drop spot.
       actOnTile('move', ix, iy, false);
     } : null;
   }
