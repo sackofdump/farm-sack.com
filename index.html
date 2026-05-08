@@ -7621,8 +7621,41 @@ const BUILDING_MENUS = {
           `</div>`
         );
       };
+      // Column-style "select all" header for the per-farmer task
+      // toggles. Lets the player flip Plow / Plant / Water / Harvest
+      // for every Crop Farmer in one click instead of toggling each
+      // row individually. Tri-state: ☑ when every farmer has the task
+      // on, ☐ when none, ⊟ when mixed; click flips toward "all on"
+      // unless everyone's already on (then it flips to "all off").
+      const cropFarmers = (state.staff && state.staff.members) ? state.staff.members.filter(m => m.role === 'crop_farmer') : [];
+      const taskHeaderHtml = (() => {
+        if (cropFarmers.length === 0) return '';
+        const TASKS = [['plow', 'Plow', '🟫'], ['plant', 'Plant', '🌱'], ['water', 'Water', '💧'], ['harvest', 'Harvest', '🌾']];
+        const total = cropFarmers.length;
+        const chips = TASKS.map(([key, label, emoji]) => {
+          const on = cropFarmers.reduce((n, m) => n + (getCropFarmerTaskFlags(m)[key] ? 1 : 0), 0);
+          const allOn  = on === total;
+          const allOff = on === 0;
+          const mark   = allOn ? '☑' : allOff ? '☐' : '⊟';
+          const bg     = allOn ? 'linear-gradient(to bottom,#FFF8E1,#E5C77A)' : allOff ? '#D8D2C2' : '#F0E0AB';
+          const border = allOn ? '#5C3F1A' : '#7E7666';
+          const color  = allOff ? '#7E7666' : '#3a2410';
+          const opacity = allOff ? '0.6' : '1';
+          return `<button data-staff-action="task-all" data-staff-task="${key}" ` +
+                 `title="${label}: ${on}/${total} on — click to toggle every Crop Farmer" ` +
+                 `style="background:${bg};border:1.5px solid ${border};border-radius:5px;` +
+                 `padding:3px 7px;font-size:11px;color:${color};opacity:${opacity};` +
+                 `cursor:pointer;font-weight:700;display:inline-flex;align-items:center;gap:3px;">` +
+                 `<span style="font-size:11px;">${mark}</span>${emoji} ${label} ` +
+                 `<span style="font-size:10px;color:#7a5430;">${on}/${total}</span></button>`;
+        }).join('');
+        return `<div style="background:#F5EBC8;border:1.5px solid #B89A66;border-radius:8px;padding:6px 8px;margin:4px 0;">` +
+                 `<div style="font-size:11px;color:#7a5430;font-weight:800;margin-bottom:4px;text-align:center;">Toggle for all ${total} Crop Farmer${total === 1 ? '' : 's'}</div>` +
+                 `<div style="display:flex;gap:4px;flex-wrap:wrap;justify-content:center;">${chips}</div>` +
+               `</div>`;
+      })();
       const rosterHtml = (state.staff && state.staff.members && state.staff.members.length)
-        ? state.staff.members.map(renderRow).join('')
+        ? taskHeaderHtml + state.staff.members.map(renderRow).join('')
         : `<div style="text-align:center;color:#7a5430;font-style:italic;padding:8px 0;">No staff hired yet — use the buttons below.</div>`;
       // Global pause toggle — flips state.staffPaused which the per-role
       // tickers (tickCropFarmer / tickArborist / tickAnimalKeeper) check
@@ -8039,6 +8072,27 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         // pause-all is a roster-wide toggle, not a per-member action,
         // so it doesn't carry a data-staff-id. Handle it before the
         // member lookup so we don't bail on the missing id.
+        if (action === 'task-all') {
+          // Bulk task-flag flip across every Crop Farmer. If anyone
+          // currently has the task off, set ALL on; otherwise (every
+          // farmer already has it on) set ALL off.
+          const taskKey = btn.getAttribute('data-staff-task');
+          if (!state.staff || !Array.isArray(state.staff.members)) return;
+          const cropFarmers = state.staff.members.filter(m => m.role === 'crop_farmer');
+          if (cropFarmers.length === 0) return;
+          const anyOff = cropFarmers.some(m => !getCropFarmerTaskFlags(m)[taskKey]);
+          const newValue = anyOff;
+          for (const m of cropFarmers) {
+            if (!m.taskFlags) m.taskFlags = { plow: true, plant: true, water: true, harvest: true };
+            m.taskFlags[taskKey] = newValue;
+            if (m.task && m.task.action === taskKey) m.task = null;
+            m.nextSearchAt = 0;
+          }
+          audio.play('click');
+          storage.save();
+          setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+          return;
+        }
         if (action === 'pause-all') {
           state.staffPaused = !state.staffPaused;
           // Drop every in-flight task so resuming snaps the workers
