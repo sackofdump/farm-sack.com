@@ -3644,7 +3644,7 @@ const SILO_YIELD_SPEED_BONUS        = 0.25;    // +25% faster yield timers while
 // (The flat silo-network slaughter bonus that used to sit alongside
 // this was removed — slaughter price now comes purely from the
 // per-animal age multiplier + per-animal weight.)
-const SLAUGHTER_OVERTIME_PER_DAY    = 5;
+const SLAUGHTER_OVERTIME_PER_DAY    = 6;
 // Yield-rate multiplier — divide the next-yield delay by this so each
 // timer counts down 25% faster while the silo is feeding.
 function siloYieldSpeedMul() { return siloHasFeed() ? 1 + SILO_YIELD_SPEED_BONUS : 1; }
