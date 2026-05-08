@@ -15515,15 +15515,17 @@ function bindInput() {
     }
     // -------- Place mode click --------
     if (live.placeMode) {
-      // Shift+drag a rect while a tree OR an animal is staged =
-      // bulk-place across the bounding box. Same machinery for trees,
-      // animals, and sprinklers; isPlaceableTile already routes animals
-      // to in-pen tiles only, and the sprinkler branch in the bulk-place
-      // pass strides the rect every 5 tiles to land flush coverage.
+      // Shift+drag a rect while ANY placeable item is staged =
+      // bulk-place across the bounding box. Trees / decor / animals
+      // / every building all route through the same paintRect pass;
+      // isPlaceableTile gates each tile so out-of-bounds / occupied
+      // / wrong-zone tiles get skipped. Sprinklers strides the rect
+      // every 5 tiles for flush coverage.
       const bulkOk = live.placeMode.id && !live.placeMode.moving &&
                      (live.placeMode.id.startsWith('tree_') ||
+                      live.placeMode.id.startsWith('decor_') ||
                       live.placeMode.id.startsWith('animal_') ||
-                      live.placeMode.id === 'building_sprinkler');
+                      live.placeMode.id.startsWith('building_'));
       if (e.button === 0 && e.shiftKey && bulkOk) {
         live.dragMode = 'paintRect';
         live.paintRect = {
@@ -16079,16 +16081,17 @@ function bindInput() {
       const r = live.paintRect;
       const x0 = Math.min(r.ix0, r.ix1), x1 = Math.max(r.ix0, r.ix1);
       const y0 = Math.min(r.iy0, r.iy1), y1 = Math.max(r.iy0, r.iy1);
-      // Bulk-place rect (trees + animals + sprinklers) uses
-      // isPlaceableTile + affordability instead of the canActOnTile
-      // path. Tagged 'placeTree' for legacy reasons; the branch
-      // handles animals + sprinklers too since the validity gate is
-      // identical, modulo the sprinkler stride.
+      // Bulk-place rect — trees / decor / animals / every building.
+      // Uses isPlaceableTile + affordability instead of the canActOnTile
+      // path. Tagged 'placeTree' for legacy reasons; the branch handles
+      // every category since the validity gate is identical, modulo
+      // the sprinkler stride for flush radius coverage.
       const isSprinkler = live.placeMode && live.placeMode.id === 'building_sprinkler';
       const bulkPlace = r.tool === 'placeTree' && live.placeMode && live.placeMode.id &&
                         (live.placeMode.id.startsWith('tree_') ||
+                         live.placeMode.id.startsWith('decor_') ||
                          live.placeMode.id.startsWith('animal_') ||
-                         isSprinkler);
+                         live.placeMode.id.startsWith('building_'));
       if (bulkPlace) {
         const candidates = [];
         if (isSprinkler) {
@@ -16152,8 +16155,10 @@ function bindInput() {
         let queuedCost = 0;
         for (const q of state.player.queue) {
           if (q.tool === 'placeHere' && q.placeData && q.placeData.id && !q.placeData.moving &&
-              (q.placeData.id.startsWith('tree_') || q.placeData.id.startsWith('animal_') ||
-               q.placeData.id === 'building_sprinkler')) {
+              (q.placeData.id.startsWith('tree_') ||
+               q.placeData.id.startsWith('decor_') ||
+               q.placeData.id.startsWith('animal_') ||
+               q.placeData.id.startsWith('building_'))) {
             queuedCost += q.placeData.cost || 0;
           }
         }
