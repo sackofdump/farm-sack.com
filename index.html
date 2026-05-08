@@ -2738,8 +2738,8 @@ function defaultWorldBounds() {
 // 6x6 starting fenced farm centered inside WORLD_W × WORLD_H.
 // Starting fenced lot: 12×12 (was 6×6 — bumped so a fresh farm has
 // enough room to actually plant something without having to expand
-// immediately). Reset Farm scales this further by the player's
-// prestige bonus.
+// immediately). Reset Farm always returns the player to this same
+// 12×12 footprint regardless of prestige bonus.
 const CROP_FARM = { id: 'crop', x0: 32, y0: 32, w: 12, h: 12, name: 'Crop Field' };
 const FARMS = [CROP_FARM];
 
@@ -3141,14 +3141,12 @@ function openResetFarmModal() {
     const totalPct= formatPrestigePct(total);
     const presCnt = (state.prestige && state.prestige.count) || 0;
     const STARTING_BASE = 12;
-    const curLot = Math.max(STARTING_BASE, Math.round(STARTING_BASE * (1 + cur)));
-    const newLot = Math.max(STARTING_BASE, Math.round(STARTING_BASE * (1 + total)));
     preview.innerHTML =
       // Current standing — banked bonus + reset count.
       `<div style="background:#FFF8E1;border:2px solid #C7A874;border-radius:8px;padding:8px 10px;margin-bottom:8px;">` +
         `<div style="font-size:11px;color:#7a5430;font-weight:800;text-transform:uppercase;letter-spacing:0.5px;">Current bonus</div>` +
         `<div style="font-size:18px;font-weight:800;color:#3F8338;">+${curPct}%</div>` +
-        `<div style="font-size:11px;color:#5b3f1f;">${presCnt} reset${presCnt === 1 ? '' : 's'} so far · starting lot is <b>${curLot}×${curLot}</b></div>` +
+        `<div style="font-size:11px;color:#5b3f1f;">${presCnt} reset${presCnt === 1 ? '' : 's'} so far</div>` +
       `</div>` +
       // What this reset will change.
       `<div style="display:flex;justify-content:space-between;margin-bottom:6px;">` +
@@ -3169,7 +3167,7 @@ function openResetFarmModal() {
         `<li>Staff move + work speed</li>` +
         `<li>Crop + tree growth speed</li>` +
         `<li>Watered base bonus (+${totalPct}% added to the level-0 +50%, upgrades stack on top)</li>` +
-        `<li>Starting fenced lot: <b>${newLot}×${newLot}</b> (was ${curLot}×${curLot} from your current bonus)</li>` +
+        `<li>Starting fenced lot: <b>${STARTING_BASE}×${STARTING_BASE}</b> (always — expand from there)</li>` +
         `<li>Starting coins: <b>${formatCoins(Math.round(1000 * (1 + total)))}¢</b> (1,000 base × prestige)</li>` +
         `<li>Farm grass tint shifts a hue per reset</li>` +
       `</ul>`;
@@ -3227,13 +3225,13 @@ function resetFarm() {
   // but if anything ever clears/rebuilds CROPS this guarantees the
   // post-prestige seed strip + seed container still surface them.
   if (typeof rehydrateMutationCrops === 'function') rehydrateMutationCrops();
-  // Scale the starting farm lot by the new prestige bonus. Base is
-  // 12×12 (the new starting size); +25% prestige → round(12 × 1.25)
-  // = 15; +100% → 24. Floor at 12 in case totalBonus is somehow
-  // negative.
+  // Prestige always drops the player back onto the default 12×12
+  // starting lot — late-game perf gets unmanageable with the prior
+  // bonus-scaled lots, and resetting to a clean slate is part of the
+  // appeal anyway. The permanent prestige bonus still scales coins,
+  // XP, growth + speed, just not lot size.
   const STARTING_FARM_BASE = 12;
-  const presBonusForLot = (state.prestige.totalBonus || 0);
-  const startSize = Math.max(STARTING_FARM_BASE, Math.round(STARTING_FARM_BASE * (1 + presBonusForLot)));
+  const startSize = STARTING_FARM_BASE;
   state.cropFarmW = startSize;
   state.cropFarmH = startSize;
   // CROP_FARM is a `const` BINDING but the object is mutable —
