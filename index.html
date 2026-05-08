@@ -9505,14 +9505,23 @@ function _fenceSignature() {
   s += '|R' + (state.rotation || 0);
   return s;
 }
-function buildFenceList(list) {
+function buildFenceList(list, cullMinX, cullMaxX, cullMinY, cullMaxY) {
   const sig = _fenceSignature();
+  // Cull-box gate — drop any cached segment whose source tile is
+  // off-screen so multi-farm fences (~6,500 segments at 5 farms)
+  // don't all flow through the depth sort + per-frame draw pass.
+  // When the caller doesn't pass a cull box (legacy callers) we
+  // emit everything to preserve old behaviour.
+  const haveCull = (typeof cullMinX === 'number');
   if (_fenceCache.sig === sig && _fenceCache.segs) {
-    // Geometry unchanged — splice the cached segments straight onto
-    // the active draw list. The draw pass mutates depths/positions
-    // in place by reading isoCenter at paint time, but the segment
-    // records themselves only carry x/y references that don't.
-    for (const s of _fenceCache.segs) list.push(s);
+    if (haveCull) {
+      for (const s of _fenceCache.segs) {
+        if (s.ix < cullMinX || s.ix > cullMaxX || s.iy < cullMinY || s.iy > cullMaxY) continue;
+        list.push(s);
+      }
+    } else {
+      for (const s of _fenceCache.segs) list.push(s);
+    }
     return;
   }
   // Geometry changed — rebuild into a fresh cache, then splice on.
@@ -9560,7 +9569,14 @@ function buildFenceList(list) {
   }
   _fenceCache.sig  = sig;
   _fenceCache.segs = built;
-  for (const s of built) list.push(s);
+  if (haveCull) {
+    for (const s of built) {
+      if (s.ix < cullMinX || s.ix > cullMaxX || s.iy < cullMinY || s.iy > cullMaxY) continue;
+      list.push(s);
+    }
+  } else {
+    for (const s of built) list.push(s);
+  }
 }
 function fenceRect(list, x0, y0, w, h, isInside, gate, skipNeighbor) {
   for (let dy = 0; dy < h; dy++) {
@@ -9624,10 +9640,14 @@ function fenceRect(list, x0, y0, w, h, isInside, gate, skipNeighbor) {
         const neighDepth = depthOf(s.nx, s.ny);
         const isFront = neighDepth > tileDepth;
         const depth = tileDepth + (isFront ? 0.6 : -0.1);
-        list.push({ depth: depth - 0.012, kind: 'fenceBase', x1: ax, y1: ay,      x2: bx, y2: by      });
-        list.push({ depth: depth - 0.008, kind: 'fenceRail', x1: ax, y1: ay - 5,  x2: bx, y2: by - 5  });
-        list.push({ depth: depth - 0.005, kind: 'fenceRail', x1: ax, y1: ay - 11, x2: bx, y2: by - 11 });
-        list.push({ depth, kind: 'fencePost', x: px, y: py });
+        // ix/iy stamped on each segment so the fence-cache cull pass
+        // can drop off-screen segments without rebuilding the whole
+        // cache. The renderer skips entries whose tile falls outside
+        // the visible cull box.
+        list.push({ depth: depth - 0.012, kind: 'fenceBase', x1: ax, y1: ay,      x2: bx, y2: by,      ix, iy });
+        list.push({ depth: depth - 0.008, kind: 'fenceRail', x1: ax, y1: ay - 5,  x2: bx, y2: by - 5,  ix, iy });
+        list.push({ depth: depth - 0.005, kind: 'fenceRail', x1: ax, y1: ay - 11, x2: bx, y2: by - 11, ix, iy });
+        list.push({ depth, kind: 'fencePost', x: px, y: py, ix, iy });
       }
     }
   }
@@ -9994,8 +10014,12 @@ function drawAll() {
       list.push({ depth: depthOf(m.ix, m.iy) + 1.5, kind: 'staff', staff: m });
     }
   }
-  // Fences
-  buildFenceList(list);
+  // Fences — cull to the visible window; the cache holds every
+  // boundary segment for every farm + pen rect, so on a multi-farm
+  // farm only a small slice is on-screen at any one time. Use the
+  // looser placed-cull box so corner posts that sit on the rim of
+  // the viewport aren't clipped.
+  buildFenceList(list, cullPlMinX, cullPlMaxX, cullPlMinY, cullPlMaxY);
   _dEnd('listBuild', _tListBuild);
   if (_drawAllSubBag) _drawAllSubBag.listSize = list.length;
   const _tSort = _dStart();
