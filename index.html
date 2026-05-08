@@ -5210,9 +5210,29 @@ const storage = {
     for (const k of this.KEEP_FIELDS) if (k in state) out[k] = state[k];
     return out;
   },
+  // Debounce local writes — late-game bursts (10 farmers all plowing /
+  // planting / harvesting in the same ~100ms window) used to fire 30+
+  // saves back-to-back, each one doing a localStorage read-parse +
+  // JSON.stringify of the full state. That stalled the main thread for
+  // multiple seconds. Collapsing the burst into a single flush every
+  // 250ms keeps progress safe (worst-case loss is a quarter-second of
+  // play) while gutting the freeze.
   save() {
-    // After wipe(), refuse further saves so a tail-end loop tick can't
-    // re-create the save file in the milliseconds before location.reload().
+    if (storage._wiped) return;
+    if (storage._saveTimer) return;
+    storage._saveTimer = setTimeout(() => {
+      storage._saveTimer = null;
+      storage._flushSave();
+    }, 250);
+  },
+  flushNow() {
+    if (storage._saveTimer) {
+      clearTimeout(storage._saveTimer);
+      storage._saveTimer = null;
+    }
+    storage._flushSave();
+  },
+  _flushSave() {
     if (storage._wiped) return;
     // Multi-tab guard: if another tab has already written a newer save to
     // the same key, refuse to stomp it. This catches the "open game in two
@@ -5239,7 +5259,10 @@ const storage = {
     } catch (e) { /* ignore parse errors and proceed with the save */ }
     state.lastSaved = Date.now();
     const payload = this.buildPayload();
-    try { localStorage.setItem(SAVE_KEY, JSON.stringify(state)); } catch (e) {}
+    // Stringify the payload (KEEP_FIELDS only) — used to stringify the
+    // live `state` which dragged transient runtime data through the
+    // serializer too.
+    try { localStorage.setItem(SAVE_KEY, JSON.stringify(payload)); } catch (e) {}
     // Debounce cloud writes so a flurry of UI events (drag-paint a row of
     // wheat, etc.) collapses into one network round-trip.
     if (cloud && cloud.user) {
@@ -17252,7 +17275,15 @@ document.addEventListener('visibilitychange', () => {
   // until the next tick fired and re-evaluated the scheduler.
   _cancelLoopTimers();
   _scheduleNextFrame();
+  // Flush any debounced save before the tab goes idle so the last
+  // ≤250ms of play isn't lost if the player closes the tab while
+  // hidden. visibilitychange fires reliably on mobile too.
+  if (document.hidden) { try { storage.flushNow(); } catch (e) {} }
 });
+// Same flush on hard unload paths, for desktops where the player just
+// closes the window without backgrounding the tab first.
+window.addEventListener('pagehide', () => { try { storage.flushNow(); } catch (e) {} });
+window.addEventListener('beforeunload', () => { try { storage.flushNow(); } catch (e) {} });
 
 // ============================================================
 // INIT
