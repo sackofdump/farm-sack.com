@@ -7980,23 +7980,55 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
           if (queued > 0) toast(`Queued ${queued} collect${queued === 1 ? '' : 's'}.`, false, 'good');
           else toast('No ready yields to collect.', true);
         } else if (kind === 'slaughter') {
-          const cand = [];
+          // Bulk slaughter — process every mature animal in the
+          // visible roster instantly instead of queuing a walk-to-each
+          // chain. No farmer schlep; coins + XP land all at once and
+          // the per-species stat bumps batch into one chain per
+          // species (instead of 100+ achievement / quest / daily
+          // recheck cascades).
+          if (buildingCount('building_slaughterhouse') === 0) {
+            toast('Build a Slaughterhouse first.', true); audio.play('error'); return;
+          }
+          const yieldMul = yieldMultiplier() * siloYieldMul() * marketSellMul();
+          const cottageMul = cottageXpMul();
+          let processed = 0;
+          let totalCoins = 0;
+          let totalXp = 0;
+          const bySpecies = {};
+          // Cap visual fx so a 100-animal mass-cull doesn't spam the
+          // DOM with hundreds of particle elements.
+          const FX_CAP = 8;
           for (const r of filtered) {
-            if (!ANIMAL_MEAT[r.it.id] || !animalIsMature(r.it)) continue;
             const aKey = r.ix + ',' + r.iy;
-            if ((state.player.queue || []).some(q =>
-              (q.tool === 'pickupAnimal' || q.tool === 'slaughterDeliver' || q.tool === 'slaughterAtTile') && q.animalKey === aKey)) continue;
-            cand.push({ ix: r.ix, iy: r.iy, animal: r.it });
+            const animal = state.placed[aKey];
+            if (!animal || animal !== r.it) continue;     // moved or already gone
+            const meat = ANIMAL_MEAT[animal.id];
+            if (!meat || !animalIsMature(animal)) continue;
+            const ageMul = animalAgeMul(animal);
+            const matureBonus = Math.round(animal.matureBonus || 0);
+            const coins = Math.round(meat.coins * yieldMul * ageMul) + yieldFlatBonus() + matureBonus;
+            const xp    = Math.max(1, Math.round(meat.xp * cottageMul * ageMul));
+            delete state.placed[aKey];
+            state.coins += coins;
+            totalCoins += coins;
+            totalXp    += xp;
+            bySpecies[animal.id] = (bySpecies[animal.id] || 0) + 1;
+            if (processed < FX_CAP) {
+              fxBurst(r.ix, r.iy, '#FFE066', 10);
+            }
+            processed++;
           }
-          const ordered = nnSort(cand);
-          let queued = 0;
-          for (const c of ordered) {
-            const aKey = c.ix + ',' + c.iy;
-            if (queueOneClickSlaughter(aKey, c.animal)) queued++;
+          if (processed > 0) {
+            grantXp(totalXp);
+            bumpStat('slaughtered', processed);
+            for (const id in bySpecies) bumpStat('slaughteredByAnimal.' + id, bySpecies[id]);
+            audio.play('coin');
+            toast(`Slaughtered ${processed} for +${totalCoins.toLocaleString()}¢ (+${totalXp} XP).`, false, 'good', 4500);
+            storage.save(); refreshHud();
+          } else {
+            audio.play('error');
+            toast('No mature animals to slaughter.', true);
           }
-          audio.play(queued > 0 ? 'click' : 'error');
-          if (queued > 0) toast(`Queued ${queued} slaughter${queued === 1 ? '' : 's'}.`, false, 'good');
-          else toast('No mature animals to slaughter.', true);
         } else if (kind === 'pet') {
           if (!state.player.queue) state.player.queue = [];
           // Filter to pet-eligible animals first, then walk them in
