@@ -15264,19 +15264,19 @@ function bindInput() {
     const k = tileKey(ix, iy);
     if (live.draggedTiles.has(k)) return;
     live.draggedTiles.add(k);
-    // Drag-paint placement for trees, decor, and most buildings — each
-    // tile the cursor crosses queues a placeHere walk-and-plant so bulk
-    // orchards / streets of cottages / rows of sprinklers all happen
-    // with a single drag instead of click-per-tile. Excluded: the barn
-    // (spawns a 6×6 pen, never bulkable) and the New Crop Farm (spawns
-    // a 6×6 farm rect, also never bulkable).
+    // Drag-paint placement for trees, decor, and every building —
+    // each tile the cursor crosses queues a placeHere walk-and-plant
+    // so bulk orchards / rows of silos / streets of cottages all
+    // happen with a single drag instead of click-per-tile. Buildings
+    // that spawn rect features (barn → 6×6 pen, New Crop Farm → 6×6
+    // farm rect) still go through their normal placement check via
+    // isPlaceableTile, so a drag only drops one wherever the rect
+    // fits without overlapping existing farms / pens.
     if (live.placeMode && live.placeMode.id) {
       const pid = live.placeMode.id;
       const isTree     = pid.startsWith('tree_');
       const isDecor    = pid.startsWith('decor_');
-      const isBuilding = pid.startsWith('building_')
-                          && pid !== 'building_barn'
-                          && pid !== 'building_crop_farm';
+      const isBuilding = pid.startsWith('building_');
       if (isTree || isDecor || isBuilding) {
         if (!isPlaceableTile(ix, iy)) return;
         // Affordability gate: count the cost of every same-prefix item
