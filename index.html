@@ -15607,10 +15607,13 @@ function bindInput() {
         if (live.placeMode.moving) {
           cancelPlaceMode();
         }
-        // Trees: keep placeMode AND enter paint mode so a held drag plants
-        // the next tiles too. Track the start tile so the move handler
-        // doesn't re-queue it.
-        if (queuedId && queuedId.startsWith('tree_')) {
+        // Trees / decor / buildings: keep placeMode AND enter paint
+        // mode so a held drag continues queueing placements as the
+        // cursor crosses each new tile. Track the start tile so the
+        // move handler doesn't re-queue the click point.
+        if (queuedId && (queuedId.startsWith('tree_') ||
+                         queuedId.startsWith('decor_') ||
+                         queuedId.startsWith('building_'))) {
           live.dragMode = 'paint';
           live.draggedTiles.add(startT.ix + ',' + startT.iy);
           stage.setPointerCapture(e.pointerId);
