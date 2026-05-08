@@ -2652,6 +2652,18 @@ body.layoutEdit #dismountBanner:active { cursor: grabbing; }
   </div>
 </div>
 
+<!-- Lightweight modal listing every crop farm the player has placed.
+     Wired by openFarmsListModal(). Each row drills into the per-farm
+     management menu (rename / expand / sell). -->
+<div id="farmsListModal" class="modal hidden">
+  <div class="modal-body" style="width:auto;max-width:min(440px,94vw);padding:18px 22px;">
+    <button class="modal-close" data-close="farmsListModal" aria-label="Close" style="position:absolute;top:8px;right:10px;background:none;border:none;font-size:22px;color:#4A2E15;cursor:pointer;">×</button>
+    <h2 style="text-align:center;margin-bottom:6px;">📏 Your Crop Farms</h2>
+    <p style="text-align:center;color:#6A4A22;font-size:12px;margin-bottom:12px;">Click a farm to manage and expand it.</p>
+    <div id="farmsListBody" style="display:flex;flex-direction:column;gap:8px;max-height:60vh;overflow-y:auto;"></div>
+  </div>
+</div>
+
 <!-- Lightweight modal for editing a worker's name + gender. Wired by
      openWorkerEditModal() — replaces the per-staff inline UI so the form
      can sit on top of the field without crowding the menu. -->
@@ -2742,6 +2754,133 @@ function defaultWorldBounds() {
 // 12×12 footprint regardless of prestige bonus.
 const CROP_FARM = { id: 'crop', x0: 32, y0: 32, w: 12, h: 12, name: 'Crop Field' };
 const FARMS = [CROP_FARM];
+// ---------- Multi-farm helpers ----------
+// state.cropFarms is the source of truth for every fenced crop field
+// on the map. cropFarms[0] is the legacy primary farm; additional
+// entries come from the "New Crop Farm" shop item and can each be
+// expanded independently. Older saves predate the array — the loader
+// migrates state.worldBounds into a single-element list.
+const NEW_FARM_W = 6, NEW_FARM_H = 6;
+const NEW_FARM_COST = 5000;
+const FARM_MAX_DIM = 32;            // single-farm max side length
+function getCropFarms() {
+  if (!Array.isArray(state.cropFarms) || state.cropFarms.length === 0) {
+    // Synthetic fallback before the loader has migrated. Mirrors the
+    // CROP_FARM const so early-boot reads don't crash.
+    return [{ id: 'crop', name: 'Crop Field', x0: CROP_FARM.x0, y0: CROP_FARM.y0, w: CROP_FARM.w, h: CROP_FARM.h }];
+  }
+  return state.cropFarms;
+}
+function cropFarmAt(ix, iy) {
+  for (const f of getCropFarms()) {
+    if (ix >= f.x0 && iy >= f.y0 && ix < f.x0 + f.w && iy < f.y0 + f.h) return f;
+  }
+  return null;
+}
+// Re-mirror state.worldBounds onto the primary farm. Lots of legacy
+// call sites read worldBounds expecting a single rectangular play area;
+// keeping it sync'd to cropFarms[0] means most callers keep working
+// without a per-callsite refactor.
+function syncWorldBounds() {
+  const farms = getCropFarms();
+  if (farms.length > 0) {
+    const f = farms[0];
+    state.worldBounds = { x0: f.x0, y0: f.y0, w: f.w, h: f.h };
+  }
+}
+// Anchor a brand-new crop farm rect in world space. The given (ix,iy)
+// is the NW tile; the rect extends NEW_FARM_W × NEW_FARM_H to the SE.
+// Returns the new farm record; the caller pushes it onto cropFarms.
+function makeNewCropFarm(ix, iy) {
+  let nextSuffix = 2;
+  for (const f of getCropFarms()) {
+    const m = /^crop_(\d+)$/.exec(f.id || '');
+    if (m) nextSuffix = Math.max(nextSuffix, parseInt(m[1], 10) + 1);
+  }
+  return {
+    id: 'crop_' + nextSuffix,
+    name: 'Crop Field ' + nextSuffix,
+    x0: ix, y0: iy, w: NEW_FARM_W, h: NEW_FARM_H,
+  };
+}
+// Validate that a 6×6 rect anchored at (ix,iy) fits in the world AND
+// doesn't overlap any other farm rect, barn pen, path, or placed item.
+function canDropNewCropFarm(ix, iy) {
+  if (ix < 0 || iy < 0) return false;
+  if (ix + NEW_FARM_W > WORLD_W || iy + NEW_FARM_H > WORLD_H) return false;
+  for (let dy = 0; dy < NEW_FARM_H; dy++) {
+    for (let dx = 0; dx < NEW_FARM_W; dx++) {
+      const tx = ix + dx, ty = iy + dy;
+      if (cropFarmAt(tx, ty)) return false;
+      if (typeof inBarnPen === 'function' && inBarnPen(tx, ty)) return false;
+      if (PATH_TILES.has(tileKey(tx, ty))) return false;
+      if (state.placed && state.placed[tileKey(tx, ty)]) return false;
+    }
+  }
+  return true;
+}
+// Compute the next-ring expansion for ONE farm rect (independent of
+// all other farms). Same shape as the global expandedRect, but skips
+// any side that would push the rect into another farm / pen / placed
+// item — so adjacent farms can keep expanding the open sides.
+function expandedFarmRect(farm) {
+  const blockedSide = (x0, y0, w, h) => {
+    for (let dy = 0; dy < h; dy++) {
+      for (let dx = 0; dx < w; dx++) {
+        const tx = x0 + dx, ty = y0 + dy;
+        if (tx < 0 || ty < 0 || tx >= WORLD_W || ty >= WORLD_H) return true;
+        for (const f of getCropFarms()) {
+          if (f === farm) continue;
+          if (tx >= f.x0 && tx < f.x0 + f.w && ty >= f.y0 && ty < f.y0 + f.h) return true;
+        }
+        if (typeof inBarnPen === 'function' && inBarnPen(tx, ty)) return true;
+        if (PATH_TILES.has(tileKey(tx, ty))) return true;
+      }
+    }
+    return false;
+  };
+  const growW = farm.x0 > 0           && farm.w < FARM_MAX_DIM && !blockedSide(farm.x0 - 1, farm.y0, 1, farm.h);
+  const growE = farm.x0 + farm.w < WORLD_W && farm.w < FARM_MAX_DIM && !blockedSide(farm.x0 + farm.w, farm.y0, 1, farm.h);
+  const growN = farm.y0 > 0           && farm.h < FARM_MAX_DIM && !blockedSide(farm.x0, farm.y0 - 1, farm.w, 1);
+  const growS = farm.y0 + farm.h < WORLD_H && farm.h < FARM_MAX_DIM && !blockedSide(farm.x0, farm.y0 + farm.h, farm.w, 1);
+  // Match the global behaviour: keep the rect square by capping per-axis
+  // growth to whichever axis can match.
+  const xPossible = (growW ? 1 : 0) + (growE ? 1 : 0);
+  const yPossible = (growN ? 1 : 0) + (growS ? 1 : 0);
+  const matched = Math.min(xPossible, yPossible);
+  let dxW = 0, dxE = 0, dyN = 0, dyS = 0;
+  if (matched >= 2) { dxW = 1; dxE = 1; }
+  else if (matched === 1) { if (growW) dxW = 1; else dxE = 1; }
+  if (matched >= 2) { dyN = 1; dyS = 1; }
+  else if (matched === 1) { if (growN) dyN = 1; else dyS = 1; }
+  return {
+    newX0: farm.x0 - dxW,
+    newY0: farm.y0 - dyN,
+    newW:  farm.w + dxW + dxE,
+    newH:  farm.h + dyN + dyS,
+    grew:  (dxW + dxE + dyN + dyS) > 0,
+  };
+}
+function expandFarmInfo(farm) {
+  const r = expandedFarmRect(farm);
+  if (!r.grew) return { tiles: 0, cost: 0, maxed: true };
+  // New tiles = those in the new rect not already in the old rect.
+  let tiles = 0;
+  for (let dy = 0; dy < r.newH; dy++) {
+    for (let dx = 0; dx < r.newW; dx++) {
+      const ix = r.newX0 + dx, iy = r.newY0 + dy;
+      if (ix >= farm.x0 && iy >= farm.y0 && ix < farm.x0 + farm.w && iy < farm.y0 + farm.h) continue;
+      tiles++;
+    }
+  }
+  // Same per-ring premium as the global expand: +50% for each ring
+  // already taken on this farm.
+  const baseSize = NEW_FARM_W;       // freshly-bought farms start at 6×6
+  const ringsTaken = Math.max(0, Math.round((farm.w - baseSize) / 2));
+  const ringMul = 1 + ringsTaken * 0.5;
+  const cost = Math.round(tiles * (typeof LAND_PRICE === 'number' ? LAND_PRICE : 90) * 0.66 * ringMul);
+  return { tiles, cost, maxed: false };
+}
 
 // One in-game day = 5 minutes.
 const DAY_MS = 5 * 60 * 1000;
@@ -3252,6 +3391,13 @@ function resetFarm() {
   // 72×72 meadow on prestige runs. Setting it explicitly here is
   // belt-and-suspenders alongside the inWorld fix.
   state.worldBounds = defaultWorldBounds();
+  // Rebuild the multi-farm list so prestige drops the player onto a
+  // single fresh primary farm. Any extra crop farms purchased in the
+  // previous run are wiped (along with state.placed / state.plots).
+  state.cropFarms = [{
+    id: 'crop', name: 'Crop Field',
+    x0: CROP_FARM.x0, y0: CROP_FARM.y0, w: CROP_FARM.w, h: CROP_FARM.h,
+  }];
   // Drop the player INSIDE the new farm rather than one tile outside
   // the southwest corner. The old spawn worked when the lot was 6×6
   // and tiny, but on a recentered post-prestige lot the player ended
@@ -3391,16 +3537,22 @@ function buildingCount(id) {
   if (_buildingCountCache.has(id)) return _buildingCountCache.get(id);
   let n = 0;
   for (const k in state.placed) if (state.placed[k].id === id) n++;
-  const capped = Math.min(5, n);
-  _buildingCountCache.set(id, capped);
-  return capped;
+  // Return the TRUE count — the old "Math.min(5, n)" cap was baking
+  // the cap into every consumer, which silently capped silo capacity
+  // at 5 silos × 500 (= 2500) even after the silo was meant to scale
+  // unlimited by player count. Cap-bound consumers now apply
+  // Math.min themselves where the +25% bonus cap belongs.
+  _buildingCountCache.set(id, n);
+  return n;
 }
-function cottageXpMul()    { return 1 + 0.05 * buildingCount('building_house'); }
+// Cottage: +5% XP per copy, capped at +25% (5 cottages worth).
+function cottageXpMul()    { return 1 + Math.min(0.25, 0.05 * buildingCount('building_house')); }
 // Silo yield bonus: +5% per silo, hard-capped at +25% (5 silos worth)
 // so adding silos past 5 still raises grain capacity but doesn't stack
 // the harvest-coin multiplier indefinitely.
 function siloYieldMul()    { return 1 + Math.min(0.25, 0.05 * buildingCount('building_silo')); }
-function marketSellMul()   { return 1 + 0.05 * buildingCount('building_market_stall'); }
+// Market Stall: +5% sell price per copy, capped at +25%.
+function marketSellMul()   { return 1 + Math.min(0.25, 0.05 * buildingCount('building_market_stall')); }
 // Windmill: +5% crop growth speed per copy, hard-capped at +25%
 // (5 windmills worth) so the description matches the actual behavior.
 const WINDMILL_MAX_BONUS = 0.25;
@@ -4664,6 +4816,7 @@ const SHOP_ITEMS = [
   { cat: 'building', id: 'building_silo',         name: 'Grain Silo',   cost: 3600, sub: '+5% crops & animal yield (cap +25%) · adds +500 feed capacity each (uncapped — keep building for more storage)', unlock: 9  },
   { cat: 'building', id: 'building_staff',        name: 'Staff Hall',   cost: 1800, sub: 'Hire farmhands — crop farmers + animal keepers',     unlock: 15 },
   { cat: 'building', id: 'building_seed_container', name: 'Seed Container', cost: 900,  sub: 'Stockpile unlimited seeds for your crop farmer to plant', unlock: 15 },
+  { cat: 'building', id: 'building_crop_farm',    name: 'New Crop Farm',  cost: NEW_FARM_COST, sub: 'Drops a fresh ' + NEW_FARM_W + '×' + NEW_FARM_H + ' fenced field — manage + expand each one independently from its own menu',  unlock: 5  },
   { cat: 'building', id: 'building_coffee_stand',   name: 'Coffee Stand',   cost: 1350, sub: 'Caffeinates staff — +50%, +25% per extra stand (max +100%)', unlock: 15 },
   { cat: 'building', id: 'building_slaughterhouse', name: 'Slaughterhouse', cost: 6300, sub: 'Click an animal, then this — meat for coins', unlock: 11 },
   { cat: 'building', id: 'building_greenhouse',     name: 'Greenhouse',     cost: 8250, sub: 'Brew rare seed mutations · +5% lucky-harvest chance per copy (cap +25%) — proc adds +10–30% to the yield', unlock: 12 },
@@ -5215,7 +5368,7 @@ const storage = {
   _cloudPushTimer: null,
   KEEP_FIELDS: ['coins','xp','level','selectedTool','selectedSeed','muted','startedAt','lastSaved',
                 'camX','camY','zoom','plots','placed','farmExpansion','worldBounds','player','rotation',
-                'cropFarmW','cropFarmH','stats','achievements','quests','questsCompleted',
+                'cropFarmW','cropFarmH','cropFarms','stats','achievements','quests','questsCompleted',
                 'dailies','dailyResetAt','dailiesCompleted','dailyStreak','lastDailyDay',
                 'tutorialStep','prefs','barnPen','barnPens','clearedWild','barnTutorialShown','greenhouseTutorialShown',
                 'siloTutorialShown','dogTutorialShown','greenhouse','priorityQuests','silo','staff','staffTutorialShown','coffeeStand','expandHintShown',
@@ -5802,10 +5955,10 @@ function farmAt(ix, iy) {
 // a farm tile that can be plowed. The animal pen is a separate fenced
 // region; you don't plow inside the pen.
 function inCropFarm(ix, iy) {
-  if (!inWorld(ix, iy)) return false;
   if (PATH_TILES.has(tileKey(ix, iy))) return false;
   if (inBarnPen(ix, iy)) return false;
-  return true;
+  // Multi-farm aware: any tile inside any cropFarms[] rect counts.
+  return cropFarmAt(ix, iy) !== null;
 }
 // Animals/barn aren't part of starting play yet — kept as a stub so
 // downstream code (placement validity, tooltips, click routing) compiles
@@ -5818,17 +5971,11 @@ function inFarm(ix, iy) { return inCropFarm(ix, iy); }
 function inWorld(ix, iy) {
   if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) return false;
   // The animal pen is part of the playable world even though it lives
-  // outside worldBounds — animals roam it freely.
+  // outside the crop farms — animals roam it freely.
   if (inBarnPen(ix, iy)) return true;
-  // Fall back to the default farm rectangle when state.worldBounds is
-  // null. Treating null as "everywhere" was a long-standing bug:
-  // resetFarm nulls worldBounds expecting defaultWorldBounds() to take
-  // over, but every other call site does that fallback explicitly —
-  // inWorld did not, so the post-reset run let the player place
-  // buildings on the entire 72×72 meadow outside the freshly-fenced
-  // starting lot.
-  const b = state.worldBounds || defaultWorldBounds();
-  return ix >= b.x0 && iy >= b.y0 && ix < b.x0 + b.w && iy < b.y0 + b.h;
+  // Multi-farm: a tile is "in the world" if it lives inside any of the
+  // player's crop farms.
+  return cropFarmAt(ix, iy) !== null;
 }
 
 // ============================================================
@@ -5840,6 +5987,13 @@ function initFarm() {
   // tile is plowed / planted, and gets cleaned up on harvest.
   state.plots = {};
   state.worldBounds = defaultWorldBounds();
+  // Seed the multi-farm list with one primary farm matching the
+  // starting fenced lot. The buildable "New Crop Farm" appends to this
+  // list; resetFarm rebuilds it.
+  state.cropFarms = [{
+    id: 'crop', name: 'Crop Field',
+    x0: CROP_FARM.x0, y0: CROP_FARM.y0, w: CROP_FARM.w, h: CROP_FARM.h,
+  }];
 }
 // Migrate older saves: drop any legacy 'wild' plot records — those came
 // from an early model where every farm tile pre-existed as wild grass.
@@ -8978,6 +9132,166 @@ function findPenForSlaughterhouse(ix, iy) {
   }
   return pens[0] || null;
 }
+// Open the per-farm management menu via the existing #animalMenu
+// shell. Reuses the action-button slots (rideBtn = expand, collectBtn
+// = rename, slaughterBtn = sell). Sell is hidden for the primary
+// farm (cropFarms[0]) since it's the player's permanent home base.
+function openFarmMenu(farm, screenX, screenY) {
+  const menu = document.getElementById('animalMenu');
+  if (!menu || !farm) return;
+  const titleEl = document.getElementById('amTitle');
+  const descEl  = document.getElementById('amDesc');
+  const rideBtn      = document.getElementById('amRide');
+  const collectBtn   = document.getElementById('amCollect');
+  const slaughterBtn = document.getElementById('amSlaughter');
+  const petBtn       = document.getElementById('amPet');
+  const moveBtn      = document.getElementById('amMove');
+  const sellBtn      = document.getElementById('amSell');
+  const closeBtn     = document.getElementById('amClose');
+  if (titleEl) titleEl.textContent = '📏 ' + (farm.name || 'Crop Farm');
+  const exp = expandFarmInfo(farm);
+  if (descEl) {
+    let html = '';
+    html += `<div style="font-size:12px;color:#5b3f1f;">Size <b>${farm.w}×${farm.h}</b> · ${farm.w * farm.h} tiles</div>`;
+    if (exp.maxed) {
+      html += '<div style="font-size:12px;color:#7A3F00;font-weight:700;margin-top:4px;">No room to grow on any side.</div>';
+    } else {
+      html += `<div style="font-size:12px;color:#5b3f1f;margin-top:4px;">Next ring adds <b>${exp.tiles}</b> tiles for <b>${exp.cost.toLocaleString()}¢</b></div>`;
+    }
+    descEl.innerHTML = html;
+    descEl.style.display = '';
+  }
+  // Slot 0 (rideBtn): Expand. keepOpen — re-render so the player
+  // can spam-click to keep growing.
+  if (rideBtn) {
+    rideBtn.style.display = '';
+    rideBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
+    rideBtn.style.borderColor = '#2A4A1A';
+    rideBtn.disabled = exp.maxed || state.coins < exp.cost;
+    rideBtn.textContent = exp.maxed
+      ? `📏 Field MAX (${farm.w}×${farm.h})`
+      : `📏 Expand → ${farm.w + 2}×${farm.h + 2} (${exp.cost.toLocaleString()}¢)`;
+    rideBtn.onclick = rideBtn.disabled ? null : () => {
+      const r = expandedFarmRect(farm);
+      if (!r.grew) return;
+      state.coins -= exp.cost;
+      farm.x0 = r.newX0; farm.y0 = r.newY0;
+      farm.w  = r.newW;  farm.h  = r.newH;
+      syncWorldBounds();
+      audio.play('coin');
+      toast(`${farm.name} expanded to ${farm.w}×${farm.h}.`, false, 'good');
+      storage.save(); refreshHud();
+      setTimeout(() => openFarmMenu(farm, screenX, screenY), 0);
+    };
+  }
+  // Slot 1 (collectBtn): Rename.
+  if (collectBtn) {
+    collectBtn.style.display = '';
+    collectBtn.style.background = '';
+    collectBtn.style.borderColor = '';
+    collectBtn.disabled = false;
+    collectBtn.textContent = '✏️ Rename Farm';
+    collectBtn.onclick = () => {
+      const next = prompt('Rename this farm:', farm.name || 'Crop Field');
+      if (next && next.trim()) {
+        farm.name = next.trim().slice(0, 32);
+        storage.save();
+        setTimeout(() => openFarmMenu(farm, screenX, screenY), 0);
+      }
+    };
+  }
+  // Slot 2 (slaughterBtn): Sell — only on non-primary farms. Selling
+  // wipes every plot + placed item inside the rect.
+  const farmIdx = (state.cropFarms || []).indexOf(farm);
+  const isPrimary = farmIdx === 0;
+  if (slaughterBtn) {
+    if (isPrimary) {
+      slaughterBtn.style.display = 'none';
+    } else {
+      slaughterBtn.style.display = '';
+      slaughterBtn.style.background = 'linear-gradient(to bottom,#E27464,#A03423)';
+      slaughterBtn.style.borderColor = '#6A1A12';
+      slaughterBtn.disabled = false;
+      const refund = Math.round(NEW_FARM_COST * 0.5);
+      slaughterBtn.textContent = `🏷️ Sell Farm (+${refund}¢)`;
+      slaughterBtn.onclick = () => {
+        if (!confirm(`Sell ${farm.name}? Refund ${refund}¢. Crops, plots, and any items inside this farm will be removed.`)) return;
+        for (let dy = 0; dy < farm.h; dy++) {
+          for (let dx = 0; dx < farm.w; dx++) {
+            const k = tileKey(farm.x0 + dx, farm.y0 + dy);
+            delete state.plots[k];
+            if (state.placed[k]) delete state.placed[k];
+          }
+        }
+        state.coins += refund;
+        state.cropFarms.splice(farmIdx, 1);
+        syncWorldBounds();
+        audio.play('coin');
+        toast(`Sold ${farm.name}.`, false, 'good');
+        storage.save(); refreshHud();
+        closeAnimalMenu();
+      };
+    }
+  }
+  if (petBtn) petBtn.style.display = 'none';
+  if (moveBtn) moveBtn.style.display = 'none';
+  if (sellBtn) sellBtn.style.display = 'none';
+  if (closeBtn) {
+    closeBtn.style.display = '';
+    closeBtn.textContent = '✓ Done';
+    closeBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
+    closeBtn.style.borderColor = '#2A4A1A';
+    closeBtn.style.boxShadow = '0 2px 0 #2A4A1A';
+    closeBtn.style.color = '#FFF';
+    closeBtn.onclick = closeAnimalMenu;
+  }
+  menu.classList.remove('hidden');
+  const w = menu.offsetWidth, h = menu.offsetHeight;
+  const sx = (typeof screenX === 'number') ? screenX : (window.innerWidth / 2 - w / 2);
+  const sy = (typeof screenY === 'number') ? screenY : (window.innerHeight / 2 - h / 2);
+  menu.style.left = Math.max(8, Math.min(window.innerWidth - w - 8, sx + 12)) + 'px';
+  menu.style.top  = Math.max(8, Math.min(window.innerHeight - h - 8, sy + 12)) + 'px';
+}
+// Pop the list-of-all-farms modal. Single-farm setups skip the picker
+// and drill straight into that farm's menu.
+function openFarmsListModal() {
+  const farms = getCropFarms();
+  if (farms.length === 0) return;
+  if (farms.length === 1) {
+    openFarmMenu(farms[0]);
+    return;
+  }
+  const modal = document.getElementById('farmsListModal');
+  const body  = document.getElementById('farmsListBody');
+  if (!modal || !body) return;
+  body.innerHTML = '';
+  farms.forEach((f, i) => {
+    const row = document.createElement('button');
+    row.type = 'button';
+    row.className = 'splashBtn';
+    row.style.cssText = 'width:100%;padding:10px 14px;text-align:left;display:flex;align-items:center;justify-content:space-between;background:linear-gradient(to bottom,#FFE7A8,#F5C95B);color:#3a2410;border-color:var(--wood-3);box-shadow:0 3px 0 var(--wood-3);';
+    const exp = expandFarmInfo(f);
+    const sub = exp.maxed
+      ? `${f.w}×${f.h} · max size`
+      : `${f.w}×${f.h} · expand for ${exp.cost.toLocaleString()}¢`;
+    row.innerHTML =
+      `<span style="display:flex;flex-direction:column;align-items:flex-start;gap:2px;">` +
+        `<span style="font-weight:800;font-size:14px;">📏 ${f.name || 'Crop Field'}${i === 0 ? ' <span style=\"font-size:10px;color:#7A3F00;\">(home)</span>' : ''}</span>` +
+        `<span style="font-size:11px;color:#5b3f1f;font-weight:600;">${sub}</span>` +
+      `</span>` +
+      `<span style="font-size:14px;color:#7a5430;">›</span>`;
+    row.onclick = () => {
+      modal.classList.add('hidden');
+      openFarmMenu(f);
+    };
+    body.appendChild(row);
+  });
+  modal.classList.remove('hidden');
+  // Wire the close-X button (works because modal-close uses data-close
+  // semantics elsewhere in the codebase).
+  const closeBtn = modal.querySelector('[data-close]');
+  if (closeBtn) closeBtn.onclick = () => modal.classList.add('hidden');
+}
 // Outlined 8×8 preview of the pending animal pen — shown while the
 // player is hovering with the barn in their hand. Translucent green
 // when the location is valid, red where pen tiles would clash with
@@ -9005,18 +9319,25 @@ function drawBarnPenPreview(rect) {
   ctx.restore();
 }
 function buildFenceList(list) {
-  // Main farm fence — closed ring (the barn lives outside the main
-  // farm now, so there's no need for a gate that connects them).
-  const b = state.worldBounds || defaultWorldBounds();
-  const isMainFarm = (ix, iy) => {
-    if (!b) return false;
-    if (inBarnPen(ix, iy)) return false;     // pen has its own ring
-    return ix >= b.x0 && iy >= b.y0 && ix < b.x0 + b.w && iy < b.y0 + b.h;
+  // Multi-farm fence: one closed ring per crop farm rect. Adjacent
+  // farms suppress the shared border so two fields touching each
+  // other read as connected plots, not a double-walled corridor.
+  const allFarms = getCropFarms();
+  const otherFarmContains = (skipFarm, nx, ny) => {
+    for (const f of allFarms) {
+      if (f === skipFarm) continue;
+      if (nx >= f.x0 && ny >= f.y0 && nx < f.x0 + f.w && ny < f.y0 + f.h) return true;
+    }
+    return false;
   };
-  // When the main farm overlaps the barn pen, skip any fence segment that
-  // would draw between farm-and-pen tiles — the pen has its own ring, so
-  // doubling up creates a U-shape that wraps around the pen.
-  fenceRect(list, b.x0, b.y0, b.w, b.h, isMainFarm, null, (nx, ny) => inBarnPen(nx, ny));
+  for (const f of allFarms) {
+    const inside = (ix, iy) => {
+      if (inBarnPen(ix, iy)) return false;     // pen has its own ring
+      return ix >= f.x0 && iy >= f.y0 && ix < f.x0 + f.w && iy < f.y0 + f.h;
+    };
+    fenceRect(list, f.x0, f.y0, f.w, f.h, inside, null,
+              (nx, ny) => inBarnPen(nx, ny) || otherFarmContains(f, nx, ny));
+  }
   // Animal pen(s) — leave a one-tile opening directly in front of each
   // barn's doors so the farmer can walk into the pen without the fence
   // visually blocking the doorway. Gate side is derived from the barn's
@@ -9170,6 +9491,13 @@ function isPlaceableTile(ix, iy) {
   }
   const cat = live.placeMode && (shopItem(live.placeMode.id) || {}).cat;
   const id  = live.placeMode && live.placeMode.id;
+  // New Crop Farm — drops a NEW_FARM_W × NEW_FARM_H fenced rect on
+  // free meadow. The (ix, iy) the player clicked is the NW tile of
+  // the rect. The whole footprint must clear of any other farm rect,
+  // barn pen, path, or placed item.
+  if (id === 'building_crop_farm') {
+    return canDropNewCropFarm(ix, iy);
+  }
   // The Slaughterhouse needs to be within reach of an animal pen — it
   // can sit INSIDE the pen or one tile outside any pen edge so the
   // butcher can stand right next to the fence and the player has more
@@ -9879,6 +10207,31 @@ function drawAll() {
     // and its fence will land before they commit.
     if (live.placeMode.id === 'building_barn') {
       drawBarnPenPreview(barnPenAt(ix, iy));
+    }
+    // New Crop Farm: preview the 6×6 fenced rect that would land here
+    // (anchored at the cursor's NW tile). Reuses the barn-pen preview
+    // visuals — green-ish overlay where the rect fits, red where it
+    // overlaps an existing farm, pen, path, or placed item.
+    if (live.placeMode.id === 'building_crop_farm') {
+      ctx.save();
+      const valid = canDropNewCropFarm(ix, iy);
+      for (let dy = 0; dy < NEW_FARM_H; dy++) {
+        for (let dx = 0; dx < NEW_FARM_W; dx++) {
+          const tx = ix + dx, ty = iy + dy;
+          const tc = isoCenter(tx, ty);
+          ctx.fillStyle   = valid ? 'rgba(108, 255, 180, 0.18)' : 'rgba(255, 100, 100, 0.22)';
+          ctx.strokeStyle = valid ? 'rgba(80, 200, 130, 0.55)'  : 'rgba(220, 80, 80, 0.6)';
+          ctx.lineWidth = 1.2;
+          ctx.beginPath();
+          ctx.moveTo(tc.x, tc.y - TILE_H/2);
+          ctx.lineTo(tc.x + TILE_W/2, tc.y);
+          ctx.lineTo(tc.x, tc.y + TILE_H/2);
+          ctx.lineTo(tc.x - TILE_W/2, tc.y);
+          ctx.closePath();
+          ctx.fill(); ctx.stroke();
+        }
+      }
+      ctx.restore();
     }
     // Sprinkler ghost: paint the 5×5 watering radius the sprinkler will
     // cover from this tile so the player can position it without
@@ -11637,6 +11990,23 @@ function actOnTile(tool, ix, iy, silent=false, queuedAction=null) {
       if (!nearBarnPen(ix, iy, 1)) return fail('Pen moved — slaughterhouse spot is no longer near a pen.');
     }
     state.coins -= data.cost;
+    // New Crop Farm: the "building" is just a fenced rect on the
+    // meadow — no sprite, no state.placed entry, no plot rows. Push
+    // the new rect to cropFarms[] and emit the usual placement
+    // feedback. canDropNewCropFarm has already verified the whole
+    // 6×6 footprint is clear of farms / pens / paths / items.
+    if (data.id === 'building_crop_farm' && !data.moving) {
+      if (!Array.isArray(state.cropFarms)) state.cropFarms = [];
+      state.cropFarms.push(makeNewCropFarm(ix, iy));
+      audio.play('place');
+      audio.play('coin');
+      fxBurst(ix, iy, '#7AC766', 14);
+      if (data.cost > 0) fxFloat(ix, iy, '−' + data.cost + '¢', 0, '#FF9966');
+      bumpStat('buildingsPlaced');
+      toast('New crop field! Use the 📏 Farms button to manage + expand it.', false, 'good', 4500);
+      storage.save(); refreshHud();
+      return 'ok';
+    }
     const rec = { id: data.id, cost: data.cost };
     if (data.id.startsWith('tree_') && data.id !== 'tree_stump' && !data.moving) {
       rec.plantedAt = Date.now();
@@ -13101,16 +13471,23 @@ function canBuyLandTile(ix, iy) {
   if (state.placed[tileKey(ix, iy)]) return false;
   return true;
 }
-// Grow the active worldBounds rectangle so it contains (ix, iy).
+// Grow the primary farm rect (cropFarms[0]) so it contains (ix, iy).
+// Multi-farm world: extending "world bounds" means stretching the
+// home farm's rect; the legacy state.worldBounds shim is re-mirrored
+// onto the new rect so older callers keep working.
 function extendWorldBounds(ix, iy) {
-  const b = state.worldBounds || defaultWorldBounds();
-  let { x0, y0, w, h } = b;
-  let x1 = x0 + w, y1 = y0 + h;
+  const farms = getCropFarms();
+  const farm = farms[0];
+  if (!farm) return;
+  let x0 = farm.x0, y0 = farm.y0;
+  let x1 = farm.x0 + farm.w, y1 = farm.y0 + farm.h;
   if (ix < x0) x0 = ix;
   if (iy < y0) y0 = iy;
   if (ix >= x1) x1 = ix + 1;
   if (iy >= y1) y1 = iy + 1;
-  state.worldBounds = { x0, y0, w: x1 - x0, h: y1 - y0 };
+  farm.x0 = x0; farm.y0 = y0;
+  farm.w = x1 - x0; farm.h = y1 - y0;
+  syncWorldBounds();
 }
 function landRectTiles(rect) {
   if (!rect) return [];
@@ -13710,6 +14087,22 @@ function buildToolbar() {
     audio.play('click');
   });
   tb.appendChild(slaughterBtn);
+
+  // ---- Crop Farms shortcut ----
+  // Always visible (the player always has at least one farm). Single-
+  // farm setups drill straight into that farm's manage menu; multi-
+  // farm setups pop a picker first.
+  const farmsBtn = document.createElement('button');
+  farmsBtn.className = 'tool toolFarms';
+  farmsBtn.id = 'toolFarmsBtn';
+  farmsBtn.title = 'Crop Farms — manage and expand each fenced field';
+  farmsBtn.style.cssText = 'display:inline-flex;align-items:center;justify-content:center;font-size:30px;line-height:1;background:linear-gradient(to bottom,#FFE7A8,#F5C95B);border:3px solid var(--wood-3);box-shadow:0 3px 0 var(--wood-3);';
+  farmsBtn.textContent = '📏';
+  farmsBtn.addEventListener('click', () => {
+    openFarmsListModal();
+    audio.play('click');
+  });
+  tb.appendChild(farmsBtn);
 
   // ---- Greenhouse shortcut ----
   const ghItem = SHOP_ITEMS.find(i => i.id === 'building_greenhouse');
@@ -14352,17 +14745,17 @@ function buildUpgradesGrid(grid) {
   };
 
   const expandCard = () => {
-    // Grows worldBounds by one ring on every side. The new ring becomes
-    // farmable dirt (added to farmExpansion), and the fence redraws to
-    // enclose it.
+    // Grows the primary farm (cropFarms[0]) by one ring on every side.
+    // Multi-farm setups can grow the others independently via the
+    // Farms modal — this upgrade only acts on the home farm.
     const exp = expandAreaInfo();
-    const b = state.worldBounds || defaultWorldBounds();
+    const farm = getCropFarms()[0] || { w: 0, h: 0 };
     makeUpgradeCard(grid, {
       iconKey: 'tool_build',
       name: 'Expand Play Area',
-      sub: exp.maxed ? 'World fully expanded' : `+1 tile ring (adds ${exp.tiles} tiles)`,
+      sub: exp.maxed ? 'Home farm fully expanded' : `+1 tile ring on home farm (adds ${exp.tiles} tiles)`,
       price: exp.cost, max: exp.maxed,
-      levelText: exp.maxed ? 'MAX' : `${b.w}×${b.h}`,
+      levelText: exp.maxed ? 'MAX' : `${farm.w}×${farm.h}`,
       buy: () => { applyExpandArea(); afterUpgrade(grid, 'Play Area'); }
     });
   };
@@ -14573,36 +14966,24 @@ function expandedRect(b) {
   return { newX0, newY0, newW, newH, grew };
 }
 function expandAreaInfo() {
-  const b = state.worldBounds || defaultWorldBounds();
-  const { newX0, newY0, newW, newH, grew } = expandedRect(b);
-  let tiles = 0;
-  for (let dy = 0; dy < newH; dy++) {
-    for (let dx = 0; dx < newW; dx++) {
-      const ix = newX0 + dx, iy = newY0 + dy;
-      const inOld = ix >= b.x0 && iy >= b.y0 && ix < b.x0 + b.w && iy < b.y0 + b.h;
-      if (inOld) continue;
-      if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) continue;
-      if (inAnyFarm(ix, iy)) continue;
-      if (state.farmExpansion && state.farmExpansion[tileKey(ix, iy)]) continue;
-      tiles++;
-    }
-  }
-  // Ring is now a premium over buying tile-by-tile (was a 0.6× bulk
-  // discount), and scales up with each ring already taken so later
-  // expansions cost noticeably more than the first.
-  const base = state.worldBounds || defaultWorldBounds();
-  const baseW = (defaultWorldBounds().w) || 1;
-  const ringsTaken = Math.max(0, Math.round((base.w - baseW) / 2));
-  const ringMul = 1 + ringsTaken * 0.5;            // +50% per ring already owned
-  const cost = Math.round(tiles * LAND_PRICE * 0.66 * ringMul);
-  // Maxed only when the bounds already cover the entire world box —
-  // partial-edge expansion still yields room on the open sides.
-  const maxed = !grew;
-  return { tiles, cost, maxed };
+  // Now a thin alias over expandFarmInfo for the primary farm —
+  // the legacy "Expand Play Area" upgrade card operates on cropFarms[0]
+  // in the multi-farm world. Other farms grow via their own per-farm
+  // Expand button in the Farms modal.
+  const farms = getCropFarms();
+  return farms[0] ? expandFarmInfo(farms[0]) : { tiles: 0, cost: 0, maxed: true };
 }
 
 function applyExpandArea() {
-  const exp = expandAreaInfo();
+  // Legacy global expand: in the multi-farm world, this just grows
+  // cropFarms[0] (the primary farm). Other farms grow via their own
+  // per-farm Expand button in the Farms modal.
+  const farms = getCropFarms();
+  const farm = farms[0];
+  if (!farm) {
+    toast('No farm to expand yet.', true); audio.play('error'); return;
+  }
+  const exp = expandFarmInfo(farm);
   if (exp.maxed) {
     toast('Already at the world edge.', true); audio.play('error'); return;
   }
@@ -14610,21 +14991,14 @@ function applyExpandArea() {
     toast('Not enough coins.', true); audio.play('error'); return;
   }
   state.coins -= exp.cost;
-  const b = state.worldBounds || defaultWorldBounds();
-  const { newX0, newY0, newW, newH } = expandedRect(b);
-  for (let dy = 0; dy < newH; dy++) {
-    for (let dx = 0; dx < newW; dx++) {
-      const ix = newX0 + dx, iy = newY0 + dy;
-      const inOld = ix >= b.x0 && iy >= b.y0 && ix < b.x0 + b.w && iy < b.y0 + b.h;
-      if (inOld) continue;
-      if (ix < 0 || iy < 0 || ix >= WORLD_W || iy >= WORLD_H) continue;
-      if (inAnyFarm(ix, iy)) continue;
-      const k = tileKey(ix, iy);
-      if (state.farmExpansion[k]) continue;
-      state.farmExpansion[k] = true;
-    }
-  }
-  state.worldBounds = { x0: newX0, y0: newY0, w: newW, h: newH };
+  const r = expandedFarmRect(farm);
+  const b = { x0: farm.x0, y0: farm.y0, w: farm.w, h: farm.h };
+  farm.x0 = r.newX0; farm.y0 = r.newY0;
+  farm.w  = r.newW;  farm.h  = r.newH;
+  syncWorldBounds();
+  // Re-derive newX0/newY0/newW/newH variables for the staff zone-bump
+  // block below so its existing oldX1/newX1 logic still applies.
+  const newX0 = r.newX0, newY0 = r.newY0, newW = r.newW, newH = r.newH;
   // Crop farmer zones that hugged the OLD farm boundary should grow
   // alongside it — otherwise the player who expands a zone-fills-
   // the-whole-farm setup ends up with a bare ring just outside the
@@ -17544,6 +17918,19 @@ async function startGame() {
     }
     if (!state.farmExpansion) state.farmExpansion = {};
     if (!state.worldBounds) state.worldBounds = defaultWorldBounds();
+    // Multi-farm migration: older saves only had a single state.worldBounds
+    // rect (with farmExpansion tracking the bought tiles inside it). The
+    // new model stores every fenced farm in state.cropFarms[]; the
+    // primary farm starts as the legacy bounds so existing layouts
+    // come back unchanged.
+    if (!Array.isArray(state.cropFarms) || state.cropFarms.length === 0) {
+      const wb = state.worldBounds;
+      state.cropFarms = [{
+        id: 'crop', name: 'Crop Field',
+        x0: wb.x0, y0: wb.y0, w: wb.w, h: wb.h,
+      }];
+    }
+    syncWorldBounds();
     // Stats / quests / achievements migration for older saves that
     // predate the progression system.
     if (!state.stats || typeof state.stats !== 'object') {
