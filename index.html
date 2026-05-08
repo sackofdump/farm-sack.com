@@ -4232,13 +4232,33 @@ function containerSuppliesZone(zone, containerKey) {
   if (!zone || !zone.length) return false;
   return true;
 }
+// Per-frame cache for the network-wide list of seed containers. Each
+// crop farmer used to walk state.placed every frame to validate its
+// plant task — with 10 farmers and hundreds of placed items, that
+// burned ~120K iterations/sec just on the seed-container lookup.
+// Cache the container list at module scope and refresh once every
+// 250ms; the network changes only when the player buys / sells / moves
+// a container, all of which happen at human speeds.
+const _seedContainerListCache = { items: null, expiresAt: 0 };
+function _seedContainerList() {
+  const now = (typeof performance !== 'undefined') ? performance.now() : Date.now();
+  if (_seedContainerListCache.items && now < _seedContainerListCache.expiresAt) {
+    return _seedContainerListCache.items;
+  }
+  const out = [];
+  for (const k in state.placed) {
+    const it = state.placed[k];
+    if (it && it.id === 'building_seed_container') out.push({ k, it });
+  }
+  _seedContainerListCache.items = out;
+  _seedContainerListCache.expiresAt = now + 250;
+  return out;
+}
 function cropFarmerSeedSource(m) {
   // Returns the first seed container that supplies the farmer's zone
   // (in-zone or within 2 tiles) and has stock at the head of the queue.
   if (!m.zone || !m.zone.length) return null;
-  for (const k in state.placed) {
-    const it = state.placed[k];
-    if (!it || it.id !== 'building_seed_container') continue;
+  for (const { k, it } of _seedContainerList()) {
     if (!containerSuppliesZone(m.zone, k)) continue;
     const q = ensureSeedQueue(it);
     if (q && q.length > 0 && q[0].qty > 0) return { key: k, container: it };
