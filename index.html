@@ -17175,6 +17175,28 @@ function edgePanTick(dtMs) {
 let lastSaveT = 0;
 let lastTickT = 0;
 let lastAutoHarvestT = 0;
+// Lightweight frame profiler. Toggle from the browser console with
+// `fsPerf.on()` / `fsPerf.off()`. When on, any frame whose total wall
+// time exceeds the threshold logs a one-line breakdown of which tick
+// subsystems ate the budget — handy for tracking down occasional
+// late-game stutters that don't show up under the per-frame cost.
+window.fsPerf = window.fsPerf || {
+  enabled: false,
+  thresholdMs: 80,
+  on(thresholdMs) {
+    this.enabled = true;
+    if (typeof thresholdMs === 'number') this.thresholdMs = thresholdMs;
+    console.log('[fsPerf] on — logging frames > ' + this.thresholdMs + 'ms');
+  },
+  off() { this.enabled = false; console.log('[fsPerf] off'); },
+};
+function _perfMark(label, fn, bag) {
+  if (!fsPerf.enabled) return fn();
+  const a = performance.now();
+  const r = fn();
+  bag[label] = (bag[label] || 0) + (performance.now() - a);
+  return r;
+}
 function loop(t) {
   // Browsers pause requestAnimationFrame when the tab is hidden, so we
   // fall back to a setTimeout-driven tick (see _scheduleNextFrame) and
@@ -17190,20 +17212,37 @@ function loop(t) {
   const dt = Math.min(rawDt, 1000);
   lastTickT = t;
   live.time = t;
+  const _perfBag = fsPerf.enabled ? {} : null;
+  const _perfStart = fsPerf.enabled ? performance.now() : 0;
   // Tick all sim state BEFORE drawing so the renderer always sees this
   // frame's facing / position / animation state instead of last frame's.
-  tickPlayer(dt);
-  siloTick();               // drain feed + accrue age-up boost while the silo has feed
-  coffeeStandTick();        // drain coffee while staff sip it for the speed buff
-  loyaltyTick();            // animals lose 1 loyalty every 3 min unless a keeper is on duty
-  staffUpkeepTick();        // deduct 50¢/day per hired staff (fires staff if you can't pay)
-  tickStaff(dt);            // wander the visible staffers around the staff hall
-  tickSprinklers();         // pour every 6 sec: water unwatered planted crops in 5×5 + grant XP
-  if (!hidden) refreshLiveBuildingMenu();// keep the open building popup's desc text live
-  if (!hidden) refreshLiveSeedContainerModal();// keep the seed container modal's qty in sync as farmers consume seeds
-  tickCoyote(dt);           // roll for / move / despawn coyote raids and the chasing dog
-  tickPlacedAnimals(dt);    // drift pen animals around inside the fence
-  edgePanTick(dt);          // auto-pan camera when a bulk-select drag pushes against the screen edges
+  if (_perfBag) {
+    _perfMark('tickPlayer',         () => tickPlayer(dt),         _perfBag);
+    _perfMark('siloTick',           () => siloTick(),             _perfBag);
+    _perfMark('coffeeStandTick',    () => coffeeStandTick(),      _perfBag);
+    _perfMark('loyaltyTick',        () => loyaltyTick(),          _perfBag);
+    _perfMark('staffUpkeepTick',    () => staffUpkeepTick(),      _perfBag);
+    _perfMark('tickStaff',          () => tickStaff(dt),          _perfBag);
+    _perfMark('tickSprinklers',     () => tickSprinklers(),       _perfBag);
+    if (!hidden) _perfMark('liveBuildingMenu',     () => refreshLiveBuildingMenu(),       _perfBag);
+    if (!hidden) _perfMark('liveSeedContainer',    () => refreshLiveSeedContainerModal(), _perfBag);
+    _perfMark('tickCoyote',         () => tickCoyote(dt),         _perfBag);
+    _perfMark('tickPlacedAnimals',  () => tickPlacedAnimals(dt),  _perfBag);
+    _perfMark('edgePanTick',        () => edgePanTick(dt),        _perfBag);
+  } else {
+    tickPlayer(dt);
+    siloTick();               // drain feed + accrue age-up boost while the silo has feed
+    coffeeStandTick();        // drain coffee while staff sip it for the speed buff
+    loyaltyTick();            // animals lose 1 loyalty every 3 min unless a keeper is on duty
+    staffUpkeepTick();        // deduct 50¢/day per hired staff (fires staff if you can't pay)
+    tickStaff(dt);            // wander the visible staffers around the staff hall
+    tickSprinklers();         // pour every 6 sec: water unwatered planted crops in 5×5 + grant XP
+    if (!hidden) refreshLiveBuildingMenu();// keep the open building popup's desc text live
+    if (!hidden) refreshLiveSeedContainerModal();// keep the seed container modal's qty in sync as farmers consume seeds
+    tickCoyote(dt);           // roll for / move / despawn coyote raids and the chasing dog
+    tickPlacedAnimals(dt);    // drift pen animals around inside the fence
+    edgePanTick(dt);          // auto-pan camera when a bulk-select drag pushes against the screen edges
+  }
   // Render throttle: when zoomed out the visible tile box covers most
   // of the world, so the ground-pass sprite blits dominate frame time.
   // Step the render rate down with zoom so far-out views still feel
@@ -17215,14 +17254,16 @@ function loop(t) {
   else if (state.zoom <= 0.65) renderInterval = 22;   // ~45 FPS
   if (!hidden && t - (loop._drawLastT || 0) >= renderInterval) {
     loop._drawLastT = t;
-    drawAll();
+    if (_perfBag) _perfMark('drawAll', () => drawAll(), _perfBag);
+    else drawAll();
   }
   // refreshHud rebuilds chip text + the quest panel innerHTML; doesn't
   // need 60Hz. Inline callers (harvest, slaughter, level-up, etc.)
   // still hit refreshHud immediately for responsive feedback.
   if (!hidden && t - (loop._hudLastT || 0) > 200) {
     loop._hudLastT = t;
-    refreshHud();
+    if (_perfBag) _perfMark('refreshHud', () => refreshHud(), _perfBag);
+    else refreshHud();
   }
   if (!hidden) refreshTooltip();   // keep the growing countdown ticking even when the cursor is still
   tryFlushLevelUpPopup();   // pop any deferred level-up modal once the player is idle
@@ -17231,6 +17272,8 @@ function loop(t) {
   // current chance and is harvested in place if it wins.
   if (t - lastAutoHarvestT > 1000) {
     lastAutoHarvestT = t;
+    const _autoStart = _perfBag ? performance.now() : 0;
+    let _autoCount = 0;
     const chance = autoHarvestChance();
     if (chance > 0) {
       for (const k in state.plots) {
@@ -17239,11 +17282,20 @@ function loop(t) {
         if (Math.random() < chance) {
           const [ix, iy] = k.split(',').map(Number);
           actOnTile('harvest', ix, iy, true);
+          _autoCount++;
         }
       }
     }
+    if (_perfBag) {
+      _perfBag['autoHarvest'] = performance.now() - _autoStart;
+      _perfBag['autoHarvestCount'] = _autoCount;
+    }
   }
-  if (t - lastSaveT > 4000) { lastSaveT = t; storage.save(); }
+  if (t - lastSaveT > 4000) {
+    lastSaveT = t;
+    if (_perfBag) _perfMark('storage.save', () => storage.save(), _perfBag);
+    else storage.save();
+  }
   // Greenhouse: keep brew timers ticking visually whenever the lab is open.
   ghTickRuns();
   if (!hidden && state.greenhouse && state.greenhouse.activeRuns && state.greenhouse.activeRuns.length) {
@@ -17264,6 +17316,19 @@ function loop(t) {
         loop._ghLastT = t;
         renderMutationLab();
       }
+    }
+  }
+  if (_perfBag) {
+    const total = performance.now() - _perfStart;
+    if (total > fsPerf.thresholdMs) {
+      const parts = Object.keys(_perfBag)
+        .filter(k => k !== 'autoHarvestCount' && _perfBag[k] >= 1)
+        .sort((a, b) => _perfBag[b] - _perfBag[a])
+        .slice(0, 6)
+        .map(k => k + ' ' + _perfBag[k].toFixed(1) + 'ms')
+        .join(', ');
+      const extra = _perfBag.autoHarvestCount ? ' [autoHarvested:' + _perfBag.autoHarvestCount + ']' : '';
+      console.log('[fsPerf] frame ' + total.toFixed(1) + 'ms — ' + (parts || '(no >1ms entries)') + extra);
     }
   }
   _scheduleNextFrame();
