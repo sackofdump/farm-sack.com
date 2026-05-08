@@ -7026,6 +7026,9 @@ function closeAnimalMenu() {
   // to render the existing zone behind the drag preview).
   if (!live.zoneSelect) live.highlightedStaff = null;
   if (typeof _liveBuildingMenu !== 'undefined') _liveBuildingMenu = null;
+  // Drop the combined-barn-roster flag so the next per-barn click in
+  // the world renders its own pen instead of pooling them all.
+  state._barnViewAll = false;
 }
 
 // Per-building popup config: title + description shown in the popup +
@@ -7042,20 +7045,32 @@ const BUILDING_MENUS = {
       // Roster: every animal currently inside this barn's pen, sorted by
       // species then age. Multi-pen farms only show animals that belong
       // to the clicked barn — different barns have different rosters.
-      const pen = (ctx && typeof ctx.ix === 'number')
-        ? findBarnPenForBarn(ctx.ix, ctx.iy)
-        : (getAllBarnPens()[0] || null);
-      if (!pen) {
+      // The toolbar Big Red Barn shortcut sets state._barnViewAll = true
+      // so the popup can pool every pen on the farm into one combined
+      // roster instead of forcing the player to step through each barn
+      // individually.
+      const allPens = getAllBarnPens();
+      let scopePens;
+      if (state._barnViewAll) {
+        scopePens = allPens;
+      } else {
+        const pen = (ctx && typeof ctx.ix === 'number')
+          ? findBarnPenForBarn(ctx.ix, ctx.iy)
+          : (allPens[0] || null);
+        scopePens = pen ? [pen] : [];
+      }
+      if (scopePens.length === 0) {
         return 'Standalone barn — no fenced pen attached. Buy a Big Red Barn ' +
                'and choose "with fence" to add an animal pen.';
       }
+      const inScope = (ix, iy) => scopePens.some(p =>
+        ix >= p.x0 && iy >= p.y0 && ix < p.x0 + p.w && iy < p.y0 + p.h);
       let allRows = [];
       for (const k in state.placed) {
         const it = state.placed[k];
         if (!it || !it.id || !it.id.startsWith('animal_')) continue;
         const [ix, iy] = k.split(',').map(Number);
-        if (ix < pen.x0 || iy < pen.y0 ||
-            ix >= pen.x0 + pen.w || iy >= pen.y0 + pen.h) continue;
+        if (!inScope(ix, iy)) continue;
         allRows.push({ k, it, ix, iy });
       }
       // Filter / sort mode persists across menu re-renders. Defaults to
@@ -7112,14 +7127,18 @@ const BUILDING_MENUS = {
                  'Buy farm animals and stable them in the pen.</div>';
       // Pen capacity readout — every tile inside the pen rect is a
       // valid stand spot for one animal, so pen.w*pen.h is the cap.
+      // Combined view sums caps across all pens.
       {
-        const penCap   = pen.w * pen.h;
+        const penCap = scopePens.reduce((s, p) => s + p.w * p.h, 0);
         const penUsed  = allRows.length;
         const penFull  = penUsed >= penCap;
         const penColor = penFull ? '#A03423' : (penUsed >= penCap * 0.85 ? '#8a5a1f' : '#3F8338');
+        const sizeLabel = scopePens.length === 1
+          ? `(${scopePens[0].w}×${scopePens[0].h} pen)`
+          : `(${scopePens.length} pens combined)`;
         html += `<div style="font-size:11px;color:${penColor};margin-bottom:6px;">` +
-                `&#128081; <b>Animals: ${penUsed} / ${penCap}</b> (${pen.w}×${pen.h} pen)` +
-                (penFull ? ' &middot; <span style="color:#A03423;">pen full — expand the pen to add more</span>' : '') +
+                `&#128081; <b>Animals: ${penUsed} / ${penCap}</b> ${sizeLabel}` +
+                (penFull ? ' &middot; <span style="color:#A03423;">pens full — expand a pen to add more</span>' : '') +
                 `</div>`;
       }
       // Cow Dung tally — every cow in the world adds +5% crop / tree
@@ -7340,9 +7359,15 @@ const BUILDING_MENUS = {
       // Per-barn pen-expansion action lives here now (was a global
       // upgrades-panel button — confusing on multi-pen farms). Reads
       // the pen anchored to THIS barn so each barn grows its own.
-      const pen = (ctx && typeof ctx.ix === 'number')
-        ? findBarnPenForBarn(ctx.ix, ctx.iy)
-        : null;
+      // Combined view (state._barnViewAll) hides Expand Pen — the
+      // toolbar shortcut is a roster pool, not tied to one pen, so
+      // expansion stays a per-barn action via clicking the barn in
+      // the world.
+      const pen = state._barnViewAll
+        ? null
+        : (ctx && typeof ctx.ix === 'number')
+          ? findBarnPenForBarn(ctx.ix, ctx.iy)
+          : null;
       let expandAction = null;
       if (pen) {
         const maxed = pen.w >= PEN_MAX_DIM || pen.h >= PEN_MAX_DIM;
@@ -7854,15 +7879,26 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         const kind = btn.getAttribute('data-barn-bulk');
         // Recompute the visible roster on click — state may have ticked
         // between the snapshot at render time and the click.
-        const pen = (typeof ix === 'number') ? findBarnPenForBarn(ix, iy) : (getAllBarnPens()[0] || null);
-        if (!pen) return;
+        // Same pen-scope rule the desc uses: combined view (toolbar
+        // shortcut) pools every pen; single-barn view sticks to the
+        // pen anchored at (ix, iy).
+        const allPens = getAllBarnPens();
+        let scopePens;
+        if (state._barnViewAll) {
+          scopePens = allPens;
+        } else {
+          const pen = (typeof ix === 'number') ? findBarnPenForBarn(ix, iy) : (allPens[0] || null);
+          scopePens = pen ? [pen] : [];
+        }
+        if (scopePens.length === 0) return;
+        const inScopeBulk = (ax, ay) => scopePens.some(p =>
+          ax >= p.x0 && ay >= p.y0 && ax < p.x0 + p.w && ay < p.y0 + p.h);
         const visibleRows = [];
         for (const k in state.placed) {
           const it = state.placed[k];
           if (!it || !it.id || !it.id.startsWith('animal_')) continue;
           const [aix, aiy] = k.split(',').map(Number);
-          if (aix < pen.x0 || aiy < pen.y0 ||
-              aix >= pen.x0 + pen.w || aiy >= pen.y0 + pen.h) continue;
+          if (!inScopeBulk(aix, aiy)) continue;
           visibleRows.push({ it, ix: aix, iy: aiy });
         }
         const m = state._barnRosterMode || 'species';
@@ -14037,8 +14073,24 @@ function buildToolbar() {
     // ordering. Without this, clicking Slaughterhouse → Barn left
     // the barn menu stuck on the slaughter filter.
     state._barnRosterMode = 'species';
+    // Combined-roster mode: pool every pen on the farm into one
+    // popup so the player can manage all their animals at once
+    // without stepping through each barn. Cleared by closeAnimalMenu
+    // and by clicking a specific barn in the world.
+    state._barnViewAll = true;
     const [bx, by] = liveKey.split(',').map(Number);
     openBuildingMenu('building_barn', window.innerWidth/2 - 200, window.innerHeight/2 - 200, bx, by);
+    // openBuildingMenu set the title to "Big Red Barn" — override it
+    // here so the player can tell at a glance that this popup is
+    // showing every pen pooled together. Counts the live pen total
+    // so multi-barn farms read "(N pens)".
+    const titleEl = document.getElementById('amTitle');
+    if (titleEl) {
+      const penCount = getAllBarnPens().length;
+      titleEl.textContent = penCount > 1
+        ? `🐮 All Barns — ${penCount} pens`
+        : 'Big Red Barn';
+    }
     audio.play('click');
   });
   tb.appendChild(barnBtn);
@@ -15494,6 +15546,11 @@ function bindInput() {
           // building_slaughterhouse when a slaughter target is set so the
           // existing pickup/deliver flow above takes priority.
           if (placedHere.id && placedHere.id.startsWith('building_') && BUILDING_MENUS[placedHere.id]) {
+            // Clicking a specific barn in the world is always a
+            // single-pen view; clear any combined-roster flag the
+            // toolbar shortcut may have left set so this barn's pen
+            // is what we render.
+            if (placedHere.id === 'building_barn') state._barnViewAll = false;
             openBuildingMenu(placedHere.id, e.clientX, e.clientY, hereIx, hereIy);
             audio.play('click');
             live.dragMode = 'idle';
