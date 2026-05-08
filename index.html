@@ -4021,7 +4021,7 @@ const PET_COOLDOWN_MS            = DAY_MS;            // once per in-game day pe
 const STAFF_DAILY_UPKEEP         = 50;                // coins/day per staff
 const STAFF_ROLES = {
   animal_keeper: { name: 'Animal Keeper', desc: 'Stops loyalty decay on every animal in the pen they live in, and auto-collects ready yields (eggs / milk / wool). Need one per pen.', unlock: 15, max: 1 },
-  crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 15, max: 20, levelStep: 1, freeHires: 0, extraLevelStep: 1 },
+  crop_farmer:   { name: 'Crop Farmer',   desc: 'Works only the zone you mark for them.',          unlock: 15, max: 10, levelStep: 1, freeHires: 0, extraLevelStep: 1 },
   arborist:      { name: 'Arborist',      desc: 'Auto-waters trees and harvests their fruit.',     unlock: 15, max: 1 },
 };
 // Some roles cap dynamically — animal keeper lets you hire one per
@@ -4038,7 +4038,7 @@ function maxHires(role) {
 // hires use `extraLevelStep` (defaults to levelStep). Crop Farmer
 // uses (freeHires:0, levelStep:1, extraLevelStep:1) so a fresh
 // crop farmer slot opens at every player level past the unlock —
-// 1st at Lv 15, 2nd at Lv 16, 3rd at Lv 17, … capped at max:20.
+// 1st at Lv 15, 2nd at Lv 16, 3rd at Lv 17, … capped at max:10.
 function nextHireLevel(role) {
   const r = STAFF_ROLES[role]; if (!r) return Infinity;
   const have = staffCount(role);
@@ -17571,6 +17571,20 @@ async function startGame() {
           if (!inside(Math.round(m.ix), Math.round(m.iy))) {
             m.ix = m.homeIx; m.iy = m.homeIy;
             m.queue = [];
+          }
+        }
+      }
+      // Trim any role over its current cap (crop farmer dropped 20 → 10
+      // for late-game perf). Removes the most-recent hires first so the
+      // player keeps their oldest, most-customized farmers.
+      for (const role in STAFF_ROLES) {
+        const cap = maxHires(role);
+        let idxs = [];
+        state.staff.members.forEach((m, i) => { if (m.role === role) idxs.push(i); });
+        const over = idxs.length - cap;
+        if (over > 0) {
+          for (const i of idxs.slice(-over).sort((a, b) => b - a)) {
+            state.staff.members.splice(i, 1);
           }
         }
       }
