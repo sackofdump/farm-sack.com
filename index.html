@@ -8203,7 +8203,34 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
   if (petBtn) petBtn.style.display = 'none';
   // Actions can be a static array or a function returning one (so labels +
   // disabled state can read live state like state.level at popup time).
-  const actionList = typeof cfg.actions === 'function' ? cfg.actions({ ix, iy }) : (cfg.actions || []);
+  // refreshActions re-runs the action factory and re-wires each button
+  // slot WITHOUT touching the desc / title — a click on Expand Pen
+  // now silently updates the button's label + cost in place instead
+  // of triggering a full openBuildingMenu rebuild that caused the
+  // big roster desc to flicker / blank out for a frame.
+  const slaughterPalette = (a) => {
+    if (!slaughterBtn) return;
+    if (a && !a.danger) {
+      slaughterBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
+      slaughterBtn.style.borderColor = '#2A4A1A';
+    } else {
+      slaughterBtn.style.background = '';
+      slaughterBtn.style.borderColor = '';
+    }
+  };
+  const petPalette = (a) => {
+    if (!petBtn) return;
+    if (!a) return;
+    if (a.danger) {
+      petBtn.style.background = 'linear-gradient(to bottom,#E27464,#A03423)';
+      petBtn.style.borderColor = '#6A1A12';
+      petBtn.style.color = '#FFF';
+    } else {
+      petBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
+      petBtn.style.borderColor = '#2A4A1A';
+      petBtn.style.color = '#FFF';
+    }
+  };
   const wireActionBtn = (btn, a) => {
     if (!btn) return;
     if (!a) { btn.style.display = 'none'; return; }
@@ -8221,51 +8248,21 @@ function openBuildingMenu(buildingId, screenX, screenY, ix, iy) {
         return;
       }
       a.run({ ix, iy });
-      setTimeout(() => openBuildingMenu(buildingId, screenX, screenY, ix, iy), 0);
+      // Surgical re-wire only — keeps the big roster desc stable so
+      // the menu doesn't flicker on each spam-click.
+      setTimeout(refreshActions, 0);
     };
   };
-  // Action slot #1 → ride button (top), #2 → collect, #3 → slaughter,
-  // #4 → pet button (repurposed as a 4th general-purpose action slot
-  // for buildings that need more than three actions, like the barn
-  // wanting an Expand Pen, Buy Animals, Slaughter Mode AND a Hire
-  // Animal Keeper button all on the same menu).
-  // Stripping the slaughter button's red gradient so it doesn't look hostile
-  // when it's just a hire option.
-  wireActionBtn(rideBtn, actionList[0]);
-  wireActionBtn(collectBtn, actionList[1]);
-  if (slaughterBtn) {
-    const a = actionList[2];
-    // Default: override the slaughter-red palette with green for hire-
-    // style actions (Staff Hall etc.). Actions that should keep the
-    // angry-red look (like a Slaughter Mode shortcut) opt in by setting
-    // a.danger = true.
-    if (a && !a.danger) {
-      slaughterBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
-      slaughterBtn.style.borderColor = '#2A4A1A';
-    } else {
-      slaughterBtn.style.background = '';
-      slaughterBtn.style.borderColor = '';
-    }
-    wireActionBtn(slaughterBtn, a);
-  }
-  // Pet-button slot: when used by a building action, override its
-  // default pink palette with green so it reads as a normal action
-  // button (or red when a.danger is set).
-  if (petBtn) {
-    const a = actionList[3];
-    if (a) {
-      if (a.danger) {
-        petBtn.style.background = 'linear-gradient(to bottom,#E27464,#A03423)';
-        petBtn.style.borderColor = '#6A1A12';
-        petBtn.style.color = '#FFF';
-      } else {
-        petBtn.style.background = 'linear-gradient(to bottom,#7BC56A,#3F8338)';
-        petBtn.style.borderColor = '#2A4A1A';
-        petBtn.style.color = '#FFF';
-      }
-    }
-    wireActionBtn(petBtn, a);
-  }
+  const refreshActions = () => {
+    const fresh = typeof cfg.actions === 'function' ? cfg.actions({ ix, iy }) : (cfg.actions || []);
+    wireActionBtn(rideBtn, fresh[0]);
+    wireActionBtn(collectBtn, fresh[1]);
+    slaughterPalette(fresh[2]);
+    wireActionBtn(slaughterBtn, fresh[2]);
+    petPalette(fresh[3]);
+    wireActionBtn(petBtn, fresh[3]);
+  };
+  refreshActions();
   // Move button — every non-permanent building can be relocated from its
   // own menu, so the player has to explicitly opt in to picking it up
   // (avoids accidental drag-paint relocations when the Move tool is hot).
@@ -15267,39 +15264,54 @@ function bindInput() {
     const k = tileKey(ix, iy);
     if (live.draggedTiles.has(k)) return;
     live.draggedTiles.add(k);
-    // Tree placement: when the player is drag-painting in tree placeMode,
-    // each tile crossed queues a placeHere walk-and-plant. Lets bulk
-    // orchards happen with a single drag instead of click-per-tile.
-    if (live.placeMode && live.placeMode.id && live.placeMode.id.startsWith('tree_')) {
-      if (!isPlaceableTile(ix, iy)) return;
-      // Affordability gate: count the cost of every tree the player has
-      // already queued this drag and stop adding once we'd exceed their
-      // current coin balance. Mirrors the crops behaviour where the
-      // farmer just stops planting when the wallet runs dry instead of
-      // walking to every tile and erroring out.
-      const cost = live.placeMode.cost || 0;
-      let queuedCost = 0;
-      for (const q of state.player.queue) {
-        if (q.tool === 'placeHere' && q.placeData &&
-            q.placeData.id && q.placeData.id.startsWith('tree_') && !q.placeData.moving) {
-          queuedCost += q.placeData.cost || 0;
+    // Drag-paint placement for trees, decor, and most buildings — each
+    // tile the cursor crosses queues a placeHere walk-and-plant so bulk
+    // orchards / streets of cottages / rows of sprinklers all happen
+    // with a single drag instead of click-per-tile. Excluded: the barn
+    // (spawns a 6×6 pen, never bulkable) and the New Crop Farm (spawns
+    // a 6×6 farm rect, also never bulkable).
+    if (live.placeMode && live.placeMode.id) {
+      const pid = live.placeMode.id;
+      const isTree     = pid.startsWith('tree_');
+      const isDecor    = pid.startsWith('decor_');
+      const isBuilding = pid.startsWith('building_')
+                          && pid !== 'building_barn'
+                          && pid !== 'building_crop_farm';
+      if (isTree || isDecor || isBuilding) {
+        if (!isPlaceableTile(ix, iy)) return;
+        // Affordability gate: count the cost of every same-prefix item
+        // the player has already queued this drag and stop adding once
+        // we'd exceed their current coin balance. Mirrors the crops
+        // behaviour where the farmer just stops planting when the
+        // wallet runs dry instead of walking to every tile and erroring out.
+        const cost = live.placeMode.cost || 0;
+        let queuedCost = 0;
+        for (const q of state.player.queue) {
+          if (q.tool === 'placeHere' && q.placeData &&
+              q.placeData.id && !q.placeData.moving) {
+            queuedCost += q.placeData.cost || 0;
+          }
         }
-      }
-      if (state.coins < queuedCost + cost) {
-        if (!silent) { toast('Not enough coins for another tree.', true); audio.play('error'); }
+        if (state.coins < queuedCost + cost) {
+          if (!silent) {
+            const noun = isTree ? 'tree' : isDecor ? 'decoration' : 'building';
+            toast('Not enough coins for another ' + noun + '.', true);
+            audio.play('error');
+          }
+          return;
+        }
+        // De-dupe in case the player loops the cursor back over a queued tile.
+        for (const q of state.player.queue) {
+          if (q.tool === 'placeHere' && q.ix === ix && q.iy === iy) return;
+        }
+        state.player.queue.push({
+          tool: 'placeHere',
+          ix, iy,
+          placeData: { id: pid, name: live.placeMode.name,
+                       cost, moving: false },
+        });
         return;
       }
-      // De-dupe in case the player loops the cursor back over a queued tile.
-      for (const q of state.player.queue) {
-        if (q.tool === 'placeHere' && q.ix === ix && q.iy === iy) return;
-      }
-      state.player.queue.push({
-        tool: 'placeHere',
-        ix, iy,
-        placeData: { id: live.placeMode.id, name: live.placeMode.name,
-                     cost, moving: false },
-      });
-      return;
     }
     // Queue the action for the farmer to walk to and perform. queueAction
     // refuses tiles where the current tool can't act, so dragging across
