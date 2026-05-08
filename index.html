@@ -9644,9 +9644,12 @@ function fenceRect(list, x0, y0, w, h, isInside, gate, skipNeighbor) {
         // can drop off-screen segments without rebuilding the whole
         // cache. The renderer skips entries whose tile falls outside
         // the visible cull box.
-        list.push({ depth: depth - 0.012, kind: 'fenceBase', x1: ax, y1: ay,      x2: bx, y2: by,      ix, iy });
-        list.push({ depth: depth - 0.008, kind: 'fenceRail', x1: ax, y1: ay - 5,  x2: bx, y2: by - 5,  ix, iy });
-        list.push({ depth: depth - 0.005, kind: 'fenceRail', x1: ax, y1: ay - 11, x2: bx, y2: by - 11, ix, iy });
+        // Single combined entry per boundary edge — the renderer
+        // draws both rails plus the base in one go. Used to push
+        // 4 separate entries (no-op base + 2 rails + post) which
+        // bloated listSize by 4× and slowed the depth sort + the
+        // per-entry draw dispatch.
+        list.push({ depth: depth - 0.005, kind: 'fenceEdge', x1: ax, y1: ay, x2: bx, y2: by, ix, iy });
         list.push({ depth, kind: 'fencePost', x: px, y: py, ix, iy });
       }
     }
@@ -10063,12 +10066,14 @@ function drawAll() {
         facing: state.dogChase.facing,
         _facingX: state.dogChase.facing,
       });
-    } else if (it.kind === 'fenceBase') {
-      drawFenceBase(it.x1, it.y1, it.x2, it.y2);
+    } else if (it.kind === 'fenceEdge') {
+      // Two stacked rails (the base used to live here too but its
+      // draw was a no-op for years; dropping it cut 25% off the
+      // fence-list size).
+      drawFenceRail(it.x1, it.y1 - 5,  it.x2, it.y2 - 5);
+      drawFenceRail(it.x1, it.y1 - 11, it.x2, it.y2 - 11);
     } else if (it.kind === 'fencePost') {
       drawFencePost(it.x, it.y);
-    } else if (it.kind === 'fenceRail') {
-      drawFenceRail(it.x1, it.y1, it.x2, it.y2);
     }
   }
   _dEnd('objDraw', _tObjDraw);
