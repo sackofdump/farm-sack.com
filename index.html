@@ -9450,7 +9450,40 @@ function drawBarnPenPreview(rect) {
   }
   ctx.restore();
 }
+// Fence list cache. Building the multi-farm fence walks every tile
+// in every farm rect and runs cross-farm neighbor checks for each —
+// regenerating that on every paint at 60Hz allocates hundreds of
+// segment objects per frame and pins a CPU core in big late-game
+// farms. Fences only change when a farm rect or barn pen geometry
+// changes, so cache the raw list and rebuild only when the geometry
+// signature flips.
+const _fenceCache = { sig: '', segs: null };
+function _fenceSignature() {
+  // Cheap deterministic geometry stamp — any rect change flips it.
+  // Rotation is included because isoCenter() rotates tile coords;
+  // the cached segment x/y are world-iso (not screen pixels), so
+  // pan + zoom are safe but rotation isn't.
+  const farms = getCropFarms();
+  const pens = getAllBarnPens();
+  let s = 'F' + farms.length + ':';
+  for (const f of farms) s += f.x0 + ',' + f.y0 + ',' + f.w + ',' + f.h + ';';
+  s += '|P' + pens.length + ':';
+  for (const p of pens) s += p.x0 + ',' + p.y0 + ',' + p.w + ',' + p.h + ',' + p.barnIx + ',' + p.barnIy + ';';
+  s += '|R' + (state.rotation || 0);
+  return s;
+}
 function buildFenceList(list) {
+  const sig = _fenceSignature();
+  if (_fenceCache.sig === sig && _fenceCache.segs) {
+    // Geometry unchanged — splice the cached segments straight onto
+    // the active draw list. The draw pass mutates depths/positions
+    // in place by reading isoCenter at paint time, but the segment
+    // records themselves only carry x/y references that don't.
+    for (const s of _fenceCache.segs) list.push(s);
+    return;
+  }
+  // Geometry changed — rebuild into a fresh cache, then splice on.
+  const built = [];
   // Multi-farm fence: one closed ring per crop farm rect. Adjacent
   // farms suppress the shared border so two fields touching each
   // other read as connected plots, not a double-walled corridor.
@@ -9467,7 +9500,7 @@ function buildFenceList(list) {
       if (inBarnPen(ix, iy)) return false;     // pen has its own ring
       return ix >= f.x0 && iy >= f.y0 && ix < f.x0 + f.w && iy < f.y0 + f.h;
     };
-    fenceRect(list, f.x0, f.y0, f.w, f.h, inside, null,
+    fenceRect(built, f.x0, f.y0, f.w, f.h, inside, null,
               (nx, ny) => inBarnPen(nx, ny) || otherFarmContains(f, nx, ny));
   }
   // Animal pen(s) — leave a one-tile opening directly in front of each
@@ -9489,9 +9522,12 @@ function buildFenceList(list) {
   };
   for (const p of allPens) {
     const inside = (ix, iy) => ix >= p.x0 && iy >= p.y0 && ix < p.x0 + p.w && iy < p.y0 + p.h;
-    fenceRect(list, p.x0, p.y0, p.w, p.h, inside, barnPenGate(p),
+    fenceRect(built, p.x0, p.y0, p.w, p.h, inside, barnPenGate(p),
               (nx, ny) => otherPenContains(p, nx, ny));
   }
+  _fenceCache.sig  = sig;
+  _fenceCache.segs = built;
+  for (const s of built) list.push(s);
 }
 function fenceRect(list, x0, y0, w, h, isInside, gate, skipNeighbor) {
   for (let dy = 0; dy < h; dy++) {
@@ -13817,10 +13853,18 @@ function tileScreen(ix, iy) {
   return { x: c.x * state.zoom + state.camX, y: c.y * state.zoom + state.camY };
 }
 function fxBurst(ix, iy, color, count=8) {
-  const { x, y } = tileScreen(ix, iy);
   const layer = document.getElementById('particles');
+  // Hard cap on simultaneous particle DOM nodes — late-game farms
+  // with 10 staff harvesting in waves used to spawn 800+ particles
+  // a second, which pinned a CPU core just churning createElement
+  // / removeChild and kept GC busy on the side. Above 250 active
+  // we drop the burst entirely; above 120 we halve the count.
+  const active = layer.childElementCount;
+  if (active > 250) return;
+  if (active > 120) count = Math.max(2, Math.round(count * 0.5));
   // Mobile: drop particle count so a busy harvest doesn't tank fps.
   count = Math.max(2, Math.round(count * FX_SCALE));
+  const { x, y } = tileScreen(ix, iy);
   for (let k = 0; k < count; k++) {
     const p = document.createElement('div');
     p.className = 'particle';
@@ -13835,6 +13879,10 @@ function fxBurst(ix, iy, color, count=8) {
   }
 }
 function fxFloat(ix, iy, text, slot=0, color) {
+  const layer = document.getElementById('particles');
+  // Same cap as fxBurst — float texts pile up just as fast in
+  // late-game and contribute to the same DOM bloat.
+  if (layer.childElementCount > 250) return;
   const { x, y } = tileScreen(ix, iy);
   const el = document.createElement('div');
   el.className = 'float';
@@ -13842,7 +13890,7 @@ function fxFloat(ix, iy, text, slot=0, color) {
   el.style.left = (x + (slot ? -28 : 0)) + 'px';
   el.style.top  = (y - 8 - slot * 20) + 'px';
   if (color) el.style.color = color;
-  document.getElementById('particles').appendChild(el);
+  layer.appendChild(el);
   setTimeout(() => el.remove(), 1200);
 }
 function toast(msg, isErr=false, kind, durationMs) {
