@@ -4641,7 +4641,14 @@ function staffUpkeepTick() {
 function siloTick() {
   if (!state.silo) state.silo = { feed: 0, lastTickAt: Date.now(), boostMs: 0 };
   const now = Date.now();
+  // Throttle the bookkeeping pass to ~5Hz instead of 60Hz. The math
+  // is dt-driven, so coarser ticks accumulate identically — but the
+  // state.placed walk for matureBonus accrual was running 60×/sec
+  // late-game with hundreds of placed items, which alone could pin
+  // a CPU core. Snap back to per-frame if the offline gap exceeds
+  // the throttle so big closed-tab catch-ups still process.
   const last = state.silo.lastTickAt || now;
+  if (now - last < 200 && now - last >= 0) return;
   // Clamp dt to 10s so a long offline gap doesn't drain the silo in one
   // burst — silo bookkeeping only happens while the tab is active.
   const dt = Math.max(0, Math.min(10000, now - last));
@@ -17926,10 +17933,17 @@ function loop(t) {
   // Step the render rate down with zoom so far-out views still feel
   // smooth without melting the CPU. Logic ticks above run every frame
   // regardless so simulation accuracy isn't affected.
-  let renderInterval = 0;
-  if      (state.zoom <= 0.30) renderInterval = 50;   // ~20 FPS
-  else if (state.zoom <= 0.45) renderInterval = 33;   // ~30 FPS
-  else if (state.zoom <= 0.65) renderInterval = 22;   // ~45 FPS
+  // 30 FPS minimum render rate — 60 FPS gave a perfectly smooth in-tab
+  // experience but pinned a CPU core in big late-game farms (lots of
+  // sprite blits + per-tile iteration per frame). Halving the render
+  // rate roughly halves that cost; at this art style + zoom range the
+  // visual difference is barely perceivable. Logic ticks (movement,
+  // staff search, etc.) still run every loop pass — only the canvas
+  // paint is throttled.
+  let renderInterval = 33;
+  if      (state.zoom <= 0.30) renderInterval = 66;   // ~15 FPS
+  else if (state.zoom <= 0.45) renderInterval = 50;   // ~20 FPS
+  else if (state.zoom <= 0.65) renderInterval = 40;   // ~25 FPS
   if (!hidden && t - (loop._drawLastT || 0) >= renderInterval) {
     loop._drawLastT = t;
     if (_perfBag) _perfMark('drawAll', () => drawAll(), _perfBag);
