@@ -6081,8 +6081,14 @@ const IS_MOBILE = (typeof navigator !== 'undefined') && (
 const FX_SCALE = IS_MOBILE ? 0.5 : 1;
 let DPR = 1;
 function resizeCanvas() {
-  const dprMax = IS_MOBILE ? 1 : 2;
-  DPR = Math.max(1, Math.min(dprMax, window.devicePixelRatio || 1));
+  // Cap canvas DPR at 1 on every device. The art style is large-ish
+  // sprites + flat colors, so the difference between DPR 1 and 2 is
+  // barely visible — but at DPR 2 on a 4K display the canvas is
+  // 33M pixels and Chrome's GPU compositor pegs the whole desktop.
+  // High-DPI players who explicitly want sharper sprites can override
+  // by setting `window._FS_FORCE_DPR = 2` before reload.
+  const desired = (typeof window !== 'undefined' && window._FS_FORCE_DPR) || 1;
+  DPR = Math.max(1, Math.min(2, desired));
   canvas.width  = Math.floor(window.innerWidth  * DPR);
   canvas.height = Math.floor(window.innerHeight * DPR);
   canvas.style.width  = window.innerWidth  + 'px';
